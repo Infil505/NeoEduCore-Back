@@ -21,7 +21,6 @@ class AuthController extends Controller
             'role' => ['sometimes', 'in:teacher,student,admin']
         ]);
 
-
         $user = User::create([
             'name' => $data['name'],
             'email' => strtolower($data['email']),
@@ -29,9 +28,7 @@ class AuthController extends Controller
             'role' => $data['role'] ?? 'teacher'
         ]);
 
-
         $token = $user->createToken('web')->plainTextToken;
-
 
         return response()->json([
             'user' => [
@@ -50,19 +47,12 @@ class AuthController extends Controller
             'password' => ['required', 'string']
         ]);
 
-
         $user = User::where('email', strtolower($credentials['email']))->first();
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             return response()->json(['message' => 'Credenciales inválidas'], 401);
         }
 
-
-        // Opcional: revocar tokens previos
-        // $user->tokens()->delete();
-
-
         $token = $user->createToken('web')->plainTextToken;
-
 
         return response()->json([
             'user' => [
@@ -74,16 +64,13 @@ class AuthController extends Controller
             'token' => $token
         ]);
     }
-
     public function me(Request $request)
     {
         return response()->json(['user' => $request->user()]);
     }
 
-
     public function logout(Request $request)
     {
-        // Revoca solo el token actual
         $request->user()->currentAccessToken()->delete();
         return response()->json(['message' => 'Sesión cerrada']);
     }

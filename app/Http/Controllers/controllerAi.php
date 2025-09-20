@@ -31,14 +31,12 @@ class controllerAi extends Controller
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // Errores de validación → 422 Unprocessable Entity
             return response()->json([
                 'success' => false,
                 'errors' => $e->errors(),
             ], 422);
 
         } catch (\Exception $e) {
-            // Otros errores → 500 Internal Server Error
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),
