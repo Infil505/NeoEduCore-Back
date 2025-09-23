@@ -17,54 +17,65 @@ class ForgotPasswordController extends Controller
     /**
      * Enviar enlace de recuperación de contraseña
      */
-    public function sendResetLink(Request $request)
-    {
-        $data = $request->validate([
-            'email' => ['required', 'email', 'exists:users,email']
+   public function sendResetLink(Request $request)
+{
+    $data = $request->validate([
+        'email' => ['required', 'email', 'exists:users,email']
+    ]);
+
+    $email = strtolower($data['email']);
+
+    try {
+        // Buscar usuario
+        $user = User::where('email', $email)->first();
+
+        if (!$user) {
+            return response()->json([
+                'message' => 'Si el correo está registrado, recibirás un enlace de recuperación'
+            ]);
+        }
+
+        // Generar token
+        $token = Str::random(64);
+
+        // Limpiar tokens anteriores
+        DB::table('password_reset_tokens')->where('email', $email)->delete();
+
+        // Insertar nuevo token
+        DB::table('password_reset_tokens')->insert([
+            'email'      => $email,
+            'token'      => Hash::make($token),
+            'created_at' => now(),
         ]);
 
-        $email = strtolower($data['email']);
+        // Enviar correo
+        Mail::to($email)->send(new PasswordResetMail($token, $user));
 
-        try {
-            // Buscar al usuario
-            $user = User::where('email', $email)->first();
-            
-            if (!$user) {
-                // Por seguridad, devolver éxito incluso si no existe
-                return response()->json([
-                    'message' => 'Si el correo está registrado, recibirás un enlace de recuperación'
-                ]);
-            }
+        return response()->json([
+            'message' => 'Enlace de recuperación enviado correctamente'
+        ]);
 
-            // Generar token único y seguro
-            $token = Str::random(64);
-            
-            // Limpiar tokens anteriores para este email
-            DB::table('password_reset_tokens')
-                ->where('email', $email)
-                ->delete();
+    } catch (\Throwable $e) {
+        // Registrar en el log del servidor PHP
+        error_log(sprintf(
+            '[sendResetLink] %s in %s:%d (email=%s)',
+            $e->getMessage(),
+            $e->getFile(),
+            $e->getLine(),
+            $email
+        ));
 
-            // Crear nuevo registro de reset
-            DB::table('password_reset_tokens')->insert([
-                'email' => $email,
-                'token' => Hash::make($token),
-                'created_at' => now()
-            ]);
+        // También puedes escribir a un archivo específico si lo prefieres:
+        // file_put_contents(storage_path('logs/reset_password_manual.log'),
+        //     now()->toDateTimeString().' '.$e->getMessage().' @ '.$e->getFile().':'.$e->getLine().PHP_EOL,
+        //     FILE_APPEND
+        // );
 
-            // Enviar correo
-            Mail::to($email)->send(new PasswordResetMail($token, $user));
-
-            return response()->json([
-                'message' => 'Enlace de recuperación enviado correctamente'
-            ]);
-
-        } catch (\Exception $e) {
-            
-            return response()->json([
-                'message' => 'Error interno del servidor'
-            ], 500);
-        }
+        return response()->json([
+            'message' => 'Error interno del servidor'
+        ], 500);
     }
+}
 
     /**
      * Verificar si un token de reset es válido
