@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Mail\PasswordResetMail;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -15,76 +16,121 @@ use Illuminate\Validation\Rules\Password;
 class ForgotPasswordController extends Controller
 {
     /**
-     * Enviar enlace de recuperación de contraseña
+     * 1) Enviar enlace de recuperación (correo)
+     * Responde siempre genérico para evitar enumeración.
      */
-   public function sendResetLink(Request $request)
+    public function sendResetLink(Request $request)
 {
     $data = $request->validate([
-        'email' => ['required', 'email', 'exists:users,email']
+        'email' => ['required', 'email', 'max:120'],
     ]);
 
     $email = strtolower($data['email']);
 
+    // Respuesta genérica (evita enumeración)
+    $genericResponse = response()->json([
+        'message' => 'Si el correo está registrado, recibirás un enlace de recuperación'
+    ]);
+
     try {
-        // Buscar usuario
         $user = User::where('email', $email)->first();
 
+        // No damos pistas si no existe
         if (!$user) {
-            return response()->json([
-                'message' => 'Si el correo está registrado, recibirás un enlace de recuperación'
-            ]);
+            return $genericResponse;
         }
 
-        // Generar token
-        $token = Str::random(64);
+        // Opcional: bloquear reset si el usuario está inactivo/suspendido
+        if (method_exists($user, 'getAttribute') && isset($user->status) && $user->status !== \App\Enums\UserStatus::Active) {
+            return $genericResponse;
+        }
+
+        // Token plano para el link del correo
+        $tokenPlain = Str::random(64);
 
         // Limpiar tokens anteriores
         DB::table('password_reset_tokens')->where('email', $email)->delete();
 
-        // Insertar nuevo token
+        // Guardar hash del token
         DB::table('password_reset_tokens')->insert([
             'email'      => $email,
-            'token'      => Hash::make($token),
+            'token'      => Hash::make($tokenPlain),
             'created_at' => now(),
         ]);
 
-        // Enviar correo
-        Mail::to($email)->send(new PasswordResetMail($token, $user));
+        /**
+         * Link SOLO backend (Blade)
+         * IMPORTANTE: route() depende de APP_URL para armar el host correcto.
+         * Si a veces te sale localhost en prod, es porque APP_URL está mal.
+         */
+        $resetUrl = url('/password/reset/' . $tokenPlain) . '?email=' . urlencode($email);
 
-        return response()->json([
-            'message' => 'Enlace de recuperación enviado correctamente'
-        ]);
+        // Enviar correo
+        Mail::to($email)->send(new PasswordResetMail($resetUrl, $user));
+
+        return $genericResponse;
 
     } catch (\Throwable $e) {
-        // Registrar en el log del servidor PHP
-        error_log(sprintf(
-            '[sendResetLink] %s in %s:%d (email=%s)',
-            $e->getMessage(),
-            $e->getFile(),
-            $e->getLine(),
-            $email
-        ));
+        // Laravel style
+        report($e);
 
-        // También puedes escribir a un archivo específico si lo prefieres:
-        // file_put_contents(storage_path('logs/reset_password_manual.log'),
-        //     now()->toDateTimeString().' '.$e->getMessage().' @ '.$e->getFile().':'.$e->getLine().PHP_EOL,
-        //     FILE_APPEND
-        // );
-
-        return response()->json([
-            'message' => 'Error interno del servidor'
-        ], 500);
+        return response()->json(['message' => 'Error interno del servidor'], 500);
     }
 }
 
+
     /**
-     * Verificar si un token de reset es válido
+     * 2) Mostrar formulario Blade (solo accesible con link del correo)
+     * Ruta en web.php:
+     *   GET /password/reset/{token}?email=...
+     */
+    public function showResetForm(string $token, Request $request)
+    {
+        $email = strtolower((string) $request->query('email'));
+
+        if (!$email) {
+            abort(403);
+        }
+
+        $passwordReset = DB::table('password_reset_tokens')
+            ->where('email', $email)
+            ->first();
+
+        if (!$passwordReset) {
+            abort(403);
+        }
+
+        if (!Hash::check($token, $passwordReset->token)) {
+            abort(403);
+        }
+
+        $createdAt = Carbon::parse($passwordReset->created_at);
+
+        // Expira a las 24h
+        if (now()->diffInHours($createdAt) > 24) {
+            DB::table('password_reset_tokens')->where('email', $email)->delete();
+            abort(403);
+        }
+
+        $user = User::where('email', $email)->first();
+
+        return view('auth.reset-password', [
+            'token' => $token,          // token plano (del link)
+            'email' => $email,
+            'user' => $user,
+            'appName' => config('app.name'),
+            'apiBaseUrl' => url('/api'), // para tu fetch en JS si lo ocupás
+        ]);
+    }
+
+    /**
+     * 3) Verificar token por API (opcional)
      */
     public function verifyToken(Request $request)
     {
         $data = $request->validate([
             'token' => ['required', 'string'],
-            'email' => ['required', 'email']
+            'email' => ['required', 'email', 'max:120'],
         ]);
 
         $email = strtolower($data['email']);
@@ -95,150 +141,115 @@ class ForgotPasswordController extends Controller
                 ->first();
 
             if (!$passwordReset) {
-                return response()->json([
-                    'message' => 'Token de reset inválido'
-                ], 400);
+                return response()->json(['message' => 'Token de reset inválido'], 400);
             }
 
-            // Verificar el token
             if (!Hash::check($data['token'], $passwordReset->token)) {
-                return response()->json([
-                    'message' => 'Token de reset inválido'
-                ], 400);
+                return response()->json(['message' => 'Token de reset inválido'], 400);
             }
 
-            // Verificar expiración (24 horas)
-            if (now()->diffInHours($passwordReset->created_at) > 24) {
-                // Eliminar token expirado
-                DB::table('password_reset_tokens')
-                    ->where('email', $email)
-                    ->delete();
+            $createdAt = Carbon::parse($passwordReset->created_at);
 
-                return response()->json([
-                    'message' => 'El token de reset ha expirado'
-                ], 400);
+            if (now()->diffInHours($createdAt) > 24) {
+                DB::table('password_reset_tokens')->where('email', $email)->delete();
+                return response()->json(['message' => 'El token de reset ha expirado'], 400);
             }
 
-            return response()->json([
-                'message' => 'Token válido'
-            ]);
+            return response()->json(['message' => 'Token válido']);
 
-        } catch (\Exception $e) {
-            
-            return response()->json([
-                'message' => 'Error interno del servidor'
-            ], 500);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Error interno del servidor'], 500);
         }
     }
 
     /**
-     * Resetear la contraseña
+     * 4) Resetear contraseña (API)
+     * Espera: email, token y password + password_confirmation
      */
     public function resetPassword(Request $request)
     {
         $data = $request->validate([
-            'email' => ['required', 'email', 'exists:users,email'],
+            'email' => ['required', 'email', 'max:120'],
             'token' => ['required', 'string'],
-            'password' => ['required', 'confirmed', Password::min(8)]
+            'password' => ['required', 'confirmed', Password::min(8)],
         ]);
 
         $email = strtolower($data['email']);
 
         try {
-            // Buscar el token en la base de datos
             $passwordReset = DB::table('password_reset_tokens')
                 ->where('email', $email)
                 ->first();
 
             if (!$passwordReset) {
-                return response()->json([
-                    'message' => 'Token de reset inválido'
-                ], 400);
+                return response()->json(['message' => 'Token de reset inválido'], 400);
             }
 
-            // Verificar el token
             if (!Hash::check($data['token'], $passwordReset->token)) {
-                return response()->json([
-                    'message' => 'Token de reset inválido'
-                ], 400);
+                return response()->json(['message' => 'Token de reset inválido'], 400);
             }
 
-            // Verificar expiración (24 horas)
-            if (now()->diffInHours($passwordReset->created_at) > 24) {
-                // Eliminar token expirado
-                DB::table('password_reset_tokens')
-                    ->where('email', $email)
-                    ->delete();
+            $createdAt = Carbon::parse($passwordReset->created_at);
 
-                return response()->json([
-                    'message' => 'El token de reset ha expirado'
-                ], 400);
+            if (now()->diffInHours($createdAt) > 24) {
+                DB::table('password_reset_tokens')->where('email', $email)->delete();
+                return response()->json(['message' => 'El token de reset ha expirado'], 400);
             }
 
-            // Buscar al usuario y actualizar contraseña
             $user = User::where('email', $email)->first();
-            
             if (!$user) {
-                return response()->json([
-                    'message' => 'Usuario no encontrado'
-                ], 404);
+                return response()->json(['message' => 'Token de reset inválido'], 400);
             }
 
-            // Actualizar la contraseña
+            // ✅ Ajuste clave: tu esquema usa password_hash
             $user->update([
-                'password' => Hash::make($data['password'])
+                'password_hash' => Hash::make($data['password']),
             ]);
 
-            // Eliminar el token usado
-            DB::table('password_reset_tokens')
-                ->where('email', $email)
-                ->delete();
+            // Consumir token
+            DB::table('password_reset_tokens')->where('email', $email)->delete();
 
-            // Revocar todos los tokens existentes del usuario por seguridad
-            $user->tokens()->delete();
+            // Revocar tokens Sanctum por seguridad
+            if (method_exists($user, 'tokens')) {
+                $user->tokens()->delete();
+            }
 
-            return response()->json([
-                'message' => 'Contraseña actualizada correctamente'
-            ]);
+            return response()->json(['message' => 'Contraseña actualizada correctamente']);
 
-        } catch (\Exception $e) {
-            
-            return response()->json([
-                'message' => 'Error interno del servidor'
-            ], 500);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Error interno del servidor'], 500);
         }
     }
 
     /**
-     * Cambiar contraseña estando autenticado (bonus)
+     * 5) Cambiar contraseña estando autenticado (API)
      */
     public function changePassword(Request $request)
     {
         $data = $request->validate([
             'current_password' => ['required', 'string'],
-            'password' => ['required', 'confirmed', Password::min(8)]
+            'password' => ['required', 'confirmed', Password::min(8)],
         ]);
 
         $user = $request->user();
 
-        // Verificar contraseña actual
-        if (!Hash::check($data['current_password'], $user->password)) {
-            return response()->json([
-                'message' => 'La contraseña actual es incorrecta'
-            ], 400);
+        // ✅ Ajuste clave: comparar contra password_hash
+        if (!Hash::check($data['current_password'], $user->password_hash)) {
+            return response()->json(['message' => 'La contraseña actual es incorrecta'], 400);
         }
 
-        // Actualizar contraseña
         $user->update([
-            'password' => Hash::make($data['password'])
+            'password_hash' => Hash::make($data['password']),
         ]);
 
-        // Revocar todos los otros tokens por seguridad (excepto el actual)
-        $currentToken = $user->currentAccessToken();
-        $user->tokens()->where('id', '!=', $currentToken->id)->delete();
+        // Revocar tokens excepto el actual (si existe)
+        if (method_exists($user, 'tokens')) {
+            $currentToken = $user->currentAccessToken();
+            if ($currentToken) {
+                $user->tokens()->where('id', '!=', $currentToken->id)->delete();
+            }
+        }
 
-        return response()->json([
-            'message' => 'Contraseña cambiada correctamente'
-        ]);
+        return response()->json(['message' => 'Contraseña cambiada correctamente']);
     }
 }
