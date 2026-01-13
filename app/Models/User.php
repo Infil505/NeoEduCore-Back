@@ -13,6 +13,7 @@ class User extends Authenticatable
     use HasFactory, HasUuids;
 
     protected $table = 'users';
+
     public $incrementing = false;
     protected $keyType = 'string';
 
@@ -25,27 +26,49 @@ class User extends Authenticatable
         'status',
     ];
 
-    protected $hidden = ['password_hash'];
+    protected $hidden = [
+        'password_hash',
+    ];
 
     protected $casts = [
         'user_type' => UserType::class,
-        'status' => UserStatus::class,
+        'status'    => UserStatus::class,
     ];
+
+    /* =========================
+     |  Relaciones
+     ========================= */
 
     public function institution()
     {
         return $this->belongsTo(Institution::class);
     }
 
+    /**
+     * Perfil de estudiante (solo si user_type = student)
+     */
     public function studentProfile()
     {
         return $this->hasOne(Student::class, 'user_id');
     }
 
+    /**
+     * Recursos creados por el usuario (teacher/admin)
+     */
+    public function studyResources()
+    {
+        return $this->hasMany(StudyResource::class, 'created_by');
+    }
+
+    /* =========================
+     |  Autenticación
+     ========================= */
+
+    /**
+     * Laravel usará password_hash como contraseña
+     */
     public function getAuthPassword(): string
     {
         return $this->password_hash;
     }
-
-
 }

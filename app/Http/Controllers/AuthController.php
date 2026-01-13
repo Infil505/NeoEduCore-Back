@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\StudentStatus;
 use App\Enums\UserStatus;
 use App\Enums\UserType;
 use App\Models\Institution;
+use App\Models\Student;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -13,52 +15,84 @@ use Illuminate\Validation\Rules\Password;
 class AuthController extends Controller
 {
     /**
-     * Registro
+     * Registro (AUTOREGISTRO INCLUIDO)
      * - Crea usuario y (opcional) institución.
+     * - Detecta rol por email (NO se acepta user_type desde request).
+     * - Si el rol es student, crea automáticamente el perfil Student.
      * - Devuelve token Sanctum.
      */
     public function register(Request $request)
     {
         $data = $request->validate([
-            // en tu tabla es full_name (no name)
             'full_name' => ['required', 'string', 'min:2', 'max:120'],
-
             'email' => ['required', 'email', 'max:120', 'unique:users,email'],
 
-            // en tu tabla es password_hash (no password)
-            'password' => ['required', Password::min(8)],
+            // 8+ chars, 1 mayúscula, 1 minúscula, 1 número + confirmación
+            'password' => [
+                'required',
+                Password::min(8)->mixedCase()->numbers(),
+                'confirmed',
+            ],
 
-            // en tu esquema es user_type (no role)
-            'user_type' => ['sometimes', 'in:teacher,student,admin'],
-
-            // SaaS: permitir asociar a una institución existente
+            // SaaS: asociar a institución existente
             'institution_id' => ['nullable', 'uuid', 'exists:institutions,id'],
 
-            // o crear institución desde el registro (opcional)
+            // o crear institución desde el registro
             'institution_code' => ['nullable', 'string', 'max:40'],
             'institution_name' => ['nullable', 'string', 'max:120'],
         ]);
 
-        // Si viene institution_id, se usa.
-        // Si no viene pero trae code+name, se crea.
+        $email = strtolower($data['email']);
+
+        // Crear o asociar institución
         $institutionId = $data['institution_id'] ?? null;
 
-        if (!$institutionId && !empty($data['institution_code']) && !empty($data['institution_name'])) {
+        if (
+            !$institutionId &&
+            !empty($data['institution_code']) &&
+            !empty($data['institution_name'])
+        ) {
             $inst = Institution::create([
-                'code' => $data['institution_code'],
-                'name' => $data['institution_name'],
+                'code' => strtoupper(trim($data['institution_code'])),
+                'name' => trim($data['institution_name']),
+                'is_active' => true,
             ]);
+
             $institutionId = $inst->id;
         }
 
+        // Rol NO viene del request; se detecta por email
+        $userType = $this->detectUserTypeByEmail($email);
+
         $user = User::create([
             'institution_id' => $institutionId,
-            'full_name' => $data['full_name'],
-            'email' => strtolower($data['email']),
+            'full_name' => trim($data['full_name']),
+            'email' => $email,
             'password_hash' => Hash::make($data['password']),
-            'user_type' => $data['user_type'] ?? UserType::Teacher->value,
+            'user_type' => $userType,
             'status' => UserStatus::Active->value,
         ]);
+
+        // AUTOREGISTRO: si es estudiante, crear perfil Student
+        if ($userType === UserType::Student->value) {
+            Student::create([
+                'institution_id' => $institutionId,
+                'user_id' => $user->id,
+
+                // Código provisional (puede editarse luego desde el panel)
+                'student_code' => 'STU-' . strtoupper(substr($user->id, 0, 8)),
+
+                // Datos académicos iniciales (se completan luego)
+                'grade' => null,
+                'section' => null,
+
+                'status' => StudentStatus::Active->value,
+                'enrolled_at' => now(),
+                'last_activity_at' => null,
+                'exams_completed_count' => 0,
+                'overall_average' => 0,
+            ]);
+        }
 
         $token = $user->createToken('web')->plainTextToken;
 
@@ -67,11 +101,11 @@ class AuthController extends Controller
                 'id' => $user->id,
                 'full_name' => $user->full_name,
                 'email' => $user->email,
-                'user_type' => $user->user_type->value,   // enum cast
-                'status' => $user->status->value,         // enum cast
+                'user_type' => $user->user_type->value,
+                'status' => $user->status->value,
                 'institution_id' => $user->institution_id,
             ],
-            'token' => $token
+            'token' => $token,
         ], 201);
     }
 
@@ -81,13 +115,14 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         $credentials = $request->validate([
-            'email' => ['required', 'email'],
-            'password' => ['required', 'string'],
+            'email' => ['required', 'email', 'max:120'],
+            'password' => ['required', 'string', 'max:255'],
         ]);
 
-        $user = User::where('email', strtolower($credentials['email']))->first();
+        $email = strtolower($credentials['email']);
 
-        // ojo: password_hash (no password)
+        $user = User::where('email', $email)->first();
+
         if (!$user || !Hash::check($credentials['password'], $user->password_hash)) {
             return response()->json(['message' => 'Credenciales inválidas'], 401);
         }
@@ -107,10 +142,13 @@ class AuthController extends Controller
                 'status' => $user->status->value,
                 'institution_id' => $user->institution_id,
             ],
-            'token' => $token
+            'token' => $token,
         ]);
     }
 
+    /**
+     * Usuario autenticado
+     */
     public function me(Request $request)
     {
         $user = $request->user();
@@ -123,14 +161,39 @@ class AuthController extends Controller
                 'user_type' => $user->user_type->value,
                 'status' => $user->status->value,
                 'institution_id' => $user->institution_id,
-            ]
+            ],
         ]);
     }
 
+    /**
+     * Logout
+     */
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['message' => 'Sesión cerrada']);
+    }
+
+    /**
+     * Detección de rol por patrón en email
+     */
+    private function detectUserTypeByEmail(string $email): string
+    {
+        $email = strtolower($email);
+
+        if (str_contains($email, 'admin')) {
+            return UserType::Admin->value;
+        }
+
+        if (str_contains($email, 'teacher') || str_contains($email, 'profesor')) {
+            return UserType::Teacher->value;
+        }
+
+        if (str_contains($email, 'parent') || str_contains($email, 'padre')) {
+            return UserType::Parent->value;
+        }
+
+        return UserType::Student->value;
     }
 }

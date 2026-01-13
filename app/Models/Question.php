@@ -3,43 +3,47 @@
 namespace App\Models;
 
 use App\Enums\QuestionType;
-use App\Models\Concerns\TenantScoped;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\Concerns\TenantScoped;
 
 class Question extends Model
 {
-    use HasFactory, HasUuids;
-    // use TenantScoped; // opcional
+    use HasFactory, HasUuids, TenantScoped;
 
     protected $table = 'questions';
+
     public $incrementing = false;
     protected $keyType = 'string';
 
     protected $fillable = [
         'institution_id',
         'exam_id',
-        'question_number',
-        'question_type',
+
+        // RN-EXAM-011
         'question_text',
+        'question_type',     // multiple_choice | true_false | short_answer
+
+        // RN-EXAM-013 (1–10)
         'points',
-        'correct_boolean',
-        'correct_text',
-        'allow_multiple_correct',
-        'min_correct',
-        'max_correct',
+
+        // Para preguntas de respuesta corta
+        'correct_answer_text',
+
+        // Orden dentro del examen
+        'order_index',
     ];
 
     protected $casts = [
-        'question_number' => 'integer',
         'question_type' => QuestionType::class,
-        'points' => 'decimal:2',
-        'correct_boolean' => 'boolean',
-        'allow_multiple_correct' => 'boolean',
-        'min_correct' => 'integer',
-        'max_correct' => 'integer',
+        'points'        => 'integer',
+        'order_index'   => 'integer',
     ];
+
+    /* =========================
+     | Relaciones
+     ========================= */
 
     public function exam()
     {
@@ -49,5 +53,10 @@ class Question extends Model
     public function options()
     {
         return $this->hasMany(QuestionOption::class, 'question_id');
+    }
+
+    public function studentAnswers()
+    {
+        return $this->hasMany(StudentAnswer::class, 'question_id');
     }
 }

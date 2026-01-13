@@ -4,8 +4,8 @@ namespace App\Enums;
 
 enum ExamStatus: string
 {
-    case Draft = 'draft';
+    case Draft     = 'draft';
     case Published = 'published';
-    case Closed = 'closed';
-    case Archived = 'archived';
+    case Active    = 'active';
+    case Completed = 'completed';
 }

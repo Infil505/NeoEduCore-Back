@@ -3,39 +3,59 @@
 namespace App\Models;
 
 use App\Enums\ExamStatus;
-use App\Models\Concerns\TenantScoped;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\Concerns\TenantScoped;
 
 class Exam extends Model
 {
-    use HasFactory, HasUuids;
-    // use TenantScoped; // opcional
+    use HasFactory, HasUuids, TenantScoped;
 
     protected $table = 'exams';
+
     public $incrementing = false;
     protected $keyType = 'string';
 
     protected $fillable = [
         'institution_id',
         'created_by_teacher_id',
-        'subject_id',
+
+        // RN-EXAM-001
         'title',
-        'description',
+        'subject_id',
+        'grade',                 // 7–12
+
+        // RN-EXAM-002
+        'instructions',
+
+        // RN-EXAM-004..007
         'duration_minutes',
-        'passing_percentage',
-        'status',
-        'scheduled_at',
+
+        // RN-EXAM-017
+        'status',                // draft | published | active | completed
+
+        // RN-EXAM-034 / RN-EXAM-035
+        'max_attempts',
+        'show_results_immediately',
+        'allow_review_after_submission',
+        'randomize_questions',
+
+        // Ventana de disponibilidad
         'available_from',
         'available_until',
     ];
 
     protected $casts = [
+        'grade' => 'integer',
         'duration_minutes' => 'integer',
-        'passing_percentage' => 'decimal:2',
         'status' => ExamStatus::class,
-        'scheduled_at' => 'datetime',
+
+        'max_attempts' => 'integer',
+        'show_results_immediately' => 'boolean',
+        'allow_review_after_submission' => 'boolean',
+        'randomize_questions' => 'boolean',
+
         'available_from' => 'datetime',
         'available_until' => 'datetime',
     ];
@@ -57,9 +77,13 @@ class Exam extends Model
 
     public function groups()
     {
-        return $this->belongsToMany(Group::class, 'exam_targets', 'exam_id', 'group_id')
-            ->withPivot(['institution_id'])
-            ->withTimestamps(false);
+        return $this->belongsToMany(
+            Group::class,
+            'exam_targets',
+            'exam_id',
+            'group_id'
+        )->withPivot(['institution_id'])
+         ->withTimestamps(false);
     }
 
     public function questions()
