@@ -5,12 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\Exam;
 use App\Models\ExamAttempt;
 use App\Models\Student;
+use App\Models\Question;
 use App\Services\AiRecommendationService;
 use App\Services\ExamAttemptRulesService;
 use App\Services\ExamGradingService;
 use App\Services\StudentProgressService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ExamAttemptController extends Controller
 {
@@ -66,9 +68,10 @@ class ExamAttemptController extends Controller
 
     /**
      * Enviar intento (submit)
-     * - Califica (ExamGradingService)
-     * - Recalcula progreso por materia (StudentProgressService)
-     * - Genera recomendaciones (AiRecommendationService)
+     *
+     * Reglas ajustadas a triggers:
+     * - multiple_choice / true_false => selected_option_ids requerido y EXACTAMENTE 1 id
+     * - short_answer => answer_text requerido (y NO opciones)
      */
     public function submit(
         Request $request,
@@ -101,6 +104,71 @@ class ExamAttemptController extends Controller
             'answers.*.selected_option_ids.*' => ['integer'],
         ]);
 
+        // ✅ Validación lógica contra tipos reales del examen (para no depender del trigger)
+        $questions = Question::query()
+            ->where('exam_id', $exam->id)
+            ->with('options')
+            ->get()
+            ->keyBy('id');
+
+        if ($questions->isEmpty()) {
+            return response()->json(['message' => 'El examen no tiene preguntas'], 409);
+        }
+
+        $byQuestion = collect($data['answers'])->keyBy('question_id');
+
+        $errors = [];
+
+        foreach ($questions as $qid => $q) {
+            $payload = $byQuestion->get($qid);
+
+            // Si no viene, lo dejamos pasar (se guardará en blanco y quedará incorrecto),
+            // pero si querés obligar a responder TODO, lo convertimos en error aquí.
+            if (!$payload) {
+                continue;
+            }
+
+            $type = $q->question_type->value;
+            $answerText = $payload['answer_text'] ?? null;
+            $selected = $payload['selected_option_ids'] ?? null;
+
+            if (in_array($type, ['multiple_choice', 'true_false'], true)) {
+                // Debe traer EXACTAMENTE 1 selección
+                if (!is_array($selected) || count($selected) !== 1) {
+                    $errors["answers.$qid.selected_option_ids"] = [
+                        "Para {$type} debes enviar selected_option_ids con EXACTAMENTE 1 opción.",
+                    ];
+                }
+
+                // No debe traer answer_text
+                if (!empty($answerText) && trim((string) $answerText) !== '') {
+                    $errors["answers.$qid.answer_text"] = [
+                        "Para {$type} no se permite answer_text. Usa selected_option_ids.",
+                    ];
+                }
+            }
+
+            if ($type === 'short_answer') {
+                // Debe traer texto
+                if ($answerText === null || trim((string) $answerText) === '') {
+                    $errors["answers.$qid.answer_text"] = [
+                        "Para short_answer debes enviar answer_text.",
+                    ];
+                }
+
+                // No debe traer opciones
+                if (is_array($selected) && count($selected) > 0) {
+                    $errors["answers.$qid.selected_option_ids"] = [
+                        "Para short_answer no se permite selected_option_ids.",
+                    ];
+                }
+            }
+        }
+
+        if (!empty($errors)) {
+            throw ValidationException::withMessages($errors);
+        }
+
         // Ejecutar todo en transacción
         $result = DB::transaction(function () use (
             $exam,
@@ -122,8 +190,7 @@ class ExamAttemptController extends Controller
                 );
             }
 
-            // 3) Generar recomendaciones (fallback sin OpenAI)
-            //    (si luego querés OpenAI, aquí llamás al AiController/servicio de OpenAI)
+            // 3) Generar recomendaciones
             $recommendations = $aiService->generateFromAttempt($attempt);
 
             return [
