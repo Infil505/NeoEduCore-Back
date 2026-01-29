@@ -73,7 +73,6 @@ Route::middleware('auth:sanctum')->group(function () {
     */
     Route::get('/auth/me', [AuthController::class, 'me'])->name('me');
     Route::post('/auth/logout', [AuthController::class, 'logout'])->name('logout');
-
     Route::post('/password/change', [ForgotPasswordController::class, 'changePassword'])
         ->middleware('throttle:5,1')
         ->name('password.change');
@@ -164,6 +163,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/ai-recommendations', [AiRecommendationController::class, 'index']);
     Route::get('/ai-recommendations/me', [AiRecommendationController::class, 'myRecommendations']);
     Route::get('/ai-recommendations/{aiRecommendation}', [AiRecommendationController::class, 'show']);
+     // Regenerar recomendaciones IA para un intento (solo dueño del intento)
+    Route::post(
+        '/exam-attempts/{attempt}/recommendations/regenerate',
+        [ExamAttemptController::class, 'regenerateRecommendations']
+    )->middleware('throttle:5,1'); // 5 por minuto (ajustable)
 
     /*
     |--------------------------------------------------------------------------

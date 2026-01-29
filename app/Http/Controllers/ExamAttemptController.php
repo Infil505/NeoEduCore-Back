@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+
 use App\Models\Exam;
 use App\Models\ExamAttempt;
 use App\Models\Student;
@@ -10,6 +11,7 @@ use App\Services\AiRecommendationService;
 use App\Services\ExamAttemptRulesService;
 use App\Services\ExamGradingService;
 use App\Services\StudentProgressService;
+use App\Models\AiRecommendation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -230,5 +232,58 @@ class ExamAttemptController extends Controller
         return response()->json([
             'data' => $attempt,
         ]);
+    }
+
+    public function regenerateRecommendations(
+        Request $request,
+        ExamAttempt $attempt,
+        AiRecommendationService $aiService
+    ) {
+        $user = $request->user();
+
+        // Solo el estudiante dueño del intento puede regenerar
+        if ($attempt->student_user_id !== $user->id) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
+
+        // Debe estar enviado
+        if (!$attempt->submitted_at) {
+            return response()->json(['message' => 'El intento aún no ha sido enviado'], 409);
+        }
+
+        // Necesitamos subject_id para guardar recomendaciones
+        $attempt->load(['exam']);
+        $subjectId = $attempt->exam?->subject_id;
+
+        if (!$subjectId) {
+            return response()->json(['message' => 'El examen no tiene materia asociada'], 409);
+        }
+
+        // Límite de regeneraciones (sin cambiar DB):
+        // Supongamos que por “generación” guardamos 4 recomendaciones.
+        // Permitimos 1 generación inicial + 3 regeneraciones = 4 generaciones en total.
+        $PER_GENERATION = 4;
+        $MAX_REGENS = 3;
+
+        $totalExisting = AiRecommendation::where('student_user_id', $user->id)
+            ->where('exam_id', $attempt->exam_id)
+            ->where('subject_id', $subjectId)
+            ->count();
+
+        $generationsSoFar = (int) ceil($totalExisting / $PER_GENERATION); // 1..n
+        $allowedGenerations = 1 + $MAX_REGENS;
+
+        if ($generationsSoFar >= $allowedGenerations) {
+            return response()->json([
+                'message' => 'Límite de regeneraciones alcanzado para este intento',
+            ], 429);
+        }
+
+        // Generar y guardar nuevas recomendaciones
+        $created = $aiService->regenerateForAttempt($attempt, $user->id);
+
+        return response()->json([
+            'data' => $created,
+        ], 201);
     }
 }
