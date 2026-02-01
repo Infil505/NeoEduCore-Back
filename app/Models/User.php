@@ -7,10 +7,11 @@ use App\Enums\UserType;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    use HasFactory, HasUuids;
+    use HasApiTokens, HasFactory, HasUuids;
 
     protected $table = 'users';
 
@@ -28,6 +29,7 @@ class User extends Authenticatable
 
     protected $hidden = [
         'password_hash',
+        'remember_token', // por si Laravel lo busca en algún punto
     ];
 
     protected $casts = [
@@ -69,6 +71,6 @@ class User extends Authenticatable
      */
     public function getAuthPassword(): string
     {
-        return $this->password_hash;
+        return (string) $this->password_hash;
     }
 }

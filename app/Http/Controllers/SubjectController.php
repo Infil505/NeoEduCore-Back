@@ -12,7 +12,17 @@ class SubjectController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Subject::query()->orderBy('name');
+        $user = $request->user();
+
+        if (!$user || !$user->institution_id) {
+            return response()->json([
+                'message' => 'Usuario sin institución asignada.',
+            ], 409);
+        }
+
+        $query = Subject::query()
+            ->where('institution_id', $user->institution_id)
+            ->orderBy('name');
 
         return response()->json([
             'data' => $query->paginate(20),
@@ -20,16 +30,29 @@ class SubjectController extends Controller
     }
 
     /**
-     * Crear materia
+     * Crear materia (tenant scoped)
+     * - institution_id sale del usuario autenticado
      */
     public function store(Request $request)
     {
+        $user = $request->user();
+
+        if (!$user || !$user->institution_id) {
+            return response()->json([
+                'message' => 'Usuario sin institución asignada.',
+            ], 409);
+        }
+
         $data = $request->validate([
             'name' => ['required', 'string', 'min:2', 'max:120'],
         ]);
 
+        // Evitar duplicados por institución (si en DB tienes UNIQUE(institution_id, name))
+        $name = trim($data['name']);
+
         $subject = Subject::create([
-            'name' => trim($data['name']),
+            'institution_id' => $user->institution_id, // ✅ CLAVE
+            'name' => $name,
         ]);
 
         return response()->json([
@@ -38,20 +61,48 @@ class SubjectController extends Controller
     }
 
     /**
-     * Ver materia
+     * Ver materia (tenant scoped)
      */
-    public function show(Subject $subject)
+    public function show(Request $request, Subject $subject)
     {
+        $user = $request->user();
+
+        if (!$user || !$user->institution_id) {
+            return response()->json([
+                'message' => 'Usuario sin institución asignada.',
+            ], 409);
+        }
+
+        if ($subject->institution_id !== $user->institution_id) {
+            return response()->json([
+                'message' => 'No autorizado para ver esta materia.',
+            ], 403);
+        }
+
         return response()->json([
-            'data' => $subject->load('institution'),
+            'data' => $subject,
         ]);
     }
 
     /**
-     * Actualizar materia
+     * Actualizar materia (tenant scoped)
      */
     public function update(Request $request, Subject $subject)
     {
+        $user = $request->user();
+
+        if (!$user || !$user->institution_id) {
+            return response()->json([
+                'message' => 'Usuario sin institución asignada.',
+            ], 409);
+        }
+
+        if ($subject->institution_id !== $user->institution_id) {
+            return response()->json([
+                'message' => 'No autorizado para modificar esta materia.',
+            ], 403);
+        }
+
         $data = $request->validate([
             'name' => ['required', 'string', 'min:2', 'max:120'],
         ]);
@@ -65,11 +116,25 @@ class SubjectController extends Controller
     }
 
     /**
-     * Eliminar materia
+     * Eliminar materia (tenant scoped)
      * - recomendado: si tiene exámenes asociados, bloquear
      */
-    public function destroy(Subject $subject)
+    public function destroy(Request $request, Subject $subject)
     {
+        $user = $request->user();
+
+        if (!$user || !$user->institution_id) {
+            return response()->json([
+                'message' => 'Usuario sin institución asignada.',
+            ], 409);
+        }
+
+        if ($subject->institution_id !== $user->institution_id) {
+            return response()->json([
+                'message' => 'No autorizado para eliminar esta materia.',
+            ], 403);
+        }
+
         if ($subject->exams()->count() > 0) {
             return response()->json([
                 'message' => 'No se puede eliminar una materia con exámenes asociados',
