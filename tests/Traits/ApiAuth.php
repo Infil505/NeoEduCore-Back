@@ -2,8 +2,8 @@
 
 namespace Tests\Traits;
 
-use App\Models\User;
-use App\Models\Institution;
+use App\Models\Admin\User;
+use App\Models\Admin\Institution;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\Sanctum;
 

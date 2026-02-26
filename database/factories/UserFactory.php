@@ -2,13 +2,13 @@
 
 namespace Database\Factories;
 
-use App\Models\Institution;
+use App\Models\Admin\Institution;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 
 class UserFactory extends Factory
 {
-    protected $model = \App\Models\User::class;
+    protected $model = \App\Models\Admin\User::class;
 
     public function definition(): array
     {

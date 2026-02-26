@@ -2,23 +2,23 @@
 
 use Illuminate\Support\Facades\Route;
 
-use App\Http\Controllers\AiController;
+use App\Http\Controllers\AI\AiController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
-use App\Http\Controllers\StudentController;
-use App\Http\Controllers\GroupController;
-use App\Http\Controllers\SubjectController;
-use App\Http\Controllers\ExamController;
-use App\Http\Controllers\QuestionController;
-use App\Http\Controllers\ExamAttemptController;
-use App\Http\Controllers\StudentAnswerController;
-use App\Http\Controllers\StudentProgressController;
-use App\Http\Controllers\StudyResourceController;
-use App\Http\Controllers\CalendarEventController;
-use App\Http\Controllers\AiRecommendationController;
-use App\Http\Controllers\UserController;
-use App\Http\Controllers\InstitutionController;
-use App\Http\Controllers\ReportController;
+use App\Http\Controllers\Students\StudentController;
+use App\Http\Controllers\Academic\GroupController;
+use App\Http\Controllers\Academic\SubjectController;
+use App\Http\Controllers\Exams\ExamController;
+use App\Http\Controllers\Exams\QuestionController;
+use App\Http\Controllers\Exams\ExamAttemptController;
+use App\Http\Controllers\Students\StudentAnswerController;
+use App\Http\Controllers\Students\StudentProgressController;
+use App\Http\Controllers\Academic\StudyResourceController;
+use App\Http\Controllers\Academic\CalendarEventController;
+use App\Http\Controllers\AI\AiRecommendationController;
+use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\InstitutionController;
+use App\Http\Controllers\Admin\ReportController;
 
 /*
 |--------------------------------------------------------------------------
@@ -84,6 +84,7 @@ Route::middleware('auth:sanctum')->group(function () {
     */
     Route::get('/students', [StudentController::class, 'index']);
     Route::get('/students/me', [StudentController::class, 'me']);
+    Route::post('/students/bulk-upload', [StudentController::class, 'bulkUpload']);
     Route::get('/students/{student_user_id}', [StudentController::class, 'show']);
     Route::put('/students/{student_user_id}', [StudentController::class, 'update']);
     Route::patch('/students/{student_user_id}/status', [StudentController::class, 'setStatus']);
