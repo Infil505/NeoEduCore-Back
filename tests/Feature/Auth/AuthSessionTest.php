@@ -32,9 +32,7 @@ class AuthSessionTest extends TestCase
     public function test_logout_works(): void
     {
         $this->signInTeacher();
-
         $res = $this->postJson('/api/auth/logout');
-
         // Normalmente 200 o 204 (según tu implementación)
         $this->assertTrue(
             in_array($res->status(), [200, 204]),

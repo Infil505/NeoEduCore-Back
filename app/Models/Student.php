@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\StudentStatus;
+use App\Enums\AdecuacionType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -45,6 +46,8 @@ class Student extends Model
 
         // RN-USER-013 (si decides guardarlo aquí)
         'group_code',
+        // Tipo de adecuación (si aplica)
+        'adecuacion_type',
     ];
 
     protected $casts = [
@@ -56,6 +59,7 @@ class Student extends Model
         'last_activity_at'      => 'datetime',
         'exams_completed_count' => 'integer',
         'overall_average'       => 'decimal:2',
+        'adecuacion_type'       => AdecuacionType::class,
     ];
 
     /* =========================
@@ -86,5 +90,38 @@ class Student extends Model
     public function progress()
     {
         return $this->hasMany(StudentProgress::class, 'student_user_id', 'user_id');
+    }
+
+    /**
+     * Determina si el estudiante tiene alguna adecuación registrada.
+     */
+    public function hasAdecuacion(): bool
+    {
+        return ! is_null($this->adecuacion_type);
+    }
+
+    /**
+     * Comprueba si el estudiante es de un tipo de adecuación específico.
+     * Acepta tanto la instancia de `AdecuacionType` como su valor string.
+     */
+    public function isAdecuacion(AdecuacionType|string $type): bool
+    {
+        $value = $type instanceof AdecuacionType ? $type->value : $type;
+        return $this->adecuacion_type?->value === $value;
+    }
+
+    public function isAdecuacionAcceso(): bool
+    {
+        return $this->isAdecuacion(AdecuacionType::Acceso);
+    }
+
+    public function isAdecuacionContenido(): bool
+    {
+        return $this->isAdecuacion(AdecuacionType::Contenido);
+    }
+
+    public function isAdecuacionEvaluacion(): bool
+    {
+        return $this->isAdecuacion(AdecuacionType::Evaluacion);
     }
 }
