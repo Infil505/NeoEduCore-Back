@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 
 class StudentFactory extends Factory
 {
-    protected $model = \App\Models\Student::class;
+    protected $model = \App\Models\Admin\User::class;
 
     public function definition(): array
     {
