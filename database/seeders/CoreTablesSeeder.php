@@ -114,22 +114,30 @@ class CoreTablesSeeder extends Seeder
         ]);
 
         // 5. Matricular estudiantes en grupos
-        foreach ($studentUsers as $studentUser) {
+        $adecuacionTypes = [\App\Enums\AdecuacionType::Acceso, \App\Enums\AdecuacionType::Contenido, null, null, \App\Enums\AdecuacionType::Evaluacion];
+        
+        foreach ($studentUsers as $index => $studentUser) {
             Student::create([
                 'user_id' => $studentUser->id,
                 'institution_id' => $institution->id,
                 'student_code' => 'EST-' . substr($studentUser->id, 0, 8),
                 'grade' => 10,
                 'section' => 'A',
+                'year' => 2026,
+                'group_code' => '10A2026',
                 'status' => StudentStatus::Active,
-                'enrolled_at' => now(),
+                'enrolled_at' => now()->subDays(rand(30, 180)),
+                'last_activity_at' => now()->subHours(rand(1, 48)),
+                'exams_completed_count' => rand(0, 5),
+                'overall_average' => rand(50, 100) + rand(0, 99) / 100,
                 'birth_date' => now()->subYears(15)->subDays(rand(0, 365)),
-                'parent_name' => 'Acudiente Test',
-                'parent_email' => "acudiente{$studentUser->id}@mail.com",
+                'parent_name' => 'Acudiente ' . $studentUser->full_name,
+                'parent_email' => 'parent' . ($index + 1) . '@mail.com',
+                'adecuacion_type' => $adecuacionTypes[$index] ?? null,
             ]);
 
             $group10a->students()->attach($studentUser->id, [
-                'joined_at' => now(),
+                'joined_at' => now()->subDays(rand(30, 180)),
             ]);
         }
 
