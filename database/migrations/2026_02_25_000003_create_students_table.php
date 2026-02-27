@@ -16,6 +16,7 @@ return new class extends Migration
 
             $table->integer('grade')->nullable();
             $table->string('section')->nullable();
+            $table->integer('year')->nullable();
 
             $table->enum('status', ['active','inactive'])->default('active');
             $table->timestamp('enrolled_at')->nullable();
@@ -28,7 +29,7 @@ return new class extends Migration
             $table->string('parent_email')->nullable();
 
             $table->string('group_code')->nullable();
-            $table->enum('adecuacion_type', ['Acceso','Contenido','Evaluacion'])->nullable();
+            $table->enum('adecuacion_type', ['acceso','contenido','evaluacion'])->nullable();
 
             $table->timestamps();
 

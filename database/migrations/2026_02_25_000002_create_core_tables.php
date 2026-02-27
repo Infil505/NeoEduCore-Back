@@ -49,6 +49,7 @@ return new class extends Migration
         Schema::create('groups', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->uuid('institution_id');
+            $table->string('name');
             $table->integer('grade');
             $table->string('section')->nullable();
             $table->string('year')->nullable();
@@ -111,6 +112,24 @@ return new class extends Migration
             $table->foreign('question_id')->references('id')->on('questions');
         });
 
+        // exam attempts (DEBE ir ANTES que student_answers)
+        Schema::create('exam_attempts', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->uuid('institution_id');
+            $table->uuid('exam_id');
+            $table->uuid('student_user_id');
+            $table->integer('attempt_number')->default(1);
+            $table->timestamp('started_at')->nullable();
+            $table->timestamp('submitted_at')->nullable();
+            $table->decimal('score', 5, 2)->default(0);
+            $table->decimal('max_score', 5, 2)->default(0);
+            $table->enum('grade_status', ['pending','graded','completed'])->default('pending');
+            $table->timestamps();
+
+            $table->foreign('exam_id')->references('id')->on('exams');
+            $table->foreign('student_user_id')->references('id')->on('users');
+        });
+
         // student answers
         Schema::create('student_answers', function (Blueprint $table) {
             $table->uuid('id')->primary();
@@ -128,24 +147,6 @@ return new class extends Migration
 
             $table->foreign('attempt_id')->references('id')->on('exam_attempts');
             $table->foreign('question_id')->references('id')->on('questions');
-        });
-
-        // exam attempts
-        Schema::create('exam_attempts', function (Blueprint $table) {
-            $table->uuid('id')->primary();
-            $table->uuid('institution_id');
-            $table->uuid('exam_id');
-            $table->uuid('student_user_id');
-            $table->integer('attempt_number')->default(1);
-            $table->timestamp('started_at')->nullable();
-            $table->timestamp('submitted_at')->nullable();
-            $table->decimal('score', 5, 2)->default(0);
-            $table->decimal('max_score', 5, 2)->default(0);
-            $table->enum('grade_status', ['pending','graded','completed'])->default('pending');
-            $table->timestamps();
-
-            $table->foreign('exam_id')->references('id')->on('exams');
-            $table->foreign('student_user_id')->references('id')->on('users');
         });
 
         // student progress
@@ -184,8 +185,8 @@ return new class extends Migration
     {
         Schema::dropIfExists('ai_recommendations');
         Schema::dropIfExists('student_progress');
-        Schema::dropIfExists('exam_attempts');
         Schema::dropIfExists('student_answers');
+        Schema::dropIfExists('exam_attempts');
         Schema::dropIfExists('question_options');
         Schema::dropIfExists('questions');
         Schema::dropIfExists('exams');

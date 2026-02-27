@@ -1,0 +1,372 @@
+<?xml version="1.0" encoding="UTF-8"?>
+        <mxfile host="codeviz.app" modified="2026-02-27T01:24:57.982Z" agent="CodeViz Exporter" version="14.6.5" type="device">
+          <diagram id="codeviz-diagram" name="System Diagram">
+            <mxGraphModel dx="1000" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+              <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="base.cv::neoeducore_db_main" value="" style="html=1;whiteSpace=wrap;container=1;fillColor=#dae8fc;strokeColor=#6c8ebf;dashed=1;fillOpacity=20;strokeWidth=2;containerType=none;recursiveResize=0;movable=1;resizable=1;autosize=0;dropTarget=0" vertex="1" parent="base.cv::neoeducore_db">
+                  <mxGeometry x="1258.75" y="-1066" width="6012" height="397" as="geometry"/>
+                </mxCell>
+                <mxCell id="base.cv::neoeducore_db_main_label" value="**Base de Datos Principal**" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;labelBackgroundColor=white;spacing=5" vertex="1" parent="base.cv::neoeducore_db">
+                  <mxGeometry x="1266.75" y="-1058" width="5936" height="24" as="geometry"/>
+                </mxCell>
+<mxCell id="base.cv::neoeducore_web_app" value="" style="html=1;whiteSpace=wrap;container=1;fillColor=#dae8fc;strokeColor=#6c8ebf;dashed=1;fillOpacity=20;strokeWidth=2;containerType=none;recursiveResize=0;movable=1;resizable=1;autosize=0;dropTarget=0" vertex="1" parent="base.cv::neoeducore">
+                  <mxGeometry x="714" y="-17" width="2616" height="943" as="geometry"/>
+                </mxCell>
+                <mxCell id="base.cv::neoeducore_web_app_label" value="**Aplicación Web NeoEduCore**" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;labelBackgroundColor=white;spacing=5" vertex="1" parent="base.cv::neoeducore">
+                  <mxGeometry x="722" y="-9" width="2540" height="24" as="geometry"/>
+                </mxCell>
+<mxCell id="base.cv::neoeducore_queue_worker" value="" style="html=1;whiteSpace=wrap;container=1;fillColor=#dae8fc;strokeColor=#6c8ebf;dashed=1;fillOpacity=20;strokeWidth=2;containerType=none;recursiveResize=0;movable=1;resizable=1;autosize=0;dropTarget=0" vertex="1" parent="base.cv::neoeducore">
+                  <mxGeometry x="40" y="93" width="714" height="723" as="geometry"/>
+                </mxCell>
+                <mxCell id="base.cv::neoeducore_queue_worker_label" value="**Procesador de Colas NeoEduCore**" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;labelBackgroundColor=white;spacing=5" vertex="1" parent="base.cv::neoeducore">
+                  <mxGeometry x="48" y="101" width="638" height="24" as="geometry"/>
+                </mxCell>
+<mxCell id="base.cv::neoeducore_db" value="" style="html=1;whiteSpace=wrap;container=1;fillColor=#dae8fc;strokeColor=#6c8ebf;dashed=1;fillOpacity=20;strokeWidth=2;containerType=none;recursiveResize=0;movable=1;resizable=1;autosize=0;dropTarget=0" vertex="1" parent="__uml__base.cv">
+                  <mxGeometry x="1586.8083515238354" y="1427.5624674067765" width="6052" height="556" as="geometry"/>
+                </mxCell>
+                <mxCell id="base.cv::neoeducore_db_label" value="**Base de Datos NeoEduCore**" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;labelBackgroundColor=white;spacing=5" vertex="1" parent="__uml__base.cv">
+                  <mxGeometry x="1594.8083515238354" y="1435.5624674067765" width="5976" height="24" as="geometry"/>
+                </mxCell>
+<mxCell id="base.cv::neoeducore" value="" style="html=1;whiteSpace=wrap;container=1;fillColor=#dae8fc;strokeColor=#6c8ebf;dashed=1;fillOpacity=20;strokeWidth=2;containerType=none;recursiveResize=0;movable=1;resizable=1;autosize=0;dropTarget=0" vertex="1" parent="__uml__base.cv">
+                  <mxGeometry x="368.0583515238354" y="354.5624674067765" width="3330" height="1078" as="geometry"/>
+                </mxCell>
+                <mxCell id="base.cv::neoeducore_label" value="**Aplicación NeoEduCore**" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;labelBackgroundColor=white;spacing=5" vertex="1" parent="__uml__base.cv">
+                  <mxGeometry x="376.0583515238354" y="362.5624674067765" width="3254" height="24" as="geometry"/>
+                </mxCell>
+<mxCell id="__uml__base.cv" value="" style="html=1;whiteSpace=wrap;container=1;fillColor=#dae8fc;strokeColor=#6c8ebf;dashed=1;fillOpacity=20;strokeWidth=2;containerType=none;recursiveResize=0;movable=1;resizable=1;autosize=0;dropTarget=0" vertex="1" parent="1">
+                  <mxGeometry x="348.0583515238354" y="-222.56246740677648" width="7311" height="1781" as="geometry"/>
+                </mxCell>
+                <mxCell id="__uml__base.cv_label" value="base.cv" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;labelBackgroundColor=white;spacing=5" vertex="1" parent="1">
+                  <mxGeometry x="356.0583515238354" y="-214.56246740677648" width="7235" height="24" as="geometry"/>
+                </mxCell>
+                <mxCell id="base.cv::personal_access_tokens_table" value="**Tabla de Tokens de Acceso Personal**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="3642" y="155" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::password_reset_tokens_table" value="**Tabla de Tokens de Restablecimiento de Contraseña**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="4557" y="155" width="376" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::institutions_table" value="**Tabla de Instituciones**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="605" y="155" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::users_table" value="**Tabla de Usuarios**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="323" y="167" width="262" height="72" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::subjects_table" value="**Tabla de Asignaturas**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="2171" y="167" width="246" height="72" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::groups_table" value="**Tabla de Grupos**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="20" y="167" width="283" height="72" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::exams_table" value="**Tabla de Exámenes**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="3959" y="167" width="261" height="72" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::questions_table" value="**Tabla de Preguntas**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="3388" y="167" width="234" height="72" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::question_options_table" value="**Tabla de Opciones de Pregunta**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="4240" y="155" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::student_answers_table" value="**Tabla de Respuestas de Estudiantes**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="922" y="155" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::exam_attempts_table" value="**Tabla de Intentos de Examen**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="1556" y="155" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::student_progress_table" value="**Tabla de Progreso de Estudiantes**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="3071" y="155" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::ai_recommendations_table" value="**Tabla de Recomendaciones de IA**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="5318" y="155" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::students_table" value="**Tabla de Estudiantes**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="2437" y="155" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::calendar_events_table" value="**Tabla de Eventos del Calendario**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="5635" y="155" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::group_students_table" value="**Tabla de Estudiantes por Grupo**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="2754" y="155" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::exam_targets_table" value="**Tabla de Destinos de Examen**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="1239" y="155" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::study_resources_table" value="**Tabla de Recursos de Estudio**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="1873" y="167" width="278" height="72" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::student_answer_options_table" value="**Tabla de Opciones de Respuesta de Estudiantes**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_db_main">
+                      <mxGeometry x="4953" y="155" width="345" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_web_app_router" value="**Enrutador**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_web_app">
+                      <mxGeometry x="1129.5" y="155" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_web_app_middleware" value="**Middleware**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_web_app">
+                      <mxGeometry x="1129.5" y="291" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_web_app_orm" value="**ORM Eloquent / Acceso a Datos**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_web_app">
+                      <mxGeometry x="1129.5" y="783" width="297" height="120" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_web_app_business_logic" value="**Capa de Lógica de Negocio**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_web_app">
+                      <mxGeometry x="1129.5" y="647" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_web_app_auth_controller" value="**Controlador de Autenticación**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_web_app">
+                      <mxGeometry x="337" y="469" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_web_app_forgot_password_controller" value="**Controlador de Olvido de Contraseña**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_web_app">
+                      <mxGeometry x="654" y="469" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_web_app_academic_controllers" value="**Controladores Académicos**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_web_app">
+                      <mxGeometry x="971" y="457" width="297" height="120" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_web_app_admin_controllers" value="**Controladores de Administración**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_web_app">
+                      <mxGeometry x="1288" y="469" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_web_app_ai_controllers" value="**Controladores de IA**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_web_app">
+                      <mxGeometry x="1605" y="469" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_web_app_exam_controllers" value="**Controladores de Exámenes**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_web_app">
+                      <mxGeometry x="1922" y="457" width="297" height="120" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_web_app_student_controllers" value="**Controladores de Estudiantes**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_web_app">
+                      <mxGeometry x="2239" y="457" width="297" height="120" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_web_app_name_controller" value="**Controlador Genérico**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_web_app">
+                      <mxGeometry x="20" y="469" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_queue_worker_processor" value="**Procesador de Colas**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_queue_worker">
+                      <mxGeometry x="203" y="155" width="248" height="72" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_queue_worker_jobs" value="**Trabajos en Cola**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_queue_worker">
+                      <mxGeometry x="178.5" y="267" width="297" height="120" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_queue_worker_listeners" value="**Escuchadores de Eventos**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_queue_worker">
+                      <mxGeometry x="20" y="575" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_queue_worker_orm" value="**ORM Eloquent / Acceso a Datos**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_queue_worker">
+                      <mxGeometry x="337" y="563" width="297" height="120" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::neoeducore_queue_worker_business_logic" value="**Capa de Lógica de Negocio**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="base.cv::neoeducore_queue_worker">
+                      <mxGeometry x="178.5" y="427" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::end_user" value="**Usuario Final**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="__uml__base.cv">
+                      <mxGeometry x="1509.5" y="60" width="291" height="72" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::openai" value="**OpenAI**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="__uml__base.cv">
+                      <mxGeometry x="921.75" y="1442.5" width="297" height="96" as="geometry"/>
+                    </mxCell>
+<mxCell id="base.cv::email_service" value="**Servicio de Correo Electrónico**" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5" vertex="1" parent="__uml__base.cv">
+                      <mxGeometry x="604.75" y="1430.5" width="297" height="120" as="geometry"/>
+                    </mxCell>
+                <mxCell id="edge-base.cv::e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_queue_worker_processor" target="base.cv::neoeducore_queue_worker_jobs">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e1_label" value="Recupera y ejecuta" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e1">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_queue_worker_jobs" target="base.cv::neoeducore_queue_worker_business_logic">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e2_label" value="Ejecuta" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e2">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_queue_worker_business_logic" target="base.cv::neoeducore_queue_worker_listeners">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e3_label" value="Dispara eventos para" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e3">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_queue_worker_business_logic" target="base.cv::neoeducore_queue_worker_orm">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e4_label" value="Utiliza" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e4">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_router" target="base.cv::neoeducore_web_app_middleware">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e8_label" value="Redirige solicitudes a través de" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e8">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_middleware" target="base.cv::neoeducore_web_app_auth_controller">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e9_label" value="Redirige solicitudes a" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e9">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_middleware" target="base.cv::neoeducore_web_app_forgot_password_controller">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e10_label" value="Redirige solicitudes a" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e10">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e11" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_middleware" target="base.cv::neoeducore_web_app_academic_controllers">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e11_label" value="Redirige solicitudes a" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e11">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_middleware" target="base.cv::neoeducore_web_app_admin_controllers">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e12_label" value="Redirige solicitudes a" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e12">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e13" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_middleware" target="base.cv::neoeducore_web_app_ai_controllers">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e13_label" value="Redirige solicitudes a" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e13">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e14" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_middleware" target="base.cv::neoeducore_web_app_exam_controllers">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e14_label" value="Redirige solicitudes a" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e14">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e15" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_middleware" target="base.cv::neoeducore_web_app_student_controllers">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e15_label" value="Redirige solicitudes a" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e15">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e16" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_middleware" target="base.cv::neoeducore_web_app_name_controller">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e16_label" value="Redirige solicitudes a" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e16">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e17" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_auth_controller" target="base.cv::neoeducore_web_app_business_logic">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e17_label" value="Utiliza" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e17">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e18" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_forgot_password_controller" target="base.cv::neoeducore_web_app_business_logic">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e18_label" value="Utiliza" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e18">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e19" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_academic_controllers" target="base.cv::neoeducore_web_app_business_logic">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e19_label" value="Utiliza" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e19">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e20" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_admin_controllers" target="base.cv::neoeducore_web_app_business_logic">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e20_label" value="Utiliza" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e20">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e21" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_ai_controllers" target="base.cv::neoeducore_web_app_business_logic">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e21_label" value="Utiliza" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e21">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e22" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_exam_controllers" target="base.cv::neoeducore_web_app_business_logic">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e22_label" value="Utiliza" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e22">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e23" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_student_controllers" target="base.cv::neoeducore_web_app_business_logic">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e23_label" value="Utiliza" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e23">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e24" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_name_controller" target="base.cv::neoeducore_web_app_business_logic">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e24_label" value="Utiliza" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e24">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e25" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore_web_app_business_logic" target="base.cv::neoeducore_web_app_orm">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e25_label" value="Utiliza" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e25">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e29" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::end_user" target="base.cv::neoeducore">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e29_label" value="Utiliza" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e29">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e30" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore" target="base.cv::neoeducore_db_main">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e30_label" value="Lee y escribe en" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e30">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e31" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore" target="base.cv::openai">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e31_label" value="Utiliza" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e31">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+<mxCell id="edge-base.cv::e32" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#808080;strokeWidth=2;jumpStyle=arc;jumpSize=10;spacing=15;labelBackgroundColor=white;labelBorderColor=none" edge="1" parent="1" source="base.cv::neoeducore" target="base.cv::email_service">
+                    <mxGeometry relative="1" as="geometry"/>
+                  </mxCell>
+                  <mxCell id="edge-base.cv::e32_label" value="Envía notificaciones a través de" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="edge-base.cv::e32">
+                    <mxGeometry x="-0.2" y="10" relative="1" as="geometry">
+                      <mxPoint as="offset"/>
+                    </mxGeometry>
+                  </mxCell>
+              </root>
+            </mxGraphModel>
+          </diagram>
+        </mxfile>

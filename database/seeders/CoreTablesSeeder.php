@@ -21,6 +21,7 @@ use App\Enums\UserStatus;
 use App\Enums\ExamStatus;
 use App\Enums\StudentStatus;
 use App\Enums\QuestionType;
+use Illuminate\Support\Facades\DB;
 
 class CoreTablesSeeder extends Seeder
 {
@@ -136,7 +137,12 @@ class CoreTablesSeeder extends Seeder
                 'adecuacion_type' => $adecuacionTypes[$index] ?? null,
             ]);
 
-            $group10a->students()->attach($studentUser->id, [
+            // Insert into group_students pivot table
+            DB::table('group_students')->insert([
+                'id' => Str::uuid(),
+                'institution_id' => $institution->id,
+                'group_id' => $group10a->id,
+                'student_user_id' => $studentUser->id,
                 'joined_at' => now()->subDays(rand(30, 180)),
             ]);
         }
@@ -157,8 +163,11 @@ class CoreTablesSeeder extends Seeder
         ]);
 
         // Asociar grupo al examen
-        $exam1->groups()->attach($group10a->id, [
+        DB::table('exam_targets')->insert([
+            'id' => Str::uuid(),
             'institution_id' => $institution->id,
+            'exam_id' => $exam1->id,
+            'group_id' => $group10a->id,
         ]);
 
         // 7. Crear preguntas
@@ -233,8 +242,8 @@ class CoreTablesSeeder extends Seeder
             'institution_id' => $institution->id,
             'title' => 'Ecuaciones Lineales Avanzadas',
             'description' => 'Guía completa sobre ecuaciones lineales',
-            'resource_type' => 'article',
-            'url' => 'https://example.com/guide',
+            'resource_type' => 'pdf',
+            'url' => 'https://example.com/guide.pdf',
             'estimated_duration' => 45,
             'difficulty' => 'intermediate',
             'grade_min' => 10,
@@ -247,7 +256,7 @@ class CoreTablesSeeder extends Seeder
             'institution_id' => $institution->id,
             'title' => 'Ejercicios de Práctica - Álgebra',
             'description' => 'Colección de ejercicios prácticos resueltos',
-            'resource_type' => 'exercise',
+            'resource_type' => 'link',
             'url' => 'https://example.com/exercises',
             'estimated_duration' => 60,
             'difficulty' => 'advanced',
