@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 class InstitutionFactory extends Factory
 {
     // Si ya tenés el modelo, cambia la clase:
-    protected $model = \App\Models\Institution::class;
+    protected $model = \App\Models\Admin\Institution::class;
 
     public function definition(): array
     {
