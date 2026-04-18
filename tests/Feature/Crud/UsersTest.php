@@ -92,7 +92,8 @@ class UsersTest extends TestCase
         ]);
 
         $res = $this->patchJson("/api/users/{$teacher->id}/reset-password", [
-            'new_password' => 'NewPassword123!',
+            'password'              => 'NewPassword123!',
+            'password_confirmation' => 'NewPassword123!',
         ]);
 
         $res->assertOk();

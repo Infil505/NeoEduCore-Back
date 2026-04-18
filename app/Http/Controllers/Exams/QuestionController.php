@@ -46,7 +46,7 @@ class QuestionController extends Controller
 
             // Para opciones (MC/TF)
             'options' => ['nullable', 'array'],
-            'options.*.option_index' => ['required_with:options', 'integer'],
+            'options.*.option_index' => ['nullable', 'integer'],
             'options.*.option_text' => ['required_with:options', 'string', 'max:500'],
             'options.*.is_correct' => ['required_with:options', 'boolean'],
         ]);
@@ -108,12 +108,12 @@ class QuestionController extends Controller
 
             // Crear opciones si aplica
             if (!empty($data['options'])) {
-                foreach ($data['options'] as $opt) {
+                foreach ($data['options'] as $idx => $opt) {
                     QuestionOption::create([
                         'question_id' => $question->id,
-                        'option_index' => (int) $opt['option_index'],
-                        'option_text' => $opt['option_text'],
-                        'is_correct' => (bool) $opt['is_correct'],
+                        'option_index' => isset($opt['option_index']) ? (int) $opt['option_index'] : $idx,
+                        'option_text'  => $opt['option_text'],
+                        'is_correct'   => (bool) $opt['is_correct'],
                     ]);
                 }
             }
@@ -127,13 +127,8 @@ class QuestionController extends Controller
     /**
      * Actualizar pregunta + opciones
      */
-    public function update(Request $request, Exam $exam, Question $question)
+    public function update(Request $request, Question $question)
     {
-        // Asegurar que la pregunta pertenece al examen (extra seguro)
-        if ($question->exam_id !== $exam->id) {
-            return response()->json(['message' => 'Pregunta no pertenece a este examen'], 404);
-        }
-
         $data = $request->validate([
             'question_text' => ['sometimes', 'string', 'min:3', 'max:2000'],
             'points' => ['sometimes', 'integer', 'between:1,10'],
@@ -209,11 +204,9 @@ class QuestionController extends Controller
     /**
      * Eliminar pregunta (no permitir eliminar la última)
      */
-    public function destroy(Exam $exam, Question $question)
+    public function destroy(Question $question)
     {
-        if ($question->exam_id !== $exam->id) {
-            return response()->json(['message' => 'Pregunta no pertenece a este examen'], 404);
-        }
+        $exam = $question->exam;
 
         if ($exam->questions()->count() <= 1) {
             return response()->json([
@@ -224,6 +217,6 @@ class QuestionController extends Controller
         $question->options()->delete();
         $question->delete();
 
-        return response()->json(['message' => 'Pregunta eliminada']);
+        return response()->noContent();
     }
 }

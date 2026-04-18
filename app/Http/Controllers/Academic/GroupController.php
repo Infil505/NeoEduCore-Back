@@ -126,7 +126,7 @@ class GroupController extends Controller
 
         $group->delete();
 
-        return response()->json(['message' => 'Grupo eliminado']);
+        return response()->noContent();
     }
 
     /**

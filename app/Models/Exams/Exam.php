@@ -86,8 +86,7 @@ class Exam extends Model
             'exam_targets',
             'exam_id',
             'group_id'
-        )->withPivot(['institution_id'])
-         ->withTimestamps(false);
+        )->withPivot(['institution_id']);
     }
 
     public function questions()

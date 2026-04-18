@@ -144,8 +144,6 @@ class SubjectController extends Controller
 
         $subject->delete();
 
-        return response()->json([
-            'message' => 'Materia eliminada',
-        ]);
+        return response()->noContent();
     }
 }

@@ -95,7 +95,7 @@ class GroupsCrudTest extends TestCase
         $res = $this->deleteJson("/api/groups/{$group->id}");
 
         $res->assertNoContent();
-        $this->assertSoftDeleted('groups', [
+        $this->assertDatabaseMissing('groups', [
             'id' => $group->id,
         ]);
     }

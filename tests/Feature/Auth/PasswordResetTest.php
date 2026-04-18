@@ -42,7 +42,7 @@ class PasswordResetTest extends TestCase
         $token = \Illuminate\Support\Str::random(64);
         DB::table('password_reset_tokens')->insert([
             'email' => $user->email,
-            'token' => hash('sha256', $token),
+            'token' => Hash::make($token),
             'created_at' => now(),
         ]);
 
@@ -65,7 +65,7 @@ class PasswordResetTest extends TestCase
         $token = \Illuminate\Support\Str::random(64);
         DB::table('password_reset_tokens')->insert([
             'email' => $user->email,
-            'token' => hash('sha256', $token),
+            'token' => Hash::make($token),
             'created_at' => now(),
         ]);
 

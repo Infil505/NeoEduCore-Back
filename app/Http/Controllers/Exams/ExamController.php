@@ -211,8 +211,6 @@ class ExamController extends Controller
 
         $exam->delete();
 
-        return response()->json([
-            'message' => 'Examen eliminado',
-        ]);
+        return response()->noContent();
     }
 }

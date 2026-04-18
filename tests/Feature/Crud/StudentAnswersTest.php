@@ -3,6 +3,7 @@
 namespace Tests\Feature\Crud;
 
 use App\Models\Exams\ExamAttempt;
+use App\Models\Exams\Question;
 use App\Models\Students\StudentAnswer;
 use App\Models\Admin\User;
 use App\Models\Admin\Institution;
@@ -38,9 +39,15 @@ class StudentAnswersTest extends TestCase
             'student_user_id' => $studentUser->id,
         ]);
 
+        $question = Question::factory()->create([
+            'institution_id' => $institution->id,
+            'exam_id' => $exam->id,
+        ]);
+
         StudentAnswer::factory()->create([
             'institution_id' => $institution->id,
             'attempt_id' => $attempt->id,
+            'question_id' => $question->id,
         ]);
 
         $res = $this->getJson("/api/exam-attempts/{$attempt->id}/answers");
@@ -72,14 +79,21 @@ class StudentAnswersTest extends TestCase
             'student_user_id' => $studentUser->id,
         ]);
 
+        $question = Question::factory()->shortAnswer()->create([
+            'institution_id' => $institution->id,
+            'exam_id' => $exam->id,
+            'points' => 5,
+        ]);
+
         $answer = StudentAnswer::factory()->create([
             'institution_id' => $institution->id,
             'attempt_id' => $attempt->id,
+            'question_id' => $question->id,
         ]);
 
         $res = $this->patchJson("/api/student-answers/{$answer->id}/review", [
             'is_correct' => true,
-            'feedback' => 'Respuesta correcta',
+            'explanation' => 'Respuesta correcta',
             'points_awarded' => 5,
         ]);
 

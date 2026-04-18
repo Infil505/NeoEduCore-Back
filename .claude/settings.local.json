@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk 'BEGIN {RS=\"[Oo][Bb][Jj][Ee][Tt][Ii][Vv][Oo]|[Rr][Ee][Qq][Uu][Ee][Rr][Ii][Mm][Ii][Ee][Nn][Tt][Oo]|[Ee][Nn][Tt][Rr][Ee][Gg][Aa][Bb][Ll][Ee]|[Cc][Rr][Ii][Tt][Ee][Rr][Ii][Oo]|[Ee][Ss][Pp][Ee][Cc][Ii][Ff][Ii][Cc][Aa][Cc][Ii][Oo][Nn]\"} {print NR\": \"$0}' /tmp/extracted_full.txt)",
+      "Bash(xargs -I {} basename {})",
+      "Bash(php artisan *)",
+      "Bash(xargs cat *)",
+      "Bash(xargs grep *)",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}

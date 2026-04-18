@@ -57,8 +57,7 @@ class Group extends Model
             'group_students',
             'group_id',
             'student_user_id'
-        )->withPivot(['joined_at', 'left_at'])
-        ->withTimestamps(false);
+        )->withPivot(['joined_at', 'left_at']);
     }
 
     public function exams()
@@ -68,7 +67,6 @@ class Group extends Model
             'exam_targets',
             'group_id',
             'exam_id'
-        )->withPivot(['institution_id'])
-        ->withTimestamps(false);
+        )->withPivot(['institution_id']);
     }
 }

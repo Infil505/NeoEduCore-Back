@@ -88,7 +88,7 @@ class SubjectsTest extends TestCase
         $res = $this->deleteJson("/api/subjects/{$subject->id}");
 
         $res->assertNoContent();
-        $this->assertSoftDeleted('subjects', [
+        $this->assertDatabaseMissing('subjects', [
             'id' => $subject->id,
         ]);
     }

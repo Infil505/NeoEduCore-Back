@@ -79,6 +79,10 @@ class AiRecommendationsTest extends TestCase
         $studentUser = User::factory()->student()->create([
             'institution_id' => $institution->id,
         ]);
+        Student::factory()->create([
+            'user_id' => $studentUser->id,
+            'institution_id' => $institution->id,
+        ]);
 
         $subject = Subject::factory()->create([
             'institution_id' => $institution->id,
@@ -113,7 +117,7 @@ class AiRecommendationsTest extends TestCase
             'created_by_teacher_id' => $teacher->id,
         ]);
 
-        $attempt = \App\Models\Exams\ExamAttempt::factory()->create([
+        $attempt = \App\Models\Exams\ExamAttempt::factory()->submitted()->create([
             'institution_id' => $institution->id,
             'exam_id' => $exam->id,
             'student_user_id' => $studentUser->id,
@@ -123,6 +127,6 @@ class AiRecommendationsTest extends TestCase
 
         $res = $this->postJson("/api/exam-attempts/{$attempt->id}/recommendations/regenerate");
 
-        $res->assertOk();
+        $res->assertSuccessful();
     }
 }

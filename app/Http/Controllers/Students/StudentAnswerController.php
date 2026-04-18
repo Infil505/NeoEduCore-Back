@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Students;
 
 use App\Http\Controllers\Controller;
+use App\Models\Exams\ExamAttempt;
 use App\Models\Students\StudentAnswer;
 use App\Services\AI\AiRecommendationService;
 use App\Services\Students\StudentProgressService;
@@ -11,6 +12,13 @@ use Illuminate\Support\Facades\DB;
 
 class StudentAnswerController extends Controller
 {
+    public function index(Request $request, ExamAttempt $attempt)
+    {
+        return response()->json([
+            'data' => $attempt->answers()->with('question')->get(),
+        ]);
+    }
+
     /**
      * Revisar/calificar manualmente una respuesta (short_answer)
      * - Solo teacher/admin

@@ -143,8 +143,6 @@ class CalendarEventController extends Controller
     {
         $calendarEvent->delete();
 
-        return response()->json([
-            'message' => 'Evento eliminado',
-        ]);
+        return response()->noContent();
     }
 }

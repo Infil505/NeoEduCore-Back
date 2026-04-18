@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Domain\Auth\PasswordPolicy;
 use App\Http\Controllers\Controller;
 use App\Mail\PasswordResetMail;
 use App\Models\Admin\User;
@@ -169,10 +170,16 @@ class ForgotPasswordController extends Controller
     public function resetPassword(Request $request)
     {
         $data = $request->validate([
-            'email' => ['required', 'email', 'max:120'],
-            'token' => ['required', 'string'],
-            'password' => ['required', 'confirmed', Password::min(8)],
+            'email'    => ['required', 'email', 'max:120'],
+            'token'    => ['required', 'string'],
+            'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()],
         ]);
+
+        if (!(new PasswordPolicy())->isValid($data['password'])) {
+            return response()->json([
+                'message' => 'La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número.',
+            ], 422);
+        }
 
         $email = strtolower($data['email']);
 
@@ -228,8 +235,14 @@ class ForgotPasswordController extends Controller
     {
         $data = $request->validate([
             'current_password' => ['required', 'string'],
-            'password' => ['required', 'confirmed', Password::min(8)],
+            'password'         => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()],
         ]);
+
+        if (!(new PasswordPolicy())->isValid($data['password'])) {
+            return response()->json([
+                'message' => 'La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número.',
+            ], 422);
+        }
 
         $user = $request->user();
 

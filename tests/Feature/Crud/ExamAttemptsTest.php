@@ -4,6 +4,7 @@ namespace Tests\Feature\Crud;
 
 use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
+use App\Models\Exams\Question;
 use App\Models\Admin\User;
 use App\Models\Admin\Institution;
 use App\Models\Students\Student;
@@ -63,6 +64,11 @@ class ExamAttemptsTest extends TestCase
             'created_by_teacher_id' => $teacher->id,
         ]);
 
+        Question::factory()->create([
+            'institution_id' => $institution->id,
+            'exam_id' => $exam->id,
+        ]);
+
         $attempt = ExamAttempt::factory()->create([
             'institution_id' => $institution->id,
             'exam_id' => $exam->id,
@@ -84,6 +90,10 @@ class ExamAttemptsTest extends TestCase
         $teacher = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $studentUser = User::factory()->student()->create([
+            'institution_id' => $institution->id,
+        ]);
+        Student::factory()->create([
+            'user_id' => $studentUser->id,
             'institution_id' => $institution->id,
         ]);
 

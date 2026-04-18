@@ -99,7 +99,7 @@ class ExamAttemptController extends Controller
         }
 
         $data = $request->validate([
-            'answers' => ['required', 'array', 'min:1'],
+            'answers' => ['present', 'array'],
             'answers.*.question_id' => ['required', 'uuid'],
             'answers.*.answer_text' => ['nullable', 'string', 'max:4000'],
             'answers.*.selected_option_ids' => ['nullable', 'array'],

@@ -50,7 +50,7 @@ class StudentsCrudTest extends TestCase
         $res = $this->getJson("/api/students/{$student->user_id}");
 
         $res->assertOk();
-        $this->assertNotNull($res->json('id') ?? $res->json('data.id'));
+        $this->assertNotNull($res->json('data.user_id') ?? $res->json('user_id'));
     }
 
     public function test_update_student(): void

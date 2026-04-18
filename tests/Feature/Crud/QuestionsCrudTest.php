@@ -53,6 +53,7 @@ class QuestionsCrudTest extends TestCase
                 ['option_text' => 'San José', 'is_correct' => true],
                 ['option_text' => 'Limón', 'is_correct' => false],
                 ['option_text' => 'Heredia', 'is_correct' => false],
+                ['option_text' => 'Cartago', 'is_correct' => false],
             ]
         ]);
 
@@ -100,9 +101,16 @@ class QuestionsCrudTest extends TestCase
             'created_by_teacher_id' => $teacher->id,
         ]);
 
+        Question::factory()->create([
+            'institution_id' => $institution->id,
+            'exam_id' => $exam->id,
+            'order_index' => 1,
+        ]);
+
         $question = Question::factory()->create([
             'institution_id' => $institution->id,
             'exam_id' => $exam->id,
+            'order_index' => 2,
         ]);
 
         $res = $this->deleteJson("/api/questions/{$question->id}");

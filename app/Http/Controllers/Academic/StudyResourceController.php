@@ -141,8 +141,6 @@ class StudyResourceController extends Controller
     {
         $studyResource->delete();
 
-        return response()->json([
-            'message' => 'Recurso eliminado',
-        ]);
+        return response()->noContent();
     }
 }

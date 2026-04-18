@@ -18,12 +18,13 @@ class AiRecommendationService
         ?array $resource = null
     ): AiRecommendation {
         return AiRecommendation::create([
-            'student_user_id' => $studentUserId,
-            'subject_id' => $subjectId,
-            'exam_id' => $examId,
-            'type' => $type,
+            'student_user_id'     => $studentUserId,
+            'subject_id'          => $subjectId,
+            'exam_id'             => $examId,
+            'recommendation_type' => $type,
             'recommendation_text' => $text,
-            'resource' => $resource,
+            'resource'            => $resource,
+            'generated_at'        => now(),
         ]);
     }
 

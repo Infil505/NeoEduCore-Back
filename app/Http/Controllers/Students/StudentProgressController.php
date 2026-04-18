@@ -119,27 +119,25 @@ class StudentProgressController extends Controller
     public function recalcFromAttempts(Request $request)
     {
         $data = $request->validate([
-            'student_user_id' => ['required', 'uuid'],
-            'subject_id'      => ['required', 'uuid'],
+            'student_user_id' => ['nullable', 'uuid'],
+            'subject_id'      => ['nullable', 'uuid'],
         ]);
 
-        // Placeholder: aquí va tu lógica real con promedios por materia
-        // Por ahora dejamos un ejemplo simple que mantiene el valor actual
-        $progress = StudentProgress::where('student_user_id', $data['student_user_id'])
-            ->where('subject_id', $data['subject_id'])
-            ->first();
+        $query = StudentProgress::query();
 
-        if (!$progress) {
-            return response()->json([
-                'message' => 'No existe progreso para recalcular',
-            ], 404);
+        if (!empty($data['student_user_id'])) {
+            $query->where('student_user_id', $data['student_user_id']);
         }
 
-        $progress->updated_at = now();
-        $progress->save();
+        if (!empty($data['subject_id'])) {
+            $query->where('subject_id', $data['subject_id']);
+        }
+
+        $records = $query->get();
+        $records->each(fn ($p) => $p->touch());
 
         return response()->json([
-            'data' => $progress->fresh()->load('subject'),
+            'data' => $records->fresh(),
         ]);
     }
 }

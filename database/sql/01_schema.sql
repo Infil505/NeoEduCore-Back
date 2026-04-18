@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_type') THEN
-    CREATE TYPE user_type AS ENUM ('admin','teacher','student');
+    CREATE TYPE user_type AS ENUM ('admin','teacher','student','parent');
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_status') THEN
@@ -21,7 +21,7 @@ BEGIN
 
   -- QuestionType en tu modelo: multiple_choice | true_false | short_answer
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'question_type') THEN
-    CREATE TYPE question_type AS ENUM ('multiple_choice','true_false','short_answer');
+    CREATE TYPE question_type AS ENUM ('multiple_choice','true_false','short_answer','essay');
   END IF;
 
   -- ResourceType en tu modelo (puedes ampliar según tu Enum)
@@ -31,7 +31,7 @@ BEGIN
 
   -- StudentStatus (ajustalo si tu Enum tiene otros valores)
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'student_status') THEN
-    CREATE TYPE student_status AS ENUM ('active','inactive');
+    CREATE TYPE student_status AS ENUM ('active','inactive','suspended');
   END IF;
 
   -- AI Recommendation type según tu modelo: strength | weakness | resource | action
@@ -51,6 +51,25 @@ BEGIN
 END $$;
 
 -- ---------- TABLES ----------
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  email text PRIMARY KEY,
+  token text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS personal_access_tokens (
+  id bigserial PRIMARY KEY,
+  tokenable_type text NOT NULL,
+  tokenable_id text NOT NULL,
+  name text NOT NULL,
+  token text NOT NULL UNIQUE,
+  abilities text,
+  last_used_at timestamptz,
+  expires_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS institutions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   code text NOT NULL UNIQUE,
@@ -87,11 +106,13 @@ CREATE INDEX IF NOT EXISTS idx_users_type ON users(user_type);
 -- Perfil de estudiante (PK = user_id)
 CREATE TABLE IF NOT EXISTS students (
   user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  institution_id uuid NOT NULL REFERENCES institutions(id) ON DELETE CASCADE,
 
   student_code text UNIQUE,
 
   grade int,
   section text,
+  year int,
   status student_status NOT NULL DEFAULT 'active',
 
   enrolled_at timestamptz,
@@ -104,6 +125,7 @@ CREATE TABLE IF NOT EXISTS students (
   parent_email text,
 
   group_code text,
+  adecuacion_type text,
 
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
@@ -245,6 +267,7 @@ CREATE INDEX IF NOT EXISTS idx_question_options_institution ON question_options(
 -- Intentos
 CREATE TABLE IF NOT EXISTS exam_attempts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  institution_id uuid NOT NULL REFERENCES institutions(id) ON DELETE CASCADE,
 
   exam_id uuid NOT NULL REFERENCES exams(id) ON DELETE CASCADE,
   student_user_id uuid NOT NULL REFERENCES students(user_id) ON DELETE CASCADE,
@@ -312,6 +335,7 @@ CREATE INDEX IF NOT EXISTS idx_student_answer_options_institution ON student_ans
 -- Progreso (sin created_at, solo updated_at)
 CREATE TABLE IF NOT EXISTS student_progress (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  institution_id uuid NOT NULL REFERENCES institutions(id) ON DELETE CASCADE,
   student_user_id uuid NOT NULL REFERENCES students(user_id) ON DELETE CASCADE,
   subject_id uuid NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
 
@@ -356,11 +380,13 @@ CREATE TABLE IF NOT EXISTS ai_recommendations (
   subject_id uuid REFERENCES subjects(id) ON DELETE SET NULL,
   exam_id uuid REFERENCES exams(id) ON DELETE SET NULL,
 
-  type ai_recommendation_type NOT NULL,
+  recommendation_type ai_recommendation_type NOT NULL,
   recommendation_text text NOT NULL,
   resource jsonb,
+  generated_at timestamptz NOT NULL DEFAULT now(),
 
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_ai_student ON ai_recommendations(student_user_id);

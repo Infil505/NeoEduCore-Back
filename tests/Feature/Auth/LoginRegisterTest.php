@@ -81,12 +81,12 @@ class LoginRegisterTest extends TestCase
     {
         Institution::factory()->create();
         User::factory()->create([
-            'email' => 'usuario@mail.com',
+            'email' => 'invalid_test@mail.com',
             'password_hash' => Hash::make('SecurePass123!'),
         ]);
 
         $res = $this->postJson('/api/auth/login', [
-            'email' => 'usuario@mail.com',
+            'email' => 'invalid_test@mail.com',
             'password' => 'WrongPassword',
         ]);
 

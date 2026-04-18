@@ -4,6 +4,7 @@ namespace App\Models\AI;
 
 use App\Models\Students\Student;
 use App\Models\Academic\Subject;
+use App\Models\Exams\Exam;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -22,13 +23,10 @@ class AiRecommendation extends Model
         'institution_id',
         'student_user_id',
         'subject_id',
-
-        // Contenido generado por IA
+        'exam_id',
         'recommendation_text',
         'generated_at',
-
-        // Tipo de recomendación
-        'recommendation_type', // study_plan | support_resource | etc
+        'recommendation_type',
     ];
 
     protected $casts = [
@@ -47,5 +45,10 @@ class AiRecommendation extends Model
     public function subject()
     {
         return $this->belongsTo(Subject::class);
+    }
+
+    public function exam()
+    {
+        return $this->belongsTo(Exam::class);
     }
 }
