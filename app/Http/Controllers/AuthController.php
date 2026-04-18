@@ -11,16 +11,34 @@ use App\Models\Admin\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
+use OpenApi\Attributes as OA;
 
 class AuthController extends Controller
 {
-    /**
-     * Registro (AUTOREGISTRO INCLUIDO)
-     * - Crea usuario y (opcional) institución.
-     * - Detecta rol por email (NO se acepta user_type desde request).
-     * - Si el rol es student, crea automáticamente el perfil Student.
-     * - Devuelve token Sanctum.
-     */
+    #[OA\Post(
+        path: '/api/register',
+        summary: 'Registro de usuario',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['full_name', 'email', 'password', 'password_confirmation'],
+                properties: [
+                    new OA\Property(property: 'full_name', type: 'string'),
+                    new OA\Property(property: 'email', type: 'string', format: 'email'),
+                    new OA\Property(property: 'password', type: 'string', format: 'password'),
+                    new OA\Property(property: 'password_confirmation', type: 'string', format: 'password'),
+                    new OA\Property(property: 'institution_id', type: 'string', format: 'uuid', nullable: true),
+                    new OA\Property(property: 'institution_code', type: 'string', nullable: true),
+                    new OA\Property(property: 'institution_name', type: 'string', nullable: true),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: 'Usuario creado con token'),
+            new OA\Response(response: 422, description: 'Validación fallida'),
+        ]
+    )]
     public function register(Request $request)
     {
         $data = $request->validate([
@@ -109,9 +127,26 @@ class AuthController extends Controller
         ], 201);
     }
 
-    /**
-     * Login
-     */
+    #[OA\Post(
+        path: '/api/auth/login',
+        summary: 'Iniciar sesión',
+        tags: ['Auth'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['email', 'password'],
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email'),
+                    new OA\Property(property: 'password', type: 'string', format: 'password'),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Token Sanctum'),
+            new OA\Response(response: 401, description: 'Credenciales inválidas'),
+            new OA\Response(response: 403, description: 'Usuario inactivo'),
+        ]
+    )]
     public function login(Request $request)
     {
         $credentials = $request->validate([
@@ -146,9 +181,16 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * Usuario autenticado
-     */
+    #[OA\Get(
+        path: '/api/auth/me',
+        summary: 'Usuario autenticado',
+        tags: ['Auth'],
+        security: [['sanctum' => []]],
+        responses: [
+            new OA\Response(response: 200, description: 'Datos del usuario autenticado'),
+            new OA\Response(response: 401, description: 'No autenticado'),
+        ]
+    )]
     public function me(Request $request)
     {
         $user = $request->user();
@@ -165,9 +207,15 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * Logout
-     */
+    #[OA\Post(
+        path: '/api/auth/logout',
+        summary: 'Cerrar sesión',
+        tags: ['Auth'],
+        security: [['sanctum' => []]],
+        responses: [
+            new OA\Response(response: 200, description: 'Sesión cerrada'),
+        ]
+    )]
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();

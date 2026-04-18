@@ -1,61 +1,105 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# NeoEduCore — Backend API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Backend de la plataforma NeoEduCore, desarrollado con **Laravel 12** + **PostgreSQL**. Incluye autenticación con Laravel Sanctum y documentación de API con Swagger (L5-Swagger).
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Requisitos previos
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- PHP >= 8.2 con extensiones: `pgsql`, `pdo_pgsql`, `mbstring`, `xml`, `curl`, `zip`, `gd`
+- Composer >= 2
+- PostgreSQL >= 14
+- Node.js >= 18 (solo para assets)
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+---
 
-## Learning Laravel
+## Instalación en una máquina nueva
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+```bash
+# 1. Clonar el repositorio
+git clone <url-del-repo>
+cd NeoEduCore
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+# 2. Instalar dependencias PHP
+composer install
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+# 3. Copiar el archivo de entorno y configurarlo
+cp .env.example .env
 
-## Laravel Sponsors
+# 4. Generar la clave de la aplicación
+php artisan key:generate
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+# 5. Crear la base de datos en PostgreSQL y ajustar .env:
+#    DB_DATABASE, DB_USERNAME, DB_PASSWORD
 
-### Premium Partners
+# 6. Ejecutar migraciones y seeders
+php artisan migrate --seed
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+# 7. Publicar assets de Swagger
+php artisan vendor:publish --provider="L5Swagger\L5SwaggerServiceProvider"
 
-## Contributing
+# 8. Generar la documentación Swagger
+php artisan l5-swagger:generate
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+# 9. Levantar el servidor
+php artisan serve
+```
 
-## Code of Conduct
+La documentación Swagger estará disponible en: `http://localhost:8000/api/documentation`
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+---
 
-## Security Vulnerabilities
+## Variables de entorno relevantes
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+| Variable | Descripción | Ejemplo |
+|---|---|---|
+| `APP_KEY` | Clave de cifrado (generada con `key:generate`) | `base64:...` |
+| `DB_CONNECTION` | Motor de base de datos | `pgsql` |
+| `DB_HOST` | Host de PostgreSQL | `127.0.0.1` |
+| `DB_PORT` | Puerto | `5432` |
+| `DB_DATABASE` | Nombre de la base de datos | `neoeducore` |
+| `DB_USERNAME` | Usuario | `postgres` |
+| `DB_PASSWORD` | Contraseña | — |
+| `L5_SWAGGER_GENERATE_ALWAYS` | Regenerar docs en cada request (solo dev) | `false` |
 
-## License
+---
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## Comandos útiles
+
+```bash
+# Tests
+php artisan test
+
+# Regenerar documentación Swagger
+php artisan l5-swagger:generate
+
+# Limpiar caché de configuración
+php artisan config:clear && php artisan cache:clear
+```
+
+---
+
+## Solución de problemas frecuentes
+
+### `class "L5Swagger\L5SwaggerServiceProvider" not found`
+La carpeta `vendor/` no está presente. Ejecutar:
+```bash
+composer install
+```
+
+### `No application encryption key has been specified`
+Falta el `APP_KEY`. Ejecutar:
+```bash
+php artisan key:generate
+```
+
+### Error de conexión a PostgreSQL
+Verificar que el servicio PostgreSQL esté corriendo y que las variables `DB_*` en `.env` sean correctas.
+
+### `ext-gd is missing` al hacer `composer install`
+Habilitar la extensión `gd` en el `php.ini` de XAMPP (o el sistema):
+```
+; Descomentar esta línea en php.ini:
+extension=gd
+```
+Luego reiniciar el servidor PHP/Apache.

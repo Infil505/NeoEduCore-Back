@@ -6,7 +6,10 @@
       "Bash(php artisan *)",
       "Bash(xargs cat *)",
       "Bash(xargs grep *)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('extra',{}\\), indent=2\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; pkgs=[p for p in json.load\\(sys.stdin\\)['packages'] if 'swagger' in p['name']]; [print\\(p['name'], p['version']\\) for p in pkgs]\")",
+      "Bash(php -r ' *)"
     ]
   }
 }
