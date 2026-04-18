@@ -22,6 +22,7 @@ class QuestionController extends Controller
             'data' => $exam->questions()
                 ->with('options')
                 ->orderBy('order_index')
+                ->limit(200)
                 ->get(),
         ]);
     }

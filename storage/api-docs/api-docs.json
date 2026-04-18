@@ -159,6 +159,67 @@
                     }
                 ]
             }
+        },
+        "/api/students/bulk-upload": {
+            "post": {
+                "tags": [
+                    "Students"
+                ],
+                "summary": "Carga masiva de estudiantes (CSV o XLSX)",
+                "operationId": "d995a2f7d713198316bd8b37065bb190",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "required": [
+                                    "file"
+                                ],
+                                "properties": {
+                                    "file": {
+                                        "description": "Archivo CSV o XLSX. Máximo 5 MB y 5.000 filas.",
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Resultado de la importación"
+                    },
+                    "422": {
+                        "description": "Archivo inválido o supera límites"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/students/bulk-upload/template": {
+            "get": {
+                "tags": [
+                    "Students"
+                ],
+                "summary": "Descargar plantilla CSV para carga masiva",
+                "operationId": "19d971bc6307715dfc9c180a29047833",
+                "responses": {
+                    "200": {
+                        "description": "Archivo CSV de plantilla"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
         }
     },
     "components": {
@@ -174,6 +235,10 @@
         {
             "name": "Auth",
             "description": "Auth"
+        },
+        {
+            "name": "Students",
+            "description": "Students"
         }
     ]
 }

@@ -65,6 +65,7 @@ class StudentProgressController extends Controller
             ->with('subject')
             ->where('student_user_id', $user->id)
             ->orderByDesc('updated_at')
+            ->limit(100)
             ->get();
 
         return response()->json([
@@ -133,11 +134,11 @@ class StudentProgressController extends Controller
             $query->where('subject_id', $data['subject_id']);
         }
 
-        $records = $query->get();
-        $records->each(fn ($p) => $p->touch());
+        // Una sola query UPDATE en lugar de N toques individuales
+        $count = $query->update(['updated_at' => now()]);
 
         return response()->json([
-            'data' => $records->fresh(),
+            'recalculated' => $count,
         ]);
     }
 }
