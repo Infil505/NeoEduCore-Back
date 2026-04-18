@@ -97,9 +97,17 @@ php artisan key:generate
 Verificar que el servicio PostgreSQL esté corriendo y que las variables `DB_*` en `.env` sean correctas.
 
 ### `ext-gd is missing` al hacer `composer install`
-Habilitar la extensión `gd` en el `php.ini` de XAMPP (o el sistema):
+Primero, localizar el `php.ini` activo:
+```bash
+php --ini
 ```
-; Descomentar esta línea en php.ini:
+Abrir ese archivo y descomentar (quitar el `;`):
+```
 extension=gd
 ```
-Luego reiniciar el servidor PHP/Apache.
+En Windows con PHP descargado directamente, verificar además que el archivo `php_gd.dll` existe en la carpeta `ext/` de la instalación de PHP. Si no está, descargar el paquete **Thread Safe** de la misma versión desde php.net — los paquetes NTS no incluyen todas las extensiones.
+
+Tras editar el `php.ini`, reiniciar la terminal y verificar con:
+```bash
+php -m | grep gd
+```
