@@ -52,6 +52,7 @@ class Student extends Model
         'group_code',
         // Tipo de adecuación (si aplica)
         'adecuacion_type',
+        'year',
     ];
 
     protected $casts = [
@@ -64,6 +65,7 @@ class Student extends Model
         'exams_completed_count' => 'integer',
         'overall_average'       => 'decimal:2',
         'adecuacion_type'       => AdecuacionType::class,
+        'year'                  => 'integer',
     ];
 
     /* =========================

@@ -39,5 +39,13 @@ class ExamAttemptRulesService
         if ($attempt->submitted_at) {
             throw new \RuntimeException('Este intento ya fue enviado');
         }
+
+        if ($exam->duration_minutes && $attempt->started_at) {
+            // 30 segundos de gracia para latencia de red
+            $deadline = $attempt->started_at->copy()->addMinutes($exam->duration_minutes)->addSeconds(30);
+            if (now()->gt($deadline)) {
+                throw new \RuntimeException('El tiempo del examen ha expirado');
+            }
+        }
     }
 }

@@ -82,7 +82,7 @@ class StudentAnswerController extends Controller
             // 2) Recalcular attempt (score y max_score)
             $attempt = $studentAnswer->attempt()->with(['answers.question', 'exam'])->first();
 
-            $total = (float) $attempt->answers()->sum('points_awarded');
+            $total = (float) $attempt->answers->sum('points_awarded');
             $max   = (float) $attempt->answers->sum(fn ($a) => (float) ($a->question?->points ?? 0));
 
             $attempt->update([

@@ -48,6 +48,11 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'grade_status') THEN
     CREATE TYPE grade_status AS ENUM ('pending','graded','completed');
   END IF;
+
+  -- Adecuación curricular (Student.adecuacion_type)
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'adecuacion_type') THEN
+    CREATE TYPE adecuacion_type AS ENUM ('acceso','contenido','evaluacion');
+  END IF;
 END $$;
 
 -- ---------- TABLES ----------
@@ -125,7 +130,7 @@ CREATE TABLE IF NOT EXISTS students (
   parent_email text,
 
   group_code text,
-  adecuacion_type text,
+  adecuacion_type adecuacion_type,
 
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()

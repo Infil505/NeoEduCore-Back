@@ -18,12 +18,16 @@ class QuestionController extends Controller
      */
     public function index(Request $request, Exam $exam)
     {
+        $query = $exam->questions()->with('options');
+
+        if ($exam->randomize_questions) {
+            $query->inRandomOrder();
+        } else {
+            $query->orderBy('order_index');
+        }
+
         return response()->json([
-            'data' => $exam->questions()
-                ->with('options')
-                ->orderBy('order_index')
-                ->limit(200)
-                ->get(),
+            'data' => $query->limit(200)->get(),
         ]);
     }
 
@@ -38,6 +42,7 @@ class QuestionController extends Controller
                 QuestionType::MultipleChoice->value,
                 QuestionType::TrueFalse->value,
                 QuestionType::ShortAnswer->value,
+                QuestionType::Essay->value,
             ])],
             'points' => ['required', 'integer', 'between:1,10'],
             'order_index' => ['nullable', 'integer', 'min:1'],
@@ -81,6 +86,14 @@ class QuestionController extends Controller
             if (empty($data['options']) || count($data['options']) !== 2) {
                 return response()->json([
                     'message' => 'true_false debe tener exactamente 2 opciones',
+                ], 422);
+            }
+        }
+
+        if ($type === QuestionType::Essay->value) {
+            if (!empty($data['options'])) {
+                return response()->json([
+                    'message' => 'essay no debe incluir opciones',
                 ], 422);
             }
         }

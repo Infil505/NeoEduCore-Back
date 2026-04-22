@@ -2,6 +2,7 @@
 
 namespace App\Models\Students;
 
+use App\Enums\ReviewStatus;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Exams\Question;
 use App\Models\Exams\QuestionOption;
@@ -44,7 +45,8 @@ class StudentAnswer extends Model
         'is_correct' => 'boolean',
         'points_awarded' => 'decimal:2',
         'correct_answer_snapshot' => 'array',
-        'answered_at' => 'datetime',
+        'answered_at'             => 'datetime',
+        'review_status'           => ReviewStatus::class,
     ];
 
     public function attempt()

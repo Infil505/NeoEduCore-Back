@@ -190,6 +190,15 @@ class ExamController extends Controller
             ], 409);
         }
 
+        // No activar si la ventana ya expiró
+        if ($next === ExamStatus::Active->value) {
+            if ($exam->available_until && now()->gt($exam->available_until)) {
+                return response()->json([
+                    'message' => 'No se puede activar: la ventana de disponibilidad ya expiró',
+                ], 409);
+            }
+        }
+
         $exam->status = $next;
         $exam->save();
 

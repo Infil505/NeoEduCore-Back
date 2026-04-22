@@ -3,6 +3,7 @@
 namespace App\Services\Students;
 
 use App\Models\Exams\ExamAttempt;
+use App\Models\Students\Student;
 use App\Models\Students\StudentProgress;
 
 class StudentProgressService
@@ -38,6 +39,29 @@ class StudentProgressService
 
         $avg = $attempts->avg(fn($a) => (float) $a->percentage);
 
-        return $this->upsertProgress($studentUserId, $subjectId, (float) $avg);
+        $progress = $this->upsertProgress($studentUserId, $subjectId, (float) $avg);
+
+        $this->syncStudentStats($studentUserId);
+
+        return $progress;
+    }
+
+    public function syncStudentStats(string $studentUserId): void
+    {
+        $progresses = StudentProgress::where('student_user_id', $studentUserId)->get();
+
+        $overallAverage = $progresses->isEmpty()
+            ? 0.0
+            : round($progresses->avg('mastery_percentage'), 2);
+
+        $examsCompleted = ExamAttempt::where('student_user_id', $studentUserId)
+            ->whereNotNull('submitted_at')
+            ->count();
+
+        Student::where('user_id', $studentUserId)->update([
+            'overall_average'       => $overallAverage,
+            'exams_completed_count' => $examsCompleted,
+            'last_activity_at'      => now(),
+        ]);
     }
 }

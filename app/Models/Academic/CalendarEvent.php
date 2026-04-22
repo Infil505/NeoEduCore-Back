@@ -2,6 +2,7 @@
 
 namespace App\Models\Academic;
 
+use App\Enums\CalendarEventType;
 use App\Models\Admin\Institution;
 use App\Models\Admin\User;
 use App\Models\Exams\Exam;
@@ -42,8 +43,9 @@ class CalendarEvent extends Model
     ];
 
     protected $casts = [
-        'start_at' => 'datetime',
-        'end_at'   => 'datetime',
+        'start_at'   => 'datetime',
+        'end_at'     => 'datetime',
+        'event_type' => CalendarEventType::class,
     ];
 
     /* =========================
