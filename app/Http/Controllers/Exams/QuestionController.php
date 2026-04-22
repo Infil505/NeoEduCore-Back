@@ -36,6 +36,11 @@ class QuestionController extends Controller
      */
     public function store(Request $request, Exam $exam)
     {
+        $user = $request->user();
+        if ($user->user_type->value === 'teacher' && $exam->created_by_teacher_id !== $user->id) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
+
         $data = $request->validate([
             'question_text' => ['required', 'string', 'min:3', 'max:2000'],
             'question_type' => ['required', Rule::in([
@@ -143,6 +148,14 @@ class QuestionController extends Controller
      */
     public function update(Request $request, Question $question)
     {
+        $user = $request->user();
+        if ($user->user_type->value === 'teacher') {
+            $question->loadMissing('exam');
+            if ($question->exam->created_by_teacher_id !== $user->id) {
+                return response()->json(['message' => 'No autorizado'], 403);
+            }
+        }
+
         $data = $request->validate([
             'question_text' => ['sometimes', 'string', 'min:3', 'max:2000'],
             'points' => ['sometimes', 'integer', 'between:1,10'],
@@ -218,9 +231,14 @@ class QuestionController extends Controller
     /**
      * Eliminar pregunta (no permitir eliminar la última)
      */
-    public function destroy(Question $question)
+    public function destroy(Request $request, Question $question)
     {
+        $user = $request->user();
         $exam = $question->exam;
+
+        if ($user->user_type->value === 'teacher' && $exam->created_by_teacher_id !== $user->id) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
 
         if ($exam->questions()->count() <= 1) {
             return response()->json([

@@ -64,12 +64,17 @@ class AiRecommendationController extends Controller
     {
         $user = $request->user();
 
-        // Seguridad: estudiante solo puede ver las suyas
-        if (
-            $user->user_type->value === 'student' &&
-            $aiRecommendation->student_user_id !== $user->id
-        ) {
+        // Estudiante: solo puede ver las suyas
+        if ($user->user_type->value === 'student' && $aiRecommendation->student_user_id !== $user->id) {
             return response()->json(['message' => 'No autorizado'], 403);
+        }
+
+        // Teacher: solo puede ver recomendaciones vinculadas a sus propios exámenes
+        if ($user->user_type->value === 'teacher') {
+            $aiRecommendation->loadMissing('exam');
+            if ($aiRecommendation->exam === null || $aiRecommendation->exam->created_by_teacher_id !== $user->id) {
+                return response()->json(['message' => 'No autorizado'], 403);
+            }
         }
 
         return response()->json([

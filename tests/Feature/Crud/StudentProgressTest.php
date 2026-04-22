@@ -3,9 +3,11 @@
 namespace Tests\Feature\Crud;
 
 use App\Models\Students\StudentProgress;
+use App\Models\Academic\Group;
 use App\Models\Academic\Subject;
 use App\Models\Admin\User;
 use App\Models\Admin\Institution;
+use App\Models\Exams\Exam;
 use App\Models\Students\Student;
 use Tests\TestCase;
 use Tests\Traits\ApiAuth;
@@ -79,8 +81,8 @@ class StudentProgressTest extends TestCase
         $studentUser = User::factory()->student()->create([
             'institution_id' => $institution->id,
         ]);
-        Student::factory()->create([
-            'user_id' => $studentUser->id,
+        $student = Student::factory()->create([
+            'user_id'        => $studentUser->id,
             'institution_id' => $institution->id,
         ]);
 
@@ -88,9 +90,28 @@ class StudentProgressTest extends TestCase
             'institution_id' => $institution->id,
         ]);
 
+        // El teacher debe tener un examen asignado a un grupo donde está el estudiante
+        $group = Group::factory()->create(['institution_id' => $institution->id]);
+        \Illuminate\Support\Facades\DB::table('group_students')->insert([
+            'student_user_id' => $studentUser->id,
+            'group_id'        => $group->id,
+            'joined_at'       => now(),
+        ]);
+
+        $exam = Exam::factory()->create([
+            'institution_id'        => $institution->id,
+            'created_by_teacher_id' => $teacher->id,
+            'subject_id'            => $subject->id,
+        ]);
+        \Illuminate\Support\Facades\DB::table('exam_targets')->insert([
+            'exam_id'        => $exam->id,
+            'group_id'       => $group->id,
+            'institution_id' => $institution->id,
+        ]);
+
         $res = $this->postJson('/api/student-progress', [
             'student_user_id' => $studentUser->id,
-            'subject_id' => $subject->id,
+            'subject_id'      => $subject->id,
             'mastery_percentage' => 85.50,
         ]);
 

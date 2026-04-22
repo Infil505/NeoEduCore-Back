@@ -6,6 +6,7 @@ use App\Models\AI\AiRecommendation;
 use App\Models\Academic\Subject;
 use App\Models\Admin\User;
 use App\Models\Admin\Institution;
+use App\Models\Exams\Exam;
 use App\Models\Students\Student;
 use Tests\TestCase;
 use Tests\Traits\ApiAuth;
@@ -88,10 +89,18 @@ class AiRecommendationsTest extends TestCase
             'institution_id' => $institution->id,
         ]);
 
+        // El teacher debe ser dueño del examen vinculado a la recomendación
+        $exam = Exam::factory()->create([
+            'institution_id'        => $institution->id,
+            'created_by_teacher_id' => $teacher->id,
+            'subject_id'            => $subject->id,
+        ]);
+
         $recommendation = AiRecommendation::factory()->create([
-            'institution_id' => $institution->id,
+            'institution_id'  => $institution->id,
             'student_user_id' => $studentUser->id,
-            'subject_id' => $subject->id,
+            'subject_id'      => $subject->id,
+            'exam_id'         => $exam->id,
         ]);
 
         $res = $this->getJson("/api/ai-recommendations/{$recommendation->id}");

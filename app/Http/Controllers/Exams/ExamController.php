@@ -111,6 +111,11 @@ class ExamController extends Controller
      */
     public function update(Request $request, Exam $exam)
     {
+        $user = $request->user();
+        if ($user->user_type->value === 'teacher' && $exam->created_by_teacher_id !== $user->id) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
+
         if (!in_array($exam->status->value, [ExamStatus::Draft->value, ExamStatus::Published->value], true)) {
             return response()->json([
                 'message' => 'No se puede editar un examen activo o completado',
@@ -157,6 +162,11 @@ class ExamController extends Controller
      */
     public function setStatus(Request $request, Exam $exam)
     {
+        $user = $request->user();
+        if ($user->user_type->value === 'teacher' && $exam->created_by_teacher_id !== $user->id) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
+
         $data = $request->validate([
             'status' => ['required', Rule::in([
                 ExamStatus::Draft->value,
@@ -210,8 +220,13 @@ class ExamController extends Controller
     /**
      * Eliminar examen (solo draft)
      */
-    public function destroy(Exam $exam)
+    public function destroy(Request $request, Exam $exam)
     {
+        $user = $request->user();
+        if ($user->user_type->value === 'teacher' && $exam->created_by_teacher_id !== $user->id) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
+
         if ($exam->status->value !== ExamStatus::Draft->value) {
             return response()->json([
                 'message' => 'Solo se pueden eliminar exámenes en estado draft',
