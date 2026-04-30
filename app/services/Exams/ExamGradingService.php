@@ -5,7 +5,6 @@ namespace App\Services\Exams;
 use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Exams\Question;
-use App\Models\Exams\QuestionOption;
 use App\Models\Students\StudentAnswer;
 
 class ExamGradingService
@@ -71,8 +70,10 @@ class ExamGradingService
             ]);
 
             if (!empty($selectedIds)) {
-                $validIds = QuestionOption::where('question_id', $question->id)
-                    ->whereIn('id', $selectedIds)
+                // Las opciones ya están cargadas en $question->options (eager load línea 20).
+                // Filtrar en memoria evita N queries (1 por pregunta) en el loop de corrección.
+                $validIds = $question->options
+                    ->whereIn('id', array_map('strval', $selectedIds))
                     ->pluck('id');
 
                 $answer->selectedOptions()->sync($validIds);

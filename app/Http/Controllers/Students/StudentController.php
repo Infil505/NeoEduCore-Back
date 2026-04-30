@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Students;
 use App\Http\Controllers\Controller;
 use App\Enums\StudentStatus;
 use App\Enums\AdecuacionType;
+use App\Enums\LearningStyle;
 use App\Models\Admin\User;
+use App\Models\Exams\Exam;
+use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -72,7 +75,8 @@ class StudentController extends Controller
             'parent_name'    => ['nullable', 'string', 'max:120'],
             'parent_email'   => ['nullable', 'email', 'max:120'],
             'group_code'     => ['nullable', 'string', 'max:40'],
-            'adecuacion_type' => ['nullable', Rule::in(array_map(fn($c) => $c->value, AdecuacionType::cases()))],
+            'adecuacion_type'  => ['nullable', Rule::in(array_map(fn($c) => $c->value, AdecuacionType::cases()))],
+            'learning_style'   => ['nullable', Rule::in(array_map(fn($c) => $c->value, LearningStyle::cases()))],
         ]);
 
         if (isset($data['section'])) {
@@ -402,6 +406,39 @@ class StudentController extends Controller
         return response()->json([
             'data' => $student,
         ]);
+    }
+
+    public function availableExams(Request $request)
+    {
+        $user    = $request->user();
+        $student = Student::with('groups')->where('user_id', $user->id)->first();
+
+        if (!$student) {
+            return response()->json(['data' => []]);
+        }
+
+        $groupIds = $student->groups->pluck('id');
+
+        if ($groupIds->isEmpty()) {
+            return response()->json(['data' => []]);
+        }
+
+        // withCount mueve el filtro de intentos a la BD: elimina la query separada
+        // y el filtrado en memoria sobre colecciones potencialmente grandes.
+        $exams = Exam::query()
+            ->where('status', 'active')
+            ->where(fn($q) => $q->whereNull('available_from')->orWhere('available_from', '<=', now()))
+            ->where(fn($q) => $q->whereNull('available_until')->orWhere('available_until', '>=', now()))
+            ->whereHas('groups', fn($q) => $q->whereIn('groups.id', $groupIds))
+            ->withCount(['attempts as submitted_count' => fn($q) =>
+                $q->where('student_user_id', $user->id)->whereNotNull('submitted_at')
+            ])
+            ->with('subject')
+            ->get()
+            ->filter(fn($e) => $e->submitted_count < $e->max_attempts)
+            ->values();
+
+        return response()->json(['data' => $exams]);
     }
 
     // -------------------------------------------------------------------------

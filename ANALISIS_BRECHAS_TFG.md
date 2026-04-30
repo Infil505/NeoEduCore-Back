@@ -1,5 +1,5 @@
 # Análisis de Brechas TFG — NeoEduCore
-**Fecha:** 17 de abril de 2026  
+**Fecha:** 17 de abril de 2026 (actualizado 29 de abril de 2026)  
 **Proyecto:** NeoEduCore — Sistema web de gestión de exámenes diagnósticos con tutor virtual  
 **Referencia:** CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025  
 **Analistas:** PM · Desarrollador Fullstack · QA · Ciberseguridad · Optimización
@@ -8,9 +8,9 @@
 
 ## Resumen Ejecutivo
 
-El backend de NeoEduCore está **sólido y avanzado**. Se cuenta con una API REST completa en Laravel 12 (PostgreSQL, Sanctum, OpenAI, Swagger) con 15 modelos, 19 controladores, arquitectura multi-tenant y 30 pruebas automatizadas. Sin embargo, el proyecto **carece completamente de frontend**, que es la capa de presentación exigida por el TFG (React/Next.js/TypeScript). Adicionalmente existen brechas en seguridad avanzada, banco de ítems, y documentación académica del informe.
+El backend de NeoEduCore está **sólido y avanzado**. Se cuenta con una API REST completa en Laravel 12 (PostgreSQL, Sanctum, OpenAI, Swagger) con 16+ modelos, 20+ controladores, arquitectura multi-tenant y **82 pruebas automatizadas**. Sin embargo, el proyecto **carece completamente de frontend**, que es la capa de presentación exigida por el TFG (React/Next.js/TypeScript). Adicionalmente existen brechas en seguridad avanzada, banco de ítems, y documentación académica del informe.
 
-**Porcentaje estimado completado:** ~45–50% del total del proyecto.
+**Porcentaje estimado completado:** ~55–60% del total del proyecto (backend prácticamente completo; frontend pendiente).
 
 ---
 
@@ -24,7 +24,10 @@ El backend de NeoEduCore está **sólido y avanzado**. Se cuenta con una API RES
 | Sprint 4: Backend gestión de usuarios | ✅ Completo |
 | Sprint 5: Funcionalidades académicas (grupos, materias, historial) | ✅ Completo |
 | Sistema de exámenes con múltiples intentos y calificación | ✅ Completo |
-| Integración OpenAI para recomendaciones | ✅ Completo |
+| Pausa y reanudación de examen con temporizador | ✅ Completo |
+| Tutor IA conversacional con historial de sesión | ✅ Completo |
+| Analíticas agregadas (institución, materias, estudiante) | ✅ Completo |
+| Integración OpenAI para recomendaciones y tutor | ✅ Completo |
 | Exportación de reportes CSV | ✅ Completo |
 | Documentación API con Swagger | ✅ Completo |
 
@@ -95,7 +98,7 @@ Todo el frontend está pendiente. Las vistas requeridas por módulo:
 ## 3. Perspectiva QA — Calidad y Pruebas
 
 ### Lo que cumple
-- 30 pruebas automatizadas (Feature + Unit) con PHPUnit
+- **82 pruebas automatizadas** (Feature + Unit) con PHPUnit — incremento desde 30 al 29/04
 - Cobertura de flujos: auth, CRUD principal, calificación, reportes, rutas públicas/protegidas
 - Tests de integridad de esquema de BD
 - Prueba de calculadora de calificaciones (unit)
@@ -137,7 +140,7 @@ php artisan test --coverage --min=70
 |---|---|---|
 | **HTTPS / TLS** | CRÍTICO | No hay configuración de HTTPS (solo infraestructura, pero debe documentarse) |
 | **Expiración de sesión** | ALTA | Sanctum configurado pero no se verifica el tiempo de inactividad de 60 min explícitamente |
-| **RBAC con middleware** | ALTA | No hay `RoleMiddleware`; los controladores no verifican rol explícitamente |
+| **RBAC con middleware** | ~~ALTA~~ ✅ | `RequireRole` middleware implementado; rutas protegidas por rol en `api.php` |
 | **Backups cifrados** | ALTA | No existe script de backup ni documentación |
 | **Validación de output IA** | ALTA | Las respuestas de OpenAI no se validan/sanitizan antes de enviarse al cliente |
 | **Log de incidentes de tutor** | ALTA | Sin auditoría de respuestas problemáticas del tutor virtual |
@@ -162,11 +165,12 @@ php artisan test --coverage --min=70
 ### Lo que falta / debe mejorarse
 | Elemento | Impacto | Descripción |
 |---|---|---|
-| **Eager loading** | ALTO | Revisar N+1 queries en listados de exámenes/intentos/respuestas |
-| **Caché de respuestas** | ALTO | Reportes y progreso de estudiantes deberían cachearse (Redis) |
-| **Índices de BD** | ALTO | Agregar índices en `student_user_id`, `exam_id`, `institution_id` si no existen |
+| **Eager loading / N+1** | ~~ALTO~~ ✅ | Eliminados N+1 en grading loop, `recalcFromAttempts`, `syncStudentStats`, `addStudents` |
+| **Índices de BD** | ~~ALTO~~ ✅ | Fase 1 y Fase 2 de índices aplicados (review_status, grade_status, ai_recs, chat_sessions) |
+| **Aggregaciones en SQL** | ~~ALTO~~ ✅ | AVG y COUNT movidos a SQL; ya no se cargan colecciones en RAM para calcular |
+| **Caché de respuestas** | ALTO | Reportes y analíticas frecuentes podrían cachearse con Redis |
 | **Queue para IA** | ALTO | Las llamadas a OpenAI bloquean el request; deben moverse a colas (`jobs`) |
-| **Paginación obligatoria** | MEDIO | Los endpoints de listado no tienen paginación forzada |
+| **Paginación obligatoria** | MEDIO | Los endpoints de listado ya tienen `paginate(20)`; revisar consistencia |
 | **Monitoreo / observabilidad** | MEDIO | Sin Telescope, Sentry, o sistema de alertas |
 | **Optimización de exportación masiva** | MEDIO | Reportes de 1000+ estudiantes deben usar `chunk()` y streaming |
 | **Horizontal scaling** | MEDIO | Sin configuración Docker/cloud (Sail disponible pero no documentado para producción) |
@@ -234,17 +238,18 @@ El documento del TFG tiene 11 capítulos requeridos. Los pendientes son:
 ```
 MÓDULO                     BACKEND    FRONTEND    TESTS    DOCS
 ─────────────────────────────────────────────────────────────
-Autenticación              ████████   ░░░░░░░░    ███░░░   ░░░
-Gestión de Usuarios        ████████   ░░░░░░░░    ███░░░   ░░░
-Módulo Académico           ████████   ░░░░░░░░    ████░░   ░░░
-Sistema de Exámenes        ████████   ░░░░░░░░    █████░   ░░░
-Tutor Virtual (IA)         █████░░░   ░░░░░░░░    ██░░░░   ░░░
-Reportes y Analytics       ██████░░   ░░░░░░░░    ████░░   ░░░
-Seguridad Avanzada         █████░░░   ░░░░░░░░    ██░░░░   ░░░
+Autenticación              ████████   ░░░░░░░░    █████░   ░░░
+Gestión de Usuarios        ████████   ░░░░░░░░    █████░   ░░░
+Módulo Académico           ████████   ░░░░░░░░    ██████   ░░░
+Sistema de Exámenes        ████████   ░░░░░░░░    ██████   ░░░
+Tutor Virtual (IA)         ██████░░   ░░░░░░░░    ███░░░   ░░░
+Reportes y Analytics       ████████   ░░░░░░░░    █████░   ░░░
+Seguridad Avanzada         ███████░   ░░░░░░░░    ███░░░   ░░░
 Banco de Ítems             ██░░░░░░   N/A         ░░░░░░   ░░░
 Informe TFG                N/A        N/A         N/A      ██░░
 
 █ = completado   ░ = pendiente
+(Actualizado 29/04/2026)
 ```
 
 ---

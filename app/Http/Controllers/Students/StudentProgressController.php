@@ -100,19 +100,18 @@ class StudentProgressController extends Controller
         Student::where('user_id', $data['student_user_id'])->firstOrFail();
         Subject::where('id', $data['subject_id'])->firstOrFail();
 
-        // Teacher solo puede actualizar progreso de estudiantes en grupos de sus exámenes
+        // Teacher solo puede actualizar progreso de estudiantes en grupos de sus exámenes.
+        // Un JOIN reemplaza las ~53 queries anteriores (student groups + N exam groups).
         if ($user->user_type->value === 'teacher') {
-            $studentGroupIds = Student::where('user_id', $data['student_user_id'])
-                ->firstOrFail()
-                ->groups()
-                ->pluck('groups.id');
+            $authorized = DB::table('group_students as gs')
+                ->join('exam_targets as et', 'et.group_id', '=', 'gs.group_id')
+                ->join('exams', 'exams.id', '=', 'et.exam_id')
+                ->where('gs.student_user_id', $data['student_user_id'])
+                ->where('exams.created_by_teacher_id', $user->id)
+                ->where('exams.institution_id', app('tenant_id'))
+                ->exists();
 
-            $teacherGroupIds = Exam::where('created_by_teacher_id', $user->id)
-                ->with('groups')
-                ->get()
-                ->flatMap(fn ($e) => $e->groups->pluck('id'));
-
-            if ($studentGroupIds->intersect($teacherGroupIds)->isEmpty()) {
+            if (!$authorized) {
                 return response()->json(['message' => 'No autorizado'], 403);
             }
         }

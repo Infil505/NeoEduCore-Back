@@ -4,6 +4,7 @@ namespace App\Models\Students;
 
 use App\Enums\StudentStatus;
 use App\Enums\AdecuacionType;
+use App\Enums\LearningStyle;
 use App\Models\Admin\User;
 use App\Models\Admin\Institution;
 use App\Models\Academic\Group;
@@ -50,8 +51,8 @@ class Student extends Model
 
         // RN-USER-013 (si decides guardarlo aquí)
         'group_code',
-        // Tipo de adecuación (si aplica)
         'adecuacion_type',
+        'learning_style',
         'year',
     ];
 
@@ -64,8 +65,9 @@ class Student extends Model
         'last_activity_at'      => 'datetime',
         'exams_completed_count' => 'integer',
         'overall_average'       => 'decimal:2',
-        'adecuacion_type'       => AdecuacionType::class,
-        'year'                  => 'integer',
+        'adecuacion_type'  => AdecuacionType::class,
+        'learning_style'   => LearningStyle::class,
+        'year'             => 'integer',
     ];
 
     /* =========================

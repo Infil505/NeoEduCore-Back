@@ -25,8 +25,8 @@ cp .env.example .env
 # Generar APP_KEY
 php artisan key:generate
 
-# Generar JWT_SECRET (si usas JWT)
-php artisan jwt:secret
+# Nota: este proyecto usa Laravel Sanctum, no JWT.
+# No es necesario generar JWT_SECRET.
 ```
 
 ### 3. Base de Datos
@@ -666,6 +666,6 @@ php -m (ver extensiones)
 
 ---
 
-**Última actualización**: 25 de Febrero de 2026
+**Última actualización**: 29 de Abril de 2026
 **Laravel Version**: 12
-**PHP Version**: 8.0
+**PHP Version**: 8.2+

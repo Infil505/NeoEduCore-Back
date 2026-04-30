@@ -1,5 +1,5 @@
 # NeoEduCore — Estado del proyecto y pendientes
-**Última actualización:** 21 de abril de 2026  
+**Última actualización:** 29 de abril de 2026  
 **Rama activa:** Darwin  
 **Tests:** 82 pasando / 0 fallando
 
@@ -36,10 +36,10 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 ```
 
 **Servicios externos:**
-- OpenAI GPT-4o-mini — recomendaciones IA (solo en `regenerate`)
+- OpenAI GPT-4o-mini — recomendaciones IA (regenerate) y tutor conversacional
 - SMTP — correo de recuperación de contraseña
 
-**Multi-tenancy:** cada request autenticado inyecta `institution_id` via `SetTenantFromAuth`, activando el scope `TenantScoped` en todos los modelos.
+**Multi-tenancy:** cada request autenticado inyecta `institution_id` via `SetTenantFromAuth`, activando el scope `TenantScoped` en todos los modelos. Si el scope detecta contexto HTTP sin `institution_id`, lanza `RuntimeException` (detección temprana de bugs de configuración).
 
 **RBAC:** middleware `RequireRole` valida roles por ruta. Roles: `admin`, `teacher`, `student`, `parent`.
 
@@ -80,14 +80,14 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 ---
 
 ### ✅ Grupos
-- CRUD completo
-- Sin `withTimestamps` en pivot (bug corregido)
+- CRUD completo + asignación/baja de estudiantes (upsert batch)
 - Ruta: `/api/groups`
 
 ---
 
 ### ✅ Estudiantes
-- List, show, update, me, set-status
+- List, show, update, me, set-status, bulk-upload (CSV/XLSX hasta 5000 filas)
+- Campo `learning_style` (ENUM: `visual`/`auditivo`/`lector`) para adaptar tutor IA
 - PK = `user_id` (no `id`)
 - Ruta: `/api/students`
 
@@ -96,7 +96,7 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 ### ✅ Exámenes — Creación y gestión
 - CRUD completo con máquina de estados: `draft → published → active → completed`
 - Asignación a grupos via `exam_targets`
-- Campos guardados: `randomize_questions`, `duration_minutes`, `max_attempts`, `available_from/until`
+- Campos: `randomize_questions`, `duration_minutes`, `max_attempts`, `available_from/until`
 - Ruta: `/api/exams`
 
 ---
@@ -106,6 +106,7 @@ PostgreSQL (schema en database/sql/01_schema.sql)
   - `multiple_choice` → exactamente 4 opciones, 1 correcta
   - `true_false` → exactamente 2 opciones, 1 correcta
   - `short_answer` → requiere `correct_answer_text`, sin opciones
+  - `essay` → validado, calificado como `needs_review` (revisión manual)
 - Ruta: `GET /api/exams/{exam}/questions`, `POST/PUT/DELETE /api/questions/{id}`
 
 ---
@@ -113,43 +114,54 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 ### ✅ Intento de examen (flujo principal)
 - **Start** `POST /api/exams/{exam}/attempts/start`
   - Valida: status=active, ventana de disponibilidad, max_attempts
-  - Crea registro con `started_at`, calcula `max_score` sumando puntos de preguntas
+  - Race condition protegida con `lockForUpdate()` + `DB::transaction()`
 - **Submit** `POST /api/exams/{exam}/attempts/{attempt}/submit`
-  - Valida tipo de respuesta por tipo de pregunta
-  - Auto-califica MC y TF
-  - Deja SA como `needs_review`
-  - Calcula `score` y `max_score`
-  - Actualiza progreso por materia
-  - Genera recomendaciones IA (plantillas estáticas)
+  - Valida deadline descontando tiempo de pausa (`total_paused_seconds`)
+  - Auto-califica MC y TF; deja SA/Essay como `needs_review`
+  - Calcula `score` y `max_score`; actualiza progreso por materia
+  - Genera recomendaciones IA (plantillas estáticas por defecto)
+- **Pause** `PATCH /api/exams/{exam}/attempts/{attempt}/pause`
+  - Registra `paused_at`; bloquea submit mientras está pausado
+- **Resume** `PATCH /api/exams/{exam}/attempts/{attempt}/resume`
+  - Acumula `total_paused_seconds`; el deadline se extiende automáticamente
 - **Show** `GET /api/exams/{exam}/attempts/{attempt}`
-- **List** `GET /api/exams/{exam}/attempts`
+- **List** `GET /api/exams/{exam}/attempts` (admin/teacher)
 
 ---
 
 ### ✅ Respuestas de estudiantes
 - **List** `GET /api/exam-attempts/{attempt}/answers`
-- **Review** `PATCH /api/student-answers/{answer}/review` — revisión manual de SA
+- **Review** `PATCH /api/student-answers/{answer}/review` — revisión manual de SA/Essay
+- `review_status` es ENUM PostgreSQL nativo: `auto_graded` | `needs_review` | `reviewed`
 
 ---
 
-### ⚠️ Recomendaciones IA (parcial)
-- **List** `GET /api/ai-recommendations`
-- **Me** `GET /api/ai-recommendations/me`
+### ✅ Recomendaciones IA
+- **List** `GET /api/ai-recommendations` (admin/teacher)
+- **Me** `GET /api/ai-recommendations/me` (student)
 - **Show** `GET /api/ai-recommendations/{id}`
-- **Generate (texto libre)** `POST /api/ai/generate` — llama OpenAI directamente
 - **Regenerate post-examen** `POST /api/exam-attempts/{attempt}/recommendations/regenerate`
-  - **Este sí llama GPT-4o-mini**
-  - Límite: 1 generación + 3 regeneraciones por intento
+  - Llama GPT-4o-mini; límite: 1 generación + 3 regeneraciones por intento
   - Fallback a plantillas estáticas si OpenAI falla
 
-> Lo que NO existe: sesión conversacional, historial de chat, estilos de aprendizaje,
-> modos de interacción (practicar / estudiar / preguntar).
+---
+
+### ✅ Tutor IA conversacional
+- **Chat** `POST /api/ai/tutor/chat` — chat con contexto del estudiante (perfil + progreso + historial)
+  - Adapta el prompt según `learning_style` del estudiante
+  - Limita historial a 60 mensajes almacenados, 20 mensajes de contexto a OpenAI
+  - Fallback con mensaje de error amigable si OpenAI falla
+  - Throttle: 30 req/min
+- **Sessions** `GET /api/ai/tutor/sessions` — listado paginado (excluye JSONB `messages`)
+- **End session** `PATCH /api/ai/tutor/sessions/{id}/end`
+- Historial persistido en tabla `ai_chat_sessions` (messages JSONB, scoped por tenant)
 
 ---
 
 ### ✅ Progreso del estudiante
 - Se actualiza automáticamente al enviar examen (`StudentProgressService`)
-- Calcula `mastery_percentage` como promedio de porcentajes por materia
+- `mastery_percentage` calculado con AVG() en SQL (no en memoria)
+- `overall_average` y `exams_completed_count` sincronizados en `students`
 - **List** `GET /api/student-progress`
 - **Me** `GET /api/student-progress/me`
 - **Upsert manual** `POST /api/student-progress`
@@ -157,10 +169,25 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 
 ---
 
+### ✅ Exámenes disponibles para el estudiante
+- `GET /api/students/me/available-exams`
+- Filtra: status=active, dentro de ventana, grupos del estudiante, intentos restantes
+- Usa `withCount` — el filtro de intentos se ejecuta en BD, no en PHP
+
+---
+
+### ✅ Analíticas
+- `GET /api/analytics/institution` — total/active students, exams completed, avg score %
+- `GET /api/analytics/subjects` — exams count, enrolled students, avg mastery por materia
+- `GET /api/analytics/students/{id}` — detalle completo (intentos, progreso, últimos 10 intentos)
+
+---
+
 ### ✅ Reportes
 - Resultados de examen `GET /api/reports/exams/{exam}/results`
 - Exportar CSV `GET /api/reports/exams/{exam}/results.csv`
 - Historial de estudiante `GET /api/reports/students/{id}/history`
+- IDOR protegido: teacher solo accede a sus propios exámenes
 
 ---
 
@@ -178,70 +205,42 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 
 ## 3. Brechas encontradas vs documento TFG
 
-Las imágenes del documento `CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx` describen los siguientes flujos que **no están completamente implementados:**
+Las imágenes del documento `CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx` describen los siguientes flujos que han sido parcialmente o totalmente implementados:
 
 ---
 
 ### 3.1 Diagrama de secuencia del examen (image5)
-
-El documento define estos estados del intento de examen:
-
-```
-Programado → Disponible → EnProgreso → Pausado → EnProgreso → Enviado → Calificado → ConRecomendaciones
-```
 
 | Paso | ¿Implementado? | Notas |
 |------|---------------|-------|
 | Crear examen (draft/programado) | ✅ | |
 | Notificar disponibilidad al estudiante | ❌ | No hay evento ni notificación push/email |
 | Iniciar examen (EnProgreso) | ✅ | `started_at` registrado |
-| Temporizador activo | ❌ | `duration_minutes` se guarda pero no se valida en submit |
-| **Pausar examen** | ❌ | No existe endpoint `PATCH /attempts/{id}/pause` |
-| **Reanudar examen** | ❌ | No existe endpoint `PATCH /attempts/{id}/resume` |
+| Temporizador activo | ✅ | `duration_minutes` validado en submit con 30 s de gracia |
+| Pausar examen | ✅ | `PATCH /attempts/{id}/pause` — registra `paused_at` |
+| Reanudar examen | ✅ | `PATCH /attempts/{id}/resume` — acumula `total_paused_seconds` |
 | Enviar examen (Enviado) | ✅ | `submitted_at` registrado |
-| Calificar automáticamente | ✅ | MC y TF auto-graded |
+| Calificar automáticamente | ✅ | MC y TF auto-graded; SA/Essay → needs_review |
 | Mostrar resultados | ✅ | |
-| IA genera recomendaciones personalizadas | ⚠️ | Solo plantillas estáticas en el submit; OpenAI solo en regenerate |
+| IA genera recomendaciones personalizadas | ⚠️ | OpenAI en regenerate; plantillas estáticas en submit automático |
 
 ---
 
 ### 3.2 Tutor IA conversacional (image11)
 
-El documento describe un asistente IA completo con flujo de sesión:
-
-```
-Estudiante inicia sesión
-    ↓
-¿Primera vez en la sesión?
-    Sí → Bienvenida + carga base del sistema
-    No → Continúa directo
-    ↓
-Carga preferencia de estilo de aprendizaje (Visual / Auditivo / Lector)
-    ↓
-Dashboard con: Fortalezas, Debilidades, Áreas de mejora
-    ↓
-¿Qué desea hacer?
-    1. Practicar → cargar ejercicios por tema con seguimiento
-    2. Estudiar → cargar recursos + recomendaciones por materia
-    3. Ir a examen → flujo de examen
-    4. Preguntar sobre diagnóstico → chat libre con historial
-    5. Ver mis resultados → análisis detallado
-    6. ¿Darme alternativas? → genera ejemplos (texto/gráficos/audio)
-    ↓
-Fin de sesión → Actualiza perfil + guarda historial de conversación
-```
-
 **Lo que existe:**
-- `POST /api/ai/generate` — prompt libre → respuesta OpenAI (sin contexto del estudiante)
+- `POST /api/ai/tutor/chat` — chat con historial por sesión, contexto del estudiante (perfil + progreso por materia)
+- `GET /api/ai/tutor/sessions` — historial de sesiones paginado
+- `PATCH /api/ai/tutor/sessions/{id}/end` — cerrar sesión
+- `learning_style` en perfil del estudiante adapta el prompt del tutor
+- Historial persistido en `ai_chat_sessions.messages` (JSONB, max 60 mensajes)
+- `POST /api/ai/generate` — prompt libre → respuesta OpenAI
 - `POST /api/exam-attempts/{id}/recommendations/regenerate` — recomendaciones post-examen
 
 **Lo que falta:**
-- [ ] Tabla o campo para guardar historial de conversación por sesión
-- [ ] Campo `learning_style` en el perfil del estudiante (Visual/Auditivo/Lector)
-- [ ] Endpoint de sesión del tutor con contexto del estudiante (`/api/ai/tutor/session`)
-- [ ] Endpoint de chat con historial (`POST /api/ai/tutor/chat`)
+- [ ] Flujos interactivos estructurados (practicar / estudiar / preguntar / ver diagnóstico)
 - [ ] Carga automática del diagnóstico al iniciar sesión del tutor
-- [ ] Generación de ejemplos por tipo de aprendizaje
+- [ ] Generación de ejemplos por tipo de aprendizaje (gráficos/audio alternativo)
 
 ---
 
@@ -253,66 +252,57 @@ Fin de sesión → Actualiza perfil + guarda historial de conversación
 | Realizar Examen | Estudiante | ✅ |
 | Ver Resultados | Estudiante | ✅ |
 | Iniciar Sesión | Todos | ✅ |
-| **Consultar IA Tutor** | Estudiante | ❌ Solo texto libre, no tutor contextual |
+| Consultar IA Tutor | Estudiante | ⚠️ Chat contextual con historial; faltan flujos guiados |
 | Ver Progreso | Estudiante | ✅ |
 | Acceder Calendario | Estudiante | ✅ |
 | Solicitar Recursos | Estudiante | ✅ |
 | Gestionar Estudiantes | Profesor/Admin | ✅ |
 | Crear Exámenes | Profesor/Admin | ✅ |
 | Asignar Grupos | Profesor/Admin | ✅ |
-| **Ver Analíticas** | Profesor/Admin | ⚠️ Solo reportes básicos, no analíticas agregadas con gráficos |
+| Ver Analíticas | Profesor/Admin | ✅ |
 | Generar Reportes | Profesor/Admin | ✅ |
-| **Configurar Sistema** | Admin | ❌ No existe endpoint |
+| Configurar Sistema | Admin | ❌ No existe endpoint |
 | Revisar Resultados | Profesor/Admin | ✅ |
 
 ---
 
 ### 3.4 Modelo de datos (image3)
 
-El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripción explícita estudiante-materia) que no existe en el schema actual. Lo más cercano es `student_progress` (progreso por materia) pero no cubre el caso de "inscripción" de un estudiante a una materia específica.
-
-**Campo huérfano:** `students.overall_average` — se inicializa en 0 al registrar pero ningún código lo actualiza.
-
----
-
-### 3.5 Arquitectura (images 8 y 9)
-
-El documento describe el frontend en **Next.js + Vercel + Recharts**. El backend Laravel actúa como API para esa arquitectura. Eso es correcto y compatible — no hay brecha aquí para el backend.
+El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripción explícita estudiante-materia) que no existe en el schema actual. Lo más cercano es `student_progress` (progreso por materia) pero no cubre el caso de "inscripción" formal a una materia.
 
 ---
 
 ## 4. Bugs activos
 
-> ✅ Todos los bugs identificados hasta el 21/04/2026 han sido corregidos.  
+> ✅ Todos los bugs identificados hasta el 29/04/2026 han sido corregidos.  
 > Ver detalle completo en `INFORME_BUGS_ABRIL_2026.md`.
 
 ### Bugs corregidos en sesión 21/04/2026
 
-| # | Archivo(s) | Descripción | Impacto | Estado |
-|---|-----------|-------------|---------|--------|
-| B1 | `AiRecommendationController.php` | Filtro `where('type')` apuntaba a columna inexistente — debía ser `recommendation_type` | Alto | ✅ Corregido |
-| B2 | `Student.php` | Campo `year` existía en schema pero no en `$fillable` ni `$casts` | Alto | ✅ Corregido |
-| B3 | `AiRecommendation.php` | Campo JSONB `resource` sin cast `array` — se leía como string | Medio | ✅ Corregido |
-| B4 | `AiRecommendation.php` | `recommendation_type` sin cast a enum PHP — nuevo `AiRecommendationType` creado | Medio | ✅ Corregido |
-| B5 | `ExamAttempt.php` | `grade_status` sin cast — nuevo `GradeStatus` enum creado | Medio | ✅ Corregido |
-| B6 | `StudentAnswer.php` | `review_status` sin cast — nuevo `ReviewStatus` enum creado | Medio | ✅ Corregido |
-| B7 | `CalendarEvent.php` | `event_type` sin cast — nuevo `CalendarEventType` enum creado | Medio | ✅ Corregido |
-| B8 | `ExamController.php` | Activar examen con `available_until` expirado no era rechazado | Medio | ✅ Corregido |
-| B9 | `AiRecommendationController.php`, `StudentAnswerController.php` | N+1 en `myRecommendations()`; query duplicada en `review()` | Medio | ✅ Corregido |
-| B10 | `01_schema.sql` | `adecuacion_type` era `text` en DB pero enum en PHP — añadido tipo ENUM en PostgreSQL | Medio | ✅ Corregido |
-| B11 | `ExamGradingService.php` | Comparación de IDs `bigserial` mediante `(int)` — cambiado a comparación `string` | Medio | ✅ Corregido |
-| B12 | `ExamGradingService.php` | `correct_answer_snapshot` nunca se escribía al calificar | Bajo | ✅ Corregido |
-| B13 | `app/Enums/CalendarTargetType.php` | Enum sin uso en ningún modelo, controlador ni schema — eliminado | Bajo | ✅ Corregido |
-| B14 | `QuestionController.php`, `ExamGradingService.php` | `QuestionType::Essay` excluido de validación y sin lógica de calificación | Bajo | ✅ Corregido |
+| # | Archivo(s) | Descripción | Estado |
+|---|-----------|-------------|--------|
+| B1 | `AiRecommendationController.php` | Filtro `where('type')` apuntaba a columna inexistente | ✅ |
+| B2 | `Student.php` | Campo `year` faltaba en `$fillable` y `$casts` | ✅ |
+| B3 | `AiRecommendation.php` | Campo JSONB `resource` sin cast `array` | ✅ |
+| B4 | `AiRecommendation.php` | `recommendation_type` sin cast a enum PHP | ✅ |
+| B5 | `ExamAttempt.php` | `grade_status` sin cast a enum PHP | ✅ |
+| B6 | `StudentAnswer.php` | `review_status` sin cast a enum PHP | ✅ |
+| B7 | `CalendarEvent.php` | `event_type` sin cast a enum PHP | ✅ |
+| B8 | `ExamController.php` | Activar examen con `available_until` expirado no era rechazado | ✅ |
+| B9 | `AiRecommendationController.php` | N+1 en `myRecommendations()`; query duplicada en `review()` | ✅ |
+| B10 | `01_schema.sql` | `adecuacion_type` era `text` en DB pero ENUM en PHP | ✅ |
+| B11 | `ExamGradingService.php` | Comparación de IDs `bigserial` mediante `(int)` | ✅ |
+| B12 | `ExamGradingService.php` | `correct_answer_snapshot` nunca se escribía al calificar | ✅ |
+| B13 | `app/Enums/CalendarTargetType.php` | Enum sin uso — eliminado | ✅ |
+| B14 | `QuestionController.php` | `QuestionType::Essay` sin lógica de validación ni calificación | ✅ |
 
-### Bugs corregidos en sesión 17/04/2026
+### Correcciones adicionales (29/04/2026)
 
 | # | Archivo(s) | Descripción | Estado |
 |---|-----------|-------------|--------|
-| — | `AiRecommendation.php` | `'resource'` no estaba en `$fillable` | ✅ Corregido |
-| — | `ExamAttemptRulesService.php` | `duration_minutes` no se validaba en submit | ✅ Corregido |
-| — | `QuestionController.php` | `randomize_questions` no se aplicaba al cargar preguntas | ✅ Corregido |
-| — | `StudentProgressService.php` | `overall_average` y `exams_completed_count` nunca se actualizaban | ✅ Corregido |
+| C1 | `student_answers` | `review_status` era `varchar` en DB — convertido a ENUM PostgreSQL nativo | ✅ |
+| C2 | `TenantScoped.php` | Silencioso en HTTP sin tenant_id — ahora lanza `RuntimeException` | ✅ |
+| C3 | `.env.example` | Faltaba `OPENAI_REQUEST_TIMEOUT=15` | ✅ |
 
 ---
 
@@ -320,69 +310,64 @@ El documento describe el frontend en **Next.js + Vercel + Recharts**. El backend
 
 ### ✅ Prioridad Alta — Completado (21/04/2026)
 
-- [x] **Validar `duration_minutes` en submit** — `ExamAttemptRulesService::assertAttemptIsSubmittable()`, 30 s de gracia
-- [x] **`'resource'` en fillable y cast array de AiRecommendation** — `AiRecommendation.php`
-- [x] **Aplicar `randomize_questions`** — `QuestionController::index()` usa `inRandomOrder()`
-- [x] **Actualizar `students.overall_average` y `exams_completed_count`** — `StudentProgressService::syncStudentStats()`
+- [x] Validar `duration_minutes` en submit — `ExamAttemptRulesService`, 30 s de gracia
+- [x] `'resource'` en fillable y cast array de `AiRecommendation`
+- [x] Aplicar `randomize_questions` — `QuestionController::index()`
+- [x] Actualizar `students.overall_average` y `exams_completed_count` — `syncStudentStats()`
 
 ---
 
-### 🟡 Prioridad Media — Completa lo que describe el documento
+### ✅ Prioridad Media — Completado (29/04/2026)
 
-- [ ] **Pausa y reanudación del examen**
-  - Crear endpoints: `PATCH /api/exams/{exam}/attempts/{attempt}/pause` y `/resume`
-  - Agregar campo `paused_at` a `exam_attempts` (o llevar tiempo acumulado)
-  - Considerar: tiempo de pausa no cuenta contra `duration_minutes`
+- [x] **Pausa y reanudación del examen**
+  - `PATCH .../pause` y `.../resume`; tiempo de pausa descontado del deadline
 
-- [ ] **Campo `learning_style` en perfil del estudiante**
-  - Agregar columna en tabla `students`: `learning_style ENUM('visual','auditivo','lector') DEFAULT NULL`
-  - Actualizar modelo `Student`, SQL schema, y endpoint de update de estudiante
-  - Usar este campo en la generación de recomendaciones IA
+- [x] **Campo `learning_style` en perfil del estudiante**
+  - ENUM PostgreSQL nativo; adapta el prompt del tutor IA
 
-- [ ] **Endpoint de sesión del Tutor IA contextual**
-  - Ruta: `POST /api/ai/tutor/chat`
-  - Payload: `{ message: string, session_id?: uuid }`
-  - Lógica: cargar perfil del estudiante + historial de sesión + llamar OpenAI con contexto
-  - Requiere tabla o campo para guardar historial de chat
+- [x] **Tutor IA conversacional**
+  - Chat con historial por sesión (`ai_chat_sessions`), contexto del estudiante, fallback amigable
 
-- [ ] **Historial de conversación del tutor**
-  - Nueva tabla: `ai_chat_sessions` (id, student_user_id, institution_id, messages JSONB, created_at, updated_at)
-  - O campo `messages JSONB` en `ai_recommendations`
+- [x] **Historial de conversación del tutor**
+  - Tabla `ai_chat_sessions` (messages JSONB); límite 60 mensajes almacenados
 
-- [ ] **Notificación de disponibilidad de examen**
-  - Cuando un examen pasa a estado `active`, notificar a los estudiantes de los grupos asignados
-  - Opción mínima: endpoint `GET /api/students/me/available-exams` que devuelva exámenes activos disponibles para el estudiante logueado
+- [x] **Exámenes disponibles para el estudiante**
+  - `GET /api/students/me/available-exams` — filtrado completo en BD con `withCount`
 
-- [ ] **Analíticas agregadas para profesor/admin**
-  - Endpoint: `GET /api/analytics/institution` — estadísticas generales (total estudiantes, promedio general, exámenes completados)
-  - Endpoint: `GET /api/analytics/subjects` — rendimiento por materia
-  - Endpoint: `GET /api/analytics/students/{id}` — detalle completo de un estudiante
-
-- [x] **Resolver el tipo `essay`** — ✅ Implementado (Opción B): validado en `QuestionController`, calificado como `needs_review` en `ExamGradingService`
+- [x] **Analíticas agregadas para profesor/admin**
+  - `/analytics/institution`, `/analytics/subjects`, `/analytics/students/{id}`
 
 ---
 
-### 🟢 Prioridad Baja — Mejoras y completitud
+### ✅ Optimizaciones de rendimiento — Completado (29/04/2026)
+
+> Objetivo: soportar 200 usuarios concurrentes con tiempos de respuesta razonables.
+
+- [x] **`ExamGradingService`** — eliminadas N queries en loop de corrección (opciones ya cargadas con eager load)
+- [x] **`StudentProgressService::recalcFromAttempts()`** — AVG movido a SQL; ya no carga todos los intentos en RAM
+- [x] **`StudentProgressService::syncStudentStats()`** — AVG de progreso movido a SQL
+- [x] **`GroupController::addStudents()`** — loop de 2N queries reemplazado por 1 upsert (`INSERT ON CONFLICT`)
+- [x] **`GroupController::recountStudents()`** — `COUNT + save()` reemplazado por `DB::table->update()` directo
+- [x] **`AiTutorController::sessions()`** — columna `messages` JSONB excluida del listado
+- [x] **`AnalyticsController::subjects()`** — `Subject::all()` reemplazado por `select('id','name')`
+- [x] **`SubjectController::destroy()`** — `count() > 0` → `exists()`
+- [x] **`QuestionController::destroy()`** — `count()` acotado con `limit(2)`
+- [x] **Índices de rendimiento fase 2** — `idx_ai_recs_regen_filter`, `idx_answers_review_status`, `idx_attempts_grade_status`, `idx_chat_sessions_active`
+
+---
+
+### 🟢 Prioridad Baja — Pendientes
 
 - [ ] **Endpoint de configuración del sistema**
   - Ruta: `GET/PUT /api/system/config`
   - Configuraciones básicas por institución: nombre, logo, timezone, etc.
 
 - [ ] **`StudentSubject` — inscripción explícita a materias**
-  - Si el documento lo requiere como entidad separada de `student_progress`
   - Nueva tabla pivot: `student_subjects (student_user_id, subject_id, institution_id, enrolled_at)`
-
-- [ ] **Paginación en endpoints de lista grandes**
-  - `GET /api/students` — agregar `?page=1&per_page=20`
-  - `GET /api/exam-attempts` — igual
-  - `GET /api/ai-recommendations` — igual
+  - Solo si el documento TFG lo exige como entidad separada de `student_progress`
 
 - [ ] **Validación de `subject_id` en ExamController**
   - Agregar `Rule::exists('subjects', 'id')` a la validación del examen
-
-- [ ] **Endpoint `GET /api/students/me/available-exams`**
-  - Devuelve exámenes activos asignados a los grupos del estudiante
-  - Requiere cruzar: grupos del estudiante → exam_targets → exámenes activos
 
 ---
 
@@ -391,6 +376,7 @@ El documento describe el frontend en **Next.js + Vercel + Recharts**. El backend
 ### Públicos (sin auth)
 | Método | Ruta | Descripción |
 |--------|------|-------------|
+| GET | `/api/ping` | Health check |
 | POST | `/api/register` | Registro de usuario |
 | POST | `/api/auth/login` | Login |
 | POST | `/api/password/forgot` | Solicitar reset |
@@ -400,50 +386,76 @@ El documento describe el frontend en **Next.js + Vercel + Recharts**. El backend
 ### Autenticados — Solo estudiante
 | Método | Ruta | Descripción |
 |--------|------|-------------|
+| GET | `/api/students/me` | Mi perfil |
+| GET | `/api/students/me/available-exams` | Exámenes disponibles para mí |
 | POST | `/api/exams/{exam}/attempts/start` | Iniciar intento |
 | POST | `/api/exams/{exam}/attempts/{attempt}/submit` | Enviar intento |
-| GET | `/api/ai-recommendations/me` | Mis recomendaciones |
-| GET | `/api/student-progress/me` | Mi progreso |
+| PATCH | `/api/exams/{exam}/attempts/{attempt}/pause` | Pausar intento |
+| PATCH | `/api/exams/{exam}/attempts/{attempt}/resume` | Reanudar intento |
+| GET | `/api/exams/{exam}/attempts/{attempt}` | Ver intento |
+| POST | `/api/exam-attempts/{attempt}/recommendations/regenerate` | Regenerar recomendaciones IA |
+| GET | `/api/student-progress/me` | Mi progreso por materia |
+| GET | `/api/ai-recommendations/me` | Mis recomendaciones IA |
+| POST | `/api/ai/tutor/chat` | Chat con tutor IA |
+| GET | `/api/ai/tutor/sessions` | Mis sesiones del tutor |
+| PATCH | `/api/ai/tutor/sessions/{id}/end` | Finalizar sesión del tutor |
 
-### Autenticados — Admin, Profesor, Estudiante (lectura compartida)
+### Autenticados — Admin, Profesor y Estudiante (lectura compartida)
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/api/exams` | Lista exámenes |
 | GET | `/api/exams/{exam}` | Ver examen |
 | GET | `/api/exams/{exam}/questions` | Ver preguntas |
 | GET | `/api/subjects` | Lista materias |
+| GET | `/api/subjects/{subject}` | Ver materia |
 | GET | `/api/study-resources` | Lista recursos |
+| GET | `/api/study-resources/{id}` | Ver recurso |
 | GET | `/api/calendar-events` | Lista eventos |
+| GET | `/api/calendar-events/{id}` | Ver evento |
 
 ### Autenticados — Admin y Profesor
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| POST/PUT/DELETE | `/api/exams` | CRUD exámenes |
-| POST/PUT/DELETE | `/api/exams/{exam}/questions` | CRUD preguntas |
-| PUT/DELETE | `/api/questions/{question}` | Update/delete pregunta |
-| POST/PUT/DELETE | `/api/subjects` | CRUD materias |
-| POST/PUT/DELETE | `/api/groups` | CRUD grupos |
-| POST/PUT/DELETE | `/api/study-resources` | CRUD recursos |
-| POST/PUT/DELETE | `/api/calendar-events` | CRUD eventos |
+| GET | `/api/users` | Lista usuarios |
+| GET/PUT/PATCH | `/api/users/{id}` | Ver/editar usuario |
+| PATCH | `/api/users/{id}/status` | Cambiar estado usuario |
+| PATCH | `/api/users/{id}/reset-password` | Resetear contraseña |
 | GET | `/api/students` | Lista estudiantes |
-| GET/PUT/PATCH | `/api/students/{id}` | Ver/editar estudiante |
+| GET/PUT | `/api/students/{id}` | Ver/editar estudiante |
+| PATCH | `/api/students/{id}/status` | Cambiar estado estudiante |
+| GET | `/api/students/bulk-upload/template` | Plantilla CSV de carga masiva |
+| POST | `/api/students/bulk-upload` | Carga masiva (CSV/XLSX) |
+| GET/POST/PUT/DELETE | `/api/groups` | CRUD grupos |
+| POST | `/api/groups/{group}/students` | Asignar estudiantes a grupo |
+| DELETE | `/api/groups/{group}/students` | Retirar estudiantes de grupo |
+| POST/PUT/DELETE | `/api/subjects` | Mutaciones de materias |
+| POST/PUT/DELETE | `/api/exams` | Mutaciones de exámenes |
+| POST/PUT/DELETE | `/api/exams/{exam}/questions` | Mutaciones de preguntas |
+| PUT/DELETE | `/api/questions/{question}` | Update/delete pregunta |
 | GET | `/api/exam-attempts/{attempt}/answers` | Ver respuestas de intento |
-| PATCH | `/api/student-answers/{answer}/review` | Revisar respuesta SA |
+| PATCH | `/api/student-answers/{answer}/review` | Revisar respuesta SA/Essay |
+| GET | `/api/student-progress` | Lista progreso de estudiantes |
+| POST | `/api/student-progress` | Upsert manual de progreso |
+| POST | `/api/student-progress/recalc` | Recalcular progreso desde intentos |
+| POST/PUT/DELETE | `/api/study-resources` | Mutaciones de recursos |
+| POST/PUT/DELETE | `/api/calendar-events` | Mutaciones de eventos |
+| POST | `/api/ai/generate` | Generar texto con IA (prompt libre) |
+| GET | `/api/ai-recommendations` | Lista recomendaciones |
+| GET | `/api/ai-recommendations/{id}` | Ver recomendación |
 | GET | `/api/reports/exams/{exam}/results` | Reporte de examen |
 | GET | `/api/reports/exams/{exam}/results.csv` | CSV de resultados |
 | GET | `/api/reports/students/{id}/history` | Historial estudiante |
-| POST | `/api/ai/generate` | Generar texto con IA |
-| GET | `/api/ai-recommendations` | Lista recomendaciones |
-| GET | `/api/ai-recommendations/{id}` | Ver recomendación |
-| POST | `/api/exam-attempts/{attempt}/recommendations/regenerate` | Regenerar recomendaciones |
-| POST | `/api/student-progress/recalc` | Recalcular progreso |
+| GET | `/api/analytics/institution` | Estadísticas institucionales |
+| GET | `/api/analytics/subjects` | Rendimiento por materia |
+| GET | `/api/analytics/students/{id}` | Detalle analítico de estudiante |
 
 ### Autenticados — Solo Admin
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| GET/PUT/PATCH | `/api/users` | CRUD usuarios |
-| GET/POST/PUT/DELETE | `/api/institutions` | CRUD instituciones |
+| GET | `/api/institutions` | Lista instituciones |
+| GET/PUT | `/api/institutions/{id}` | Ver/editar institución |
+| PATCH | `/api/institutions/{id}/toggle` | Activar/desactivar institución |
 
 ---
 
-*Documento generado el 17/04/2026 tras análisis completo del código y las imágenes del documento CTFG-DOC-18.*
+*Documento actualizado el 29/04/2026.*

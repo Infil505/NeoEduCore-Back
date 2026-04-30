@@ -16,8 +16,21 @@ class ReportController extends Controller
     /**
      * Reporte paginado: resultados de un examen (JSON)
      */
+    private function assertCanAccessExam(Exam $exam, Request $request): bool
+    {
+        $user = $request->user();
+        if ($user->user_type->value === 'teacher' && $exam->created_by_teacher_id !== $user->id) {
+            return false;
+        }
+        return true;
+    }
+
     public function examResults(Exam $exam, Request $request)
     {
+        if (!$this->assertCanAccessExam($exam, $request)) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
+
         $paginator = ExamAttempt::query()
             ->where('exam_id', $exam->id)
             ->whereNotNull('submitted_at')
@@ -47,8 +60,12 @@ class ReportController extends Controller
      * Export CSV: resultados de un examen.
      * Usa cursor() para procesar fila a fila sin cargar todo en memoria.
      */
-    public function exportExamResultsCsv(Exam $exam): StreamedResponse
+    public function exportExamResultsCsv(Exam $exam, Request $request): StreamedResponse
     {
+        if (!$this->assertCanAccessExam($exam, $request)) {
+            abort(403, 'No autorizado');
+        }
+
         $filename = 'exam_results_' . $exam->id . '.csv';
         $headers  = ['student_user_id', 'student_name', 'score', 'max_score', 'percentage', 'submitted_at'];
 

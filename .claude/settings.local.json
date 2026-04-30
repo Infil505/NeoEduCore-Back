@@ -12,7 +12,8 @@
       "Bash(php -r ' *)",
       "Bash(php -l database/migrations/2026_04_18_000001_add_performance_indexes.php)",
       "Bash(php -l app/Http/Controllers/Admin/ReportController.php)",
-      "Bash(php -l app/Http/Controllers/Students/StudentProgressController.php)"
+      "Bash(php -l app/Http/Controllers/Students/StudentProgressController.php)",
+      "Bash(grep -E \"\\\\.\\(md|txt\\)$\")"
     ]
   }
 }
