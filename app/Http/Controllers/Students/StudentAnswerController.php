@@ -14,6 +14,15 @@ class StudentAnswerController extends Controller
 {
     public function index(Request $request, ExamAttempt $attempt)
     {
+        $user = $request->user();
+
+        if ($user->user_type->value === 'teacher') {
+            $attempt->loadMissing('exam');
+            if ($attempt->exam->created_by_teacher_id !== $user->id) {
+                return response()->json(['message' => 'No autorizado'], 403);
+            }
+        }
+
         return response()->json([
             'data' => $attempt->answers()->with('question')->get(),
         ]);
@@ -42,6 +51,12 @@ class StudentAnswerController extends Controller
         }
 
         $studentAnswer->load(['question', 'attempt.exam']);
+
+        if ($user->user_type->value === 'teacher') {
+            if ($studentAnswer->attempt->exam->created_by_teacher_id !== $user->id) {
+                return response()->json(['message' => 'No autorizado'], 403);
+            }
+        }
 
         // ✅ Solo short_answer es revisable manualmente
         $qType = $studentAnswer->question?->question_type?->value;
@@ -82,7 +97,7 @@ class StudentAnswerController extends Controller
             // 2) Recalcular attempt (score y max_score)
             $attempt = $studentAnswer->attempt()->with(['answers.question', 'exam'])->first();
 
-            $total = (float) $attempt->answers()->sum('points_awarded');
+            $total = (float) $attempt->answers->sum('points_awarded');
             $max   = (float) $attempt->answers->sum(fn ($a) => (float) ($a->question?->points ?? 0));
 
             $attempt->update([

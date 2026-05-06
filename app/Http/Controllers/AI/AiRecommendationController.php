@@ -20,10 +20,10 @@ class AiRecommendationController extends Controller
         $user = $request->user();
 
         $data = $request->validate([
-            'student_user_id' => ['nullable', 'uuid'],
-            'subject_id'      => ['nullable', 'uuid'],
-            'exam_id'         => ['nullable', 'uuid'],
-            'type'            => ['nullable', Rule::in(['strength', 'weakness', 'resource', 'action'])],
+            'student_user_id'   => ['nullable', 'uuid'],
+            'subject_id'        => ['nullable', 'uuid'],
+            'exam_id'           => ['nullable', 'uuid'],
+            'recommendation_type' => ['nullable', Rule::in(['strength', 'weakness', 'resource', 'action'])],
         ]);
 
         $query = AiRecommendation::query()
@@ -48,8 +48,8 @@ class AiRecommendationController extends Controller
             $query->where('exam_id', $data['exam_id']);
         }
 
-        if (!empty($data['type'])) {
-            $query->where('type', $data['type']);
+        if (!empty($data['recommendation_type'])) {
+            $query->where('recommendation_type', $data['recommendation_type']);
         }
 
         return response()->json([
@@ -64,12 +64,17 @@ class AiRecommendationController extends Controller
     {
         $user = $request->user();
 
-        // Seguridad: estudiante solo puede ver las suyas
-        if (
-            $user->user_type->value === 'student' &&
-            $aiRecommendation->student_user_id !== $user->id
-        ) {
+        // Estudiante: solo puede ver las suyas
+        if ($user->user_type->value === 'student' && $aiRecommendation->student_user_id !== $user->id) {
             return response()->json(['message' => 'No autorizado'], 403);
+        }
+
+        // Teacher: solo puede ver recomendaciones vinculadas a sus propios exámenes
+        if ($user->user_type->value === 'teacher') {
+            $aiRecommendation->loadMissing('exam');
+            if ($aiRecommendation->exam === null || $aiRecommendation->exam->created_by_teacher_id !== $user->id) {
+                return response()->json(['message' => 'No autorizado'], 403);
+            }
         }
 
         return response()->json([
@@ -93,11 +98,12 @@ class AiRecommendationController extends Controller
         }
 
         $data = $request->validate([
-            'subject_id' => ['nullable', 'uuid'],
-            'type'       => ['nullable', Rule::in(['strength', 'weakness', 'resource', 'action'])],
+            'subject_id'          => ['nullable', 'uuid'],
+            'recommendation_type' => ['nullable', Rule::in(['strength', 'weakness', 'resource', 'action'])],
         ]);
 
         $query = AiRecommendation::query()
+            ->with(['subject', 'exam'])
             ->where('student_user_id', $user->id)
             ->orderByDesc('created_at');
 
@@ -105,8 +111,8 @@ class AiRecommendationController extends Controller
             $query->where('subject_id', $data['subject_id']);
         }
 
-        if (!empty($data['type'])) {
-            $query->where('type', $data['type']);
+        if (!empty($data['recommendation_type'])) {
+            $query->where('recommendation_type', $data['recommendation_type']);
         }
 
         return response()->json([

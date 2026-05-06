@@ -1,5 +1,5 @@
 # NeoEduCore — Estado del proyecto y pendientes
-**Última actualización:** 17 de abril de 2026  
+**Última actualización:** 21 de abril de 2026  
 **Rama activa:** Darwin  
 **Tests:** 82 pasando / 0 fallando
 
@@ -283,33 +283,47 @@ El documento describe el frontend en **Next.js + Vercel + Recharts**. El backend
 
 ## 4. Bugs activos
 
-| # | Archivo | Descripción | Impacto |
-|---|---------|-------------|---------|
-| 1 | `app/Models/AI/AiRecommendation.php:22` | `'resource'` no está en `$fillable` — el campo JSON se guarda siempre como `null` | Medio |
-| 2 | `app/Enums/QuestionType.php` | Case `Essay` definido pero NO en el ENUM de PostgreSQL, NO validado en controlador, SIN lógica de calificación | Alto si se intenta usar |
-| 3 | `app/Models/Students/Student.php` | `overall_average` nunca se actualiza tras completar intentos | Bajo |
+> ✅ Todos los bugs identificados hasta el 21/04/2026 han sido corregidos.  
+> Ver detalle completo en `INFORME_BUGS_ABRIL_2026.md`.
+
+### Bugs corregidos en sesión 21/04/2026
+
+| # | Archivo(s) | Descripción | Impacto | Estado |
+|---|-----------|-------------|---------|--------|
+| B1 | `AiRecommendationController.php` | Filtro `where('type')` apuntaba a columna inexistente — debía ser `recommendation_type` | Alto | ✅ Corregido |
+| B2 | `Student.php` | Campo `year` existía en schema pero no en `$fillable` ni `$casts` | Alto | ✅ Corregido |
+| B3 | `AiRecommendation.php` | Campo JSONB `resource` sin cast `array` — se leía como string | Medio | ✅ Corregido |
+| B4 | `AiRecommendation.php` | `recommendation_type` sin cast a enum PHP — nuevo `AiRecommendationType` creado | Medio | ✅ Corregido |
+| B5 | `ExamAttempt.php` | `grade_status` sin cast — nuevo `GradeStatus` enum creado | Medio | ✅ Corregido |
+| B6 | `StudentAnswer.php` | `review_status` sin cast — nuevo `ReviewStatus` enum creado | Medio | ✅ Corregido |
+| B7 | `CalendarEvent.php` | `event_type` sin cast — nuevo `CalendarEventType` enum creado | Medio | ✅ Corregido |
+| B8 | `ExamController.php` | Activar examen con `available_until` expirado no era rechazado | Medio | ✅ Corregido |
+| B9 | `AiRecommendationController.php`, `StudentAnswerController.php` | N+1 en `myRecommendations()`; query duplicada en `review()` | Medio | ✅ Corregido |
+| B10 | `01_schema.sql` | `adecuacion_type` era `text` en DB pero enum en PHP — añadido tipo ENUM en PostgreSQL | Medio | ✅ Corregido |
+| B11 | `ExamGradingService.php` | Comparación de IDs `bigserial` mediante `(int)` — cambiado a comparación `string` | Medio | ✅ Corregido |
+| B12 | `ExamGradingService.php` | `correct_answer_snapshot` nunca se escribía al calificar | Bajo | ✅ Corregido |
+| B13 | `app/Enums/CalendarTargetType.php` | Enum sin uso en ningún modelo, controlador ni schema — eliminado | Bajo | ✅ Corregido |
+| B14 | `QuestionController.php`, `ExamGradingService.php` | `QuestionType::Essay` excluido de validación y sin lógica de calificación | Bajo | ✅ Corregido |
+
+### Bugs corregidos en sesión 17/04/2026
+
+| # | Archivo(s) | Descripción | Estado |
+|---|-----------|-------------|--------|
+| — | `AiRecommendation.php` | `'resource'` no estaba en `$fillable` | ✅ Corregido |
+| — | `ExamAttemptRulesService.php` | `duration_minutes` no se validaba en submit | ✅ Corregido |
+| — | `QuestionController.php` | `randomize_questions` no se aplicaba al cargar preguntas | ✅ Corregido |
+| — | `StudentProgressService.php` | `overall_average` y `exams_completed_count` nunca se actualizaban | ✅ Corregido |
 
 ---
 
 ## 5. TODO priorizado
 
-### 🔴 Prioridad Alta — Completa el flujo principal
+### ✅ Prioridad Alta — Completado (21/04/2026)
 
-- [ ] **Validar `duration_minutes` en submit**
-  - Archivo: `app/Http/Controllers/Exams/ExamAttemptController.php` método `submit()`
-  - Lógica: si `now() > started_at + duration_minutes`, rechazar o marcar como enviado por tiempo
-  
-- [ ] **Agregar `'resource'` al fillable de AiRecommendation**
-  - Archivo: `app/Models/AI/AiRecommendation.php`
-  - Fix: añadir `'resource'` al array `$fillable`
-
-- [ ] **Aplicar `randomize_questions` al cargar preguntas para estudiantes**
-  - Archivo: `app/Http/Controllers/Exams/QuestionController.php` método `index()`
-  - Lógica: si `$exam->randomize_questions`, usar `->inRandomOrder()` en lugar de `->orderBy('order_index')`
-
-- [ ] **Actualizar `students.overall_average` al completar un intento**
-  - Archivo: `app/Services/Students/StudentProgressService.php`
-  - Lógica: calcular promedio de todos los intentos completados del estudiante y actualizar el campo
+- [x] **Validar `duration_minutes` en submit** — `ExamAttemptRulesService::assertAttemptIsSubmittable()`, 30 s de gracia
+- [x] **`'resource'` en fillable y cast array de AiRecommendation** — `AiRecommendation.php`
+- [x] **Aplicar `randomize_questions`** — `QuestionController::index()` usa `inRandomOrder()`
+- [x] **Actualizar `students.overall_average` y `exams_completed_count`** — `StudentProgressService::syncStudentStats()`
 
 ---
 
@@ -344,9 +358,7 @@ El documento describe el frontend en **Next.js + Vercel + Recharts**. El backend
   - Endpoint: `GET /api/analytics/subjects` — rendimiento por materia
   - Endpoint: `GET /api/analytics/students/{id}` — detalle completo de un estudiante
 
-- [ ] **Resolver o eliminar el tipo `essay`**
-  - Opción A (eliminar): borrar `Essay` de `QuestionType.php` — más limpio
-  - Opción B (implementar): agregar `essay` al ENUM de PostgreSQL, validar en `QuestionController`, en grading marcar siempre como `needs_review` sin comparar texto
+- [x] **Resolver el tipo `essay`** — ✅ Implementado (Opción B): validado en `QuestionController`, calificado como `needs_review` en `ExamGradingService`
 
 ---
 

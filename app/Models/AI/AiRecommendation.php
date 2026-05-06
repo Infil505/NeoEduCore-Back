@@ -2,6 +2,7 @@
 
 namespace App\Models\AI;
 
+use App\Enums\AiRecommendationType;
 use App\Models\Students\Student;
 use App\Models\Academic\Subject;
 use App\Models\Exams\Exam;
@@ -27,10 +28,13 @@ class AiRecommendation extends Model
         'recommendation_text',
         'generated_at',
         'recommendation_type',
+        'resource',
     ];
 
     protected $casts = [
-        'generated_at' => 'datetime',
+        'generated_at'        => 'datetime',
+        'resource'            => 'array',
+        'recommendation_type' => AiRecommendationType::class,
     ];
 
     /* =========================

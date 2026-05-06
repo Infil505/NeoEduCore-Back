@@ -18,11 +18,16 @@ class QuestionController extends Controller
      */
     public function index(Request $request, Exam $exam)
     {
+        $query = $exam->questions()->with('options');
+
+        if ($exam->randomize_questions) {
+            $query->inRandomOrder();
+        } else {
+            $query->orderBy('order_index');
+        }
+
         return response()->json([
-            'data' => $exam->questions()
-                ->with('options')
-                ->orderBy('order_index')
-                ->get(),
+            'data' => $query->limit(200)->get(),
         ]);
     }
 
@@ -31,12 +36,18 @@ class QuestionController extends Controller
      */
     public function store(Request $request, Exam $exam)
     {
+        $user = $request->user();
+        if ($user->user_type->value === 'teacher' && $exam->created_by_teacher_id !== $user->id) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
+
         $data = $request->validate([
             'question_text' => ['required', 'string', 'min:3', 'max:2000'],
             'question_type' => ['required', Rule::in([
                 QuestionType::MultipleChoice->value,
                 QuestionType::TrueFalse->value,
                 QuestionType::ShortAnswer->value,
+                QuestionType::Essay->value,
             ])],
             'points' => ['required', 'integer', 'between:1,10'],
             'order_index' => ['nullable', 'integer', 'min:1'],
@@ -80,6 +91,14 @@ class QuestionController extends Controller
             if (empty($data['options']) || count($data['options']) !== 2) {
                 return response()->json([
                     'message' => 'true_false debe tener exactamente 2 opciones',
+                ], 422);
+            }
+        }
+
+        if ($type === QuestionType::Essay->value) {
+            if (!empty($data['options'])) {
+                return response()->json([
+                    'message' => 'essay no debe incluir opciones',
                 ], 422);
             }
         }
@@ -129,6 +148,14 @@ class QuestionController extends Controller
      */
     public function update(Request $request, Question $question)
     {
+        $user = $request->user();
+        if ($user->user_type->value === 'teacher') {
+            $question->loadMissing('exam');
+            if ($question->exam->created_by_teacher_id !== $user->id) {
+                return response()->json(['message' => 'No autorizado'], 403);
+            }
+        }
+
         $data = $request->validate([
             'question_text' => ['sometimes', 'string', 'min:3', 'max:2000'],
             'points' => ['sometimes', 'integer', 'between:1,10'],
@@ -204,9 +231,14 @@ class QuestionController extends Controller
     /**
      * Eliminar pregunta (no permitir eliminar la última)
      */
-    public function destroy(Question $question)
+    public function destroy(Request $request, Question $question)
     {
+        $user = $request->user();
         $exam = $question->exam;
+
+        if ($user->user_type->value === 'teacher' && $exam->created_by_teacher_id !== $user->id) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
 
         if ($exam->questions()->count() <= 1) {
             return response()->json([

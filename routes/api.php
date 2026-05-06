@@ -116,7 +116,8 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
 
         // Gestión de estudiantes
         Route::get('/students', [StudentController::class, 'index']);
-        Route::post('/students/bulk-upload', [StudentController::class, 'bulkUpload']);
+        Route::get('/students/bulk-upload/template', [StudentController::class, 'bulkUploadTemplate']);
+        Route::post('/students/bulk-upload', [StudentController::class, 'bulkUpload'])->middleware('throttle:3,1');
         Route::get('/students/{student_user_id}', [StudentController::class, 'show']);
         Route::put('/students/{student_user_id}', [StudentController::class, 'update']);
         Route::patch('/students/{student_user_id}/status', [StudentController::class, 'setStatus']);

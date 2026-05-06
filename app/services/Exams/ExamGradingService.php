@@ -34,32 +34,40 @@ class ExamGradingService
 
             $isCorrect = false;
             $points = 0;
+            $correctSnapshot = null;
+            $reviewStatus = 'auto_graded';
 
             if ($question->question_type->value === 'short_answer') {
                 $isCorrect = mb_strtolower(trim((string)$answerText))
                     === mb_strtolower(trim((string)$question->correct_answer_text));
                 $points = $isCorrect ? $question->points : 0;
+                $reviewStatus = 'needs_review';
+                $correctSnapshot = ['correct_answer_text' => $question->correct_answer_text];
+            } elseif ($question->question_type->value === 'essay') {
+                // Essay siempre requiere revisión manual
+                $points = 0;
+                $reviewStatus = 'needs_review';
             } else {
                 $correctOption = $question->options->firstWhere('is_correct', true);
                 if ($correctOption) {
-                    $picked = (int) ($selectedIds[0] ?? 0);
-                    $isCorrect = $picked === (int) $correctOption->id;
+                    $picked = (string) ($selectedIds[0] ?? '');
+                    $isCorrect = $picked !== '' && $picked === (string) $correctOption->id;
                     $points = $isCorrect ? $question->points : 0;
+                    $correctSnapshot = ['option_text' => $correctOption->option_text];
                 }
             }
 
             $totalScore += $points;
 
             $answer = StudentAnswer::create([
-                'attempt_id' => $attempt->id,
-                'question_id' => $question->id,
-                'answer_text' => $answerText,
-                'is_correct' => $isCorrect,
-                'points_awarded' => $points,
-                'answered_at' => now(),
-                'review_status' => $question->question_type->value === 'short_answer'
-                    ? 'needs_review'
-                    : 'auto_graded',
+                'attempt_id'              => $attempt->id,
+                'question_id'             => $question->id,
+                'answer_text'             => $answerText,
+                'is_correct'              => $isCorrect,
+                'points_awarded'          => $points,
+                'answered_at'             => now(),
+                'review_status'           => $reviewStatus,
+                'correct_answer_snapshot' => $correctSnapshot,
             ]);
 
             if (!empty($selectedIds)) {

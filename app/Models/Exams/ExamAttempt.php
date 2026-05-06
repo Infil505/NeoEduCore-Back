@@ -2,6 +2,7 @@
 
 namespace App\Models\Exams;
 
+use App\Enums\GradeStatus;
 use App\Models\Students\Student;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -45,6 +46,8 @@ class ExamAttempt extends Model
 
         'score'          => 'decimal:2',
         'max_score'      => 'decimal:2',
+
+        'grade_status'   => GradeStatus::class,
     ];
 
     /* =========================

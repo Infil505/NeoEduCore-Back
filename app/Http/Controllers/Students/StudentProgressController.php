@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Students;
 
 use App\Http\Controllers\Controller;
+use App\Models\Exams\Exam;
 use App\Models\Students\Student;
 use App\Models\Students\StudentProgress;
 use App\Models\Academic\Subject;
@@ -65,6 +66,7 @@ class StudentProgressController extends Controller
             ->with('subject')
             ->where('student_user_id', $user->id)
             ->orderByDesc('updated_at')
+            ->limit(100)
             ->get();
 
         return response()->json([
@@ -86,15 +88,34 @@ class StudentProgressController extends Controller
      */
     public function upsert(Request $request)
     {
+        $user = $request->user();
+
         $data = $request->validate([
-            'student_user_id' => ['required', 'uuid'],
-            'subject_id'      => ['required', 'uuid'],
+            'student_user_id'    => ['required', 'uuid'],
+            'subject_id'         => ['required', 'uuid'],
             'mastery_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
         ]);
 
         // Verificar que existan (y pertenezcan al tenant) vía scopes
         Student::where('user_id', $data['student_user_id'])->firstOrFail();
         Subject::where('id', $data['subject_id'])->firstOrFail();
+
+        // Teacher solo puede actualizar progreso de estudiantes en grupos de sus exámenes
+        if ($user->user_type->value === 'teacher') {
+            $studentGroupIds = Student::where('user_id', $data['student_user_id'])
+                ->firstOrFail()
+                ->groups()
+                ->pluck('groups.id');
+
+            $teacherGroupIds = Exam::where('created_by_teacher_id', $user->id)
+                ->with('groups')
+                ->get()
+                ->flatMap(fn ($e) => $e->groups->pluck('id'));
+
+            if ($studentGroupIds->intersect($teacherGroupIds)->isEmpty()) {
+                return response()->json(['message' => 'No autorizado'], 403);
+            }
+        }
 
         $progress = StudentProgress::updateOrCreate(
             [
@@ -133,11 +154,11 @@ class StudentProgressController extends Controller
             $query->where('subject_id', $data['subject_id']);
         }
 
-        $records = $query->get();
-        $records->each(fn ($p) => $p->touch());
+        // Una sola query UPDATE en lugar de N toques individuales
+        $count = $query->update(['updated_at' => now()]);
 
         return response()->json([
-            'data' => $records->fresh(),
+            'recalculated' => $count,
         ]);
     }
 }
