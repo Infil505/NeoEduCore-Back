@@ -144,31 +144,23 @@ class GroupController extends Controller
             // Solo estudiantes del tenant (TenantScoped en Student)
             $students = Student::whereIn('user_id', $data['student_user_ids'])->pluck('user_id')->all();
 
-            $now = now();
+            $now = now()->toDateTimeString();
 
-            foreach ($students as $studentUserId) {
-                // Si existe registro previo con left_at, lo "reactivamos"
-                $existing = DB::table('group_students')
-                    ->where('group_id', $group->id)
-                    ->where('student_user_id', $studentUserId)
-                    ->first();
+            // INSERT ... ON CONFLICT (group_id, student_user_id) DO UPDATE SET left_at = NULL
+            // preserva joined_at original para reactivaciones; 1 query en lugar de 2N.
+            $rows = array_map(fn($id) => [
+                'group_id'        => $group->id,
+                'student_user_id' => $id,
+                'joined_at'       => $now,
+                'left_at'         => null,
+            ], $students);
 
-                if ($existing) {
-                    DB::table('group_students')
-                        ->where('group_id', $group->id)
-                        ->where('student_user_id', $studentUserId)
-                        ->update([
-                            'joined_at' => $existing->joined_at ?? $now,
-                            'left_at' => null,
-                        ]);
-                } else {
-                    DB::table('group_students')->insert([
-                        'group_id' => $group->id,
-                        'student_user_id' => $studentUserId,
-                        'joined_at' => $now,
-                        'left_at' => null,
-                    ]);
-                }
+            if (!empty($rows)) {
+                DB::table('group_students')->upsert(
+                    $rows,
+                    ['group_id', 'student_user_id'],
+                    ['left_at']  // solo actualiza left_at; joined_at se conserva en conflicto
+                );
             }
 
             $this->recountStudents($group);
@@ -218,8 +210,13 @@ class GroupController extends Controller
      */
     private function recountStudents(Group $group): void
     {
-        $count = $group->students()->wherePivotNull('left_at')->count();
-        $group->student_count = $count;
-        $group->save();
+        // UPDATE con subquery: 1 roundtrip en lugar de COUNT + UPDATE separados.
+        DB::table('groups')->where('id', $group->id)->update([
+            'student_count' => DB::table('group_students')
+                ->where('group_id', $group->id)
+                ->whereNull('left_at')
+                ->count(),
+            'updated_at' => now(),
+        ]);
     }
 }

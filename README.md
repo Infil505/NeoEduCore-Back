@@ -60,6 +60,8 @@ La documentación Swagger estará disponible en: `http://localhost:8000/api/docu
 | `DB_DATABASE` | Nombre de la base de datos | `neoeducore` |
 | `DB_USERNAME` | Usuario | `postgres` |
 | `DB_PASSWORD` | Contraseña | — |
+| `OPENAI_API_KEY` | Clave de API de OpenAI (tutor IA y recomendaciones) | `sk-...` |
+| `OPENAI_REQUEST_TIMEOUT` | Timeout en segundos para llamadas a OpenAI | `15` |
 | `L5_SWAGGER_GENERATE_ALWAYS` | Regenerar docs en cada request (solo dev) | `false` |
 
 ---

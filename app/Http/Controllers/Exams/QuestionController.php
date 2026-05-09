@@ -240,7 +240,7 @@ class QuestionController extends Controller
             return response()->json(['message' => 'No autorizado'], 403);
         }
 
-        if ($exam->questions()->count() <= 1) {
+        if ($exam->questions()->limit(2)->count() <= 1) {
             return response()->json([
                 'message' => 'No se puede eliminar la última pregunta del examen',
             ], 409);

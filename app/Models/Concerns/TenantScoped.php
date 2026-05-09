@@ -10,19 +10,22 @@ trait TenantScoped
     {
         static::addGlobalScope('tenant', function (Builder $builder) {
 
-            // Evita errores en CLI, seeds, jobs, migrations
-            if (!app()->bound('tenant_id')) {
+            if (!app()->bound('tenant_id') || !app('tenant_id')) {
+                // En CLI (artisan, migrations, seeds, tests, queue workers) es esperado.
+                // En HTTP es un bug: el middleware SetTenantFromAuth no corrió.
+                if (!app()->runningInConsole()) {
+                    throw new \RuntimeException(
+                        'Modelo ' . $builder->getModel()::class . ' consultado sin contexto ' .
+                        'de tenant. Verifica que SetTenantFromAuth esté activo en la ruta.'
+                    );
+                }
                 return;
             }
 
-            $tenantId = app('tenant_id');
-
-            if ($tenantId) {
-                $builder->where(
-                    $builder->getModel()->getTable() . '.institution_id',
-                    $tenantId
-                );
-            }
+            $builder->where(
+                $builder->getModel()->getTable() . '.institution_id',
+                app('tenant_id')
+            );
         });
 
         // Autoasignar institution_id al crear

@@ -53,6 +53,16 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'adecuacion_type') THEN
     CREATE TYPE adecuacion_type AS ENUM ('acceso','contenido','evaluacion');
   END IF;
+
+  -- Estilo de aprendizaje (Student.learning_style)
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'learning_style') THEN
+    CREATE TYPE learning_style AS ENUM ('visual','auditivo','lector');
+  END IF;
+
+  -- ReviewStatus (StudentAnswer.review_status): auto_graded | needs_review | reviewed
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'review_status') THEN
+    CREATE TYPE review_status AS ENUM ('auto_graded','needs_review','reviewed');
+  END IF;
 END $$;
 
 -- ---------- TABLES ----------
@@ -131,6 +141,7 @@ CREATE TABLE IF NOT EXISTS students (
 
   group_code text,
   adecuacion_type adecuacion_type,
+  learning_style learning_style,
 
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
@@ -281,6 +292,8 @@ CREATE TABLE IF NOT EXISTS exam_attempts (
 
   started_at timestamptz,
   submitted_at timestamptz,
+  paused_at timestamptz,
+  total_paused_seconds int NOT NULL DEFAULT 0 CHECK (total_paused_seconds >= 0),
 
   score numeric(10,2) NOT NULL DEFAULT 0 CHECK (score >= 0),
   max_score numeric(10,2) NOT NULL DEFAULT 0 CHECK (max_score >= 0),
@@ -296,6 +309,7 @@ CREATE TABLE IF NOT EXISTS exam_attempts (
 CREATE INDEX IF NOT EXISTS idx_attempts_exam ON exam_attempts(exam_id);
 CREATE INDEX IF NOT EXISTS idx_attempts_student ON exam_attempts(student_user_id);
 CREATE INDEX IF NOT EXISTS idx_attempts_exam_submitted ON exam_attempts(exam_id, submitted_at);
+CREATE INDEX IF NOT EXISTS idx_attempts_grade_status ON exam_attempts(grade_status);
 
 -- Respuestas del estudiante (ajustado a StudentAnswer)
 CREATE TABLE IF NOT EXISTS student_answers (
@@ -314,7 +328,7 @@ CREATE TABLE IF NOT EXISTS student_answers (
   explanation text,
 
   answered_at timestamptz,
-  review_status text, -- 'auto_graded' | 'needs_review' | 'reviewed' (si querés lo pasamos a enum)
+  review_status review_status,
 
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -324,6 +338,7 @@ CREATE TABLE IF NOT EXISTS student_answers (
 
 CREATE INDEX IF NOT EXISTS idx_answers_attempt ON student_answers(attempt_id);
 CREATE INDEX IF NOT EXISTS idx_answers_question ON student_answers(question_id);
+CREATE INDEX IF NOT EXISTS idx_answers_review_status ON student_answers(review_status);
 CREATE INDEX IF NOT EXISTS idx_student_answers_institution ON student_answers(institution_id);
 
 -- Pivot respuesta-opciones seleccionadas
@@ -396,6 +411,10 @@ CREATE TABLE IF NOT EXISTS ai_recommendations (
 
 CREATE INDEX IF NOT EXISTS idx_ai_student ON ai_recommendations(student_user_id);
 CREATE INDEX IF NOT EXISTS idx_ai_institution ON ai_recommendations(institution_id);
+CREATE INDEX IF NOT EXISTS idx_ai_exam ON ai_recommendations(exam_id);
+CREATE INDEX IF NOT EXISTS idx_ai_subject ON ai_recommendations(subject_id);
+-- Compuesto para el COUNT de regeneraciones (3 filtros juntos)
+CREATE INDEX IF NOT EXISTS idx_ai_recs_regen_filter ON ai_recommendations(student_user_id, exam_id, subject_id);
 
 -- Eventos calendario (ajustado a CalendarEvent)
 CREATE TABLE IF NOT EXISTS calendar_events (
@@ -421,3 +440,24 @@ CREATE TABLE IF NOT EXISTS calendar_events (
 
 CREATE INDEX IF NOT EXISTS idx_calendar_institution ON calendar_events(institution_id);
 CREATE INDEX IF NOT EXISTS idx_calendar_time ON calendar_events(start_at, end_at);
+
+-- Sesiones del tutor IA conversacional
+CREATE TABLE IF NOT EXISTS ai_chat_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  institution_id uuid NOT NULL REFERENCES institutions(id) ON DELETE CASCADE,
+
+  student_user_id uuid NOT NULL REFERENCES students(user_id) ON DELETE CASCADE,
+  subject_id uuid REFERENCES subjects(id) ON DELETE SET NULL,
+  exam_id uuid REFERENCES exams(id) ON DELETE SET NULL,
+
+  messages jsonb NOT NULL DEFAULT '[]',
+
+  ended_at timestamptz,
+
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_student ON ai_chat_sessions(student_user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_institution ON ai_chat_sessions(institution_id);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_active ON ai_chat_sessions(student_user_id, ended_at);

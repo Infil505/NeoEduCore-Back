@@ -136,7 +136,7 @@ class SubjectController extends Controller
             ], 403);
         }
 
-        if ($subject->exams()->count() > 0) {
+        if ($subject->exams()->exists()) {
             return response()->json([
                 'message' => 'No se puede eliminar una materia con exámenes asociados',
             ], 409);

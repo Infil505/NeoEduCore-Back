@@ -34,36 +34,41 @@ class ExamAttemptController extends Controller
             return response()->json(['message' => 'Solo estudiantes pueden iniciar intentos'], 403);
         }
 
-        // RN: examen startable (activo + ventana)
+        // RN: examen startable (activo + ventana) — fuera de transacción, no modifica datos
         try {
             $rules->assertExamIsStartable($exam);
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 409);
         }
 
-        // Intentos usados (enviados)
-        $usedAttempts = ExamAttempt::where('exam_id', $exam->id)
-            ->where('student_user_id', $user->id)
-            ->whereNotNull('submitted_at')
-            ->count();
-
-        // RN: intentos disponibles
+        // Transacción con lock para evitar race condition si el estudiante
+        // lanza dos requests simultáneos (doble clic, re-submit del navegador)
         try {
-            $rules->assertAttemptsAvailable($exam, $usedAttempts);
+            $attempt = DB::transaction(function () use ($exam, $user, $rules) {
+                // Bloquear fila del estudiante → serializa starts concurrentes del mismo usuario
+                Student::where('user_id', $user->id)->lockForUpdate()->firstOrFail();
+
+                $usedAttempts = ExamAttempt::where('exam_id', $exam->id)
+                    ->where('student_user_id', $user->id)
+                    ->whereNotNull('submitted_at')
+                    ->count();
+
+                $rules->assertAttemptsAvailable($exam, $usedAttempts);
+
+                return ExamAttempt::create([
+                    'exam_id'         => $exam->id,
+                    'student_user_id' => $user->id,
+                    'attempt_number'  => $usedAttempts + 1,
+                    'started_at'      => now(),
+                    'submitted_at'    => null,
+                    'score'           => 0,
+                    'max_score'       => (float) $exam->questions()->sum('points'),
+                    'grade_status'    => 'pending',
+                ]);
+            });
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 409);
         }
-
-        $attempt = ExamAttempt::create([
-            'exam_id' => $exam->id,
-            'student_user_id' => $user->id,
-            'attempt_number' => $usedAttempts + 1,
-            'started_at' => now(),
-            'submitted_at' => null,
-            'score' => 0,
-            'max_score' => (float) $exam->questions()->sum('points'),
-            'grade_status' => 'pending',
-        ]);
 
         return response()->json(['data' => $attempt], 201);
     }
@@ -232,6 +237,53 @@ class ExamAttemptController extends Controller
         return response()->json([
             'data' => $attempt,
         ]);
+    }
+
+    public function pause(Request $request, Exam $exam, ExamAttempt $attempt)
+    {
+        $user = $request->user();
+
+        if ($attempt->exam_id !== $exam->id || $attempt->student_user_id !== $user->id) {
+            return response()->json(['message' => 'Intento no válido'], 404);
+        }
+
+        if ($attempt->submitted_at) {
+            return response()->json(['message' => 'El intento ya fue enviado'], 409);
+        }
+
+        if ($attempt->paused_at) {
+            return response()->json(['message' => 'El intento ya está pausado'], 409);
+        }
+
+        $attempt->update(['paused_at' => now()]);
+
+        return response()->json(['data' => $attempt->fresh()]);
+    }
+
+    public function resume(Request $request, Exam $exam, ExamAttempt $attempt)
+    {
+        $user = $request->user();
+
+        if ($attempt->exam_id !== $exam->id || $attempt->student_user_id !== $user->id) {
+            return response()->json(['message' => 'Intento no válido'], 404);
+        }
+
+        if ($attempt->submitted_at) {
+            return response()->json(['message' => 'El intento ya fue enviado'], 409);
+        }
+
+        if (!$attempt->paused_at) {
+            return response()->json(['message' => 'El intento no está pausado'], 409);
+        }
+
+        $pausedSeconds = now()->diffInSeconds($attempt->paused_at);
+
+        $attempt->update([
+            'paused_at'            => null,
+            'total_paused_seconds' => $attempt->total_paused_seconds + $pausedSeconds,
+        ]);
+
+        return response()->json(['data' => $attempt->fresh()]);
     }
 
     public function regenerateRecommendations(

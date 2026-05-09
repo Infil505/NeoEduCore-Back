@@ -5,6 +5,7 @@ namespace App\Services\Students;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
 use App\Models\Students\StudentProgress;
+use Illuminate\Support\Facades\DB;
 
 class StudentProgressService
 {
@@ -27,19 +28,21 @@ class StudentProgressService
      */
     public function recalcFromAttempts(string $studentUserId, string $subjectId): StudentProgress
     {
-        $attempts = ExamAttempt::query()
-            ->where('student_user_id', $studentUserId)
-            ->whereNotNull('submitted_at')
-            ->whereHas('exam', fn($q) => $q->where('subject_id', $subjectId))
-            ->get();
+        // JOIN en lugar de whereHas + get() evita cargar registros en RAM para calcular AVG.
+        $result = ExamAttempt::query()
+            ->join('exams', 'exams.id', '=', 'exam_attempts.exam_id')
+            ->where('exam_attempts.student_user_id', $studentUserId)
+            ->whereNotNull('exam_attempts.submitted_at')
+            ->where('exams.subject_id', $subjectId)
+            ->where('exam_attempts.max_score', '>', 0)
+            ->selectRaw('COUNT(*) as total, AVG((exam_attempts.score / exam_attempts.max_score) * 100) as avg_pct')
+            ->first();
 
-        if ($attempts->count() === 0) {
+        if (!$result || (int) $result->total === 0) {
             return $this->upsertProgress($studentUserId, $subjectId, 0);
         }
 
-        $avg = $attempts->avg(fn($a) => (float) $a->percentage);
-
-        $progress = $this->upsertProgress($studentUserId, $subjectId, (float) $avg);
+        $progress = $this->upsertProgress($studentUserId, $subjectId, (float) $result->avg_pct);
 
         $this->syncStudentStats($studentUserId);
 
@@ -48,11 +51,13 @@ class StudentProgressService
 
     public function syncStudentStats(string $studentUserId): void
     {
-        $progresses = StudentProgress::where('student_user_id', $studentUserId)->get();
-
-        $overallAverage = $progresses->isEmpty()
-            ? 0.0
-            : round($progresses->avg('mastery_percentage'), 2);
+        // AVG y COUNT directamente en SQL; evita cargar todas las filas en RAM.
+        $overallAverage = round(
+            (float) (StudentProgress::where('student_user_id', $studentUserId)
+                ->selectRaw('AVG(mastery_percentage) as avg')
+                ->value('avg') ?? 0.0),
+            2
+        );
 
         $examsCompleted = ExamAttempt::where('student_user_id', $studentUserId)
             ->whereNotNull('submitted_at')

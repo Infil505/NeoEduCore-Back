@@ -24,30 +24,30 @@ class ExamAttempt extends Model
         'exam_id',
         'student_user_id',
 
-        // RN-EXAM-034 (intentos)
         'attempt_number',
 
-        // Timestamps del intento
         'started_at',
         'submitted_at',
+        'paused_at',
+        'total_paused_seconds',
 
-        // Resultados
         'score',
         'max_score',
 
-        // RN-GRADE-007 (estado de calificación)
-        'grade_status', // pending | graded | completed
+        'grade_status',
     ];
 
     protected $casts = [
-        'attempt_number' => 'integer',
-        'started_at'     => 'datetime',
-        'submitted_at'   => 'datetime',
+        'attempt_number'       => 'integer',
+        'started_at'           => 'datetime',
+        'submitted_at'         => 'datetime',
+        'paused_at'            => 'datetime',
+        'total_paused_seconds' => 'integer',
 
-        'score'          => 'decimal:2',
-        'max_score'      => 'decimal:2',
+        'score'      => 'decimal:2',
+        'max_score'  => 'decimal:2',
 
-        'grade_status'   => GradeStatus::class,
+        'grade_status' => GradeStatus::class,
     ];
 
     /* =========================

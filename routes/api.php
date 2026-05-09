@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\AI\AiController;
+use App\Http\Controllers\AI\AiTutorController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Students\StudentController;
@@ -19,6 +20,7 @@ use App\Http\Controllers\AI\AiRecommendationController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\InstitutionController;
 use App\Http\Controllers\Admin\ReportController;
+use App\Http\Controllers\Admin\AnalyticsController;
 
 /*
 |--------------------------------------------------------------------------
@@ -76,12 +78,20 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::middleware('role:student')->group(function () {
         Route::post('/exams/{exam}/attempts/start', [ExamAttemptController::class, 'start']);
         Route::post('/exams/{exam}/attempts/{attempt}/submit', [ExamAttemptController::class, 'submit']);
+        Route::patch('/exams/{exam}/attempts/{attempt}/pause', [ExamAttemptController::class, 'pause']);
+        Route::patch('/exams/{exam}/attempts/{attempt}/resume', [ExamAttemptController::class, 'resume']);
         Route::get('/exams/{exam}/attempts/{attempt}', [ExamAttemptController::class, 'show']);
         Route::post('/exam-attempts/{attempt}/recommendations/regenerate',
             [ExamAttemptController::class, 'regenerateRecommendations']
         )->middleware('throttle:5,1');
         Route::get('/student-progress/me', [StudentProgressController::class, 'me']);
         Route::get('/ai-recommendations/me', [AiRecommendationController::class, 'myRecommendations']);
+        Route::get('/students/me/available-exams', [StudentController::class, 'availableExams']);
+
+        // Tutor IA conversacional
+        Route::post('/ai/tutor/chat', [AiTutorController::class, 'chat'])->middleware('throttle:30,1');
+        Route::patch('/ai/tutor/sessions/{sessionId}/end', [AiTutorController::class, 'endSession']);
+        Route::get('/ai/tutor/sessions', [AiTutorController::class, 'sessions']);
     });
 
     /*
@@ -170,6 +180,11 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
         Route::get('/reports/exams/{exam}/results', [ReportController::class, 'examResults']);
         Route::get('/reports/exams/{exam}/results.csv', [ReportController::class, 'exportExamResultsCsv']);
         Route::get('/reports/students/{student_user_id}/history', [ReportController::class, 'studentHistory']);
+
+        // Analíticas agregadas
+        Route::get('/analytics/institution', [AnalyticsController::class, 'institution']);
+        Route::get('/analytics/subjects', [AnalyticsController::class, 'subjects']);
+        Route::get('/analytics/students/{student_user_id}', [AnalyticsController::class, 'student']);
     });
 
     /*

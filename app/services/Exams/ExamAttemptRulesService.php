@@ -41,8 +41,15 @@ class ExamAttemptRulesService
         }
 
         if ($exam->duration_minutes && $attempt->started_at) {
-            // 30 segundos de gracia para latencia de red
-            $deadline = $attempt->started_at->copy()->addMinutes($exam->duration_minutes)->addSeconds(30);
+            // Descontar tiempo acumulado en pausas + 30 s de gracia para latencia
+            $pausedSoFar = (int) ($attempt->total_paused_seconds ?? 0);
+            if ($attempt->paused_at) {
+                $pausedSoFar += now()->diffInSeconds($attempt->paused_at);
+            }
+            $deadline = $attempt->started_at->copy()
+                ->addMinutes($exam->duration_minutes)
+                ->addSeconds($pausedSoFar)
+                ->addSeconds(30);
             if (now()->gt($deadline)) {
                 throw new \RuntimeException('El tiempo del examen ha expirado');
             }
