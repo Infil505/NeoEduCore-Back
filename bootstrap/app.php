@@ -16,6 +16,12 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant' => \App\Http\Middleware\SetTenantFromAuth::class,
             'role'   => \App\Http\Middleware\RequireRole::class,
         ]);
+
+        // SetTenantFromAuth must run before SubstituteBindings so TenantScoped
+        // global scopes are active during route model binding.
+        $middleware->prependToGroup('api', \App\Http\Middleware\SetTenantFromAuth::class);
+        $middleware->appendToGroup('api', \App\Http\Middleware\SecurityHeaders::class);
+        $middleware->appendToGroup('web', \App\Http\Middleware\SecurityHeaders::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

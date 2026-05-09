@@ -21,6 +21,8 @@ use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\InstitutionController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\AnalyticsController;
+use App\Http\Controllers\Admin\SystemConfigController;
+use App\Http\Controllers\Academic\StudentSubjectController;
 
 /*
 |--------------------------------------------------------------------------
@@ -56,7 +58,7 @@ Route::prefix('password')->group(function () {
 | PROTEGIDAS: auth + tenant (aplica a todo lo de abajo)
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
+Route::middleware(['auth:sanctum'])->group(function () {
 
     /*
     | Sesión — cualquier rol autenticado
@@ -90,6 +92,7 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
 
         // Tutor IA conversacional
         Route::post('/ai/tutor/chat', [AiTutorController::class, 'chat'])->middleware('throttle:30,1');
+        Route::get('/ai/tutor/diagnosis', [AiTutorController::class, 'diagnosis'])->middleware('throttle:10,1');
         Route::patch('/ai/tutor/sessions/{sessionId}/end', [AiTutorController::class, 'endSession']);
         Route::get('/ai/tutor/sessions', [AiTutorController::class, 'sessions']);
     });
@@ -123,6 +126,7 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
         Route::put('/users/{user}', [UserController::class, 'update']);
         Route::patch('/users/{user}/status', [UserController::class, 'setStatus']);
         Route::patch('/users/{user}/reset-password', [UserController::class, 'resetPassword']);
+        Route::delete('/users/{user}', [UserController::class, 'destroy']);
 
         // Gestión de estudiantes
         Route::get('/students', [StudentController::class, 'index']);
@@ -172,7 +176,7 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
         Route::delete('/calendar-events/{calendar_event}', [CalendarEventController::class, 'destroy']);
 
         // IA: generación manual de recomendaciones por docente
-        Route::post('/ai/generate', [AiController::class, 'generate']);
+        Route::post('/ai/generate', [AiController::class, 'generate'])->middleware('throttle:20,1');
         Route::get('/ai-recommendations', [AiRecommendationController::class, 'index']);
         Route::get('/ai-recommendations/{aiRecommendation}', [AiRecommendationController::class, 'show']);
 
@@ -180,6 +184,7 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
         Route::get('/reports/exams/{exam}/results', [ReportController::class, 'examResults']);
         Route::get('/reports/exams/{exam}/results.csv', [ReportController::class, 'exportExamResultsCsv']);
         Route::get('/reports/students/{student_user_id}/history', [ReportController::class, 'studentHistory']);
+        Route::get('/reports/ai/tutor-usage', [ReportController::class, 'tutorUsage']);
 
         // Analíticas agregadas
         Route::get('/analytics/institution', [AnalyticsController::class, 'institution']);
@@ -197,5 +202,22 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
         Route::get('/institutions/{institution}', [InstitutionController::class, 'show']);
         Route::put('/institutions/{institution}', [InstitutionController::class, 'update']);
         Route::patch('/institutions/{institution}/toggle', [InstitutionController::class, 'toggleStatus']);
+
+        // Configuración del sistema — solo admin puede editar
+        Route::put('/system/config', [SystemConfigController::class, 'update']);
+    });
+
+    // Configuración del sistema — admin y teacher pueden leer
+    Route::middleware('role:admin,teacher')->group(function () {
+        Route::get('/system/config', [SystemConfigController::class, 'show']);
+    });
+
+    // Inscripción de materias (StudentSubject)
+    // Ruta literal /me debe ir ANTES de la paramétrica /{student_user_id}
+    Route::middleware('role:student')->get('/students/me/subjects', [StudentSubjectController::class, 'mySubjects']);
+    Route::middleware('role:admin,teacher')->group(function () {
+        Route::post('/students/{student_user_id}/subjects', [StudentSubjectController::class, 'enroll']);
+        Route::delete('/students/{student_user_id}/subjects/{subject}', [StudentSubjectController::class, 'unenroll']);
+        Route::get('/students/{student_user_id}/subjects', [StudentSubjectController::class, 'index']);
     });
 });

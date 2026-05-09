@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Academic;
 use App\Http\Controllers\Controller;
 use App\Enums\ResourceType;
 use App\Models\Academic\StudyResource;
+use App\Services\AI\AiOutputValidator;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -55,7 +56,11 @@ class StudyResourceController extends Controller
                 ResourceType::cases()
             ))],
 
-            'url' => ['required', 'url', 'max:500'],
+            'url' => ['required', 'url', 'max:500', function ($attr, $value, $fail) {
+                if (!(new AiOutputValidator())->isUrlAllowed($value)) {
+                    $fail('La URL debe provenir de un dominio educativo permitido.');
+                }
+            }],
 
             'estimated_duration' => ['nullable', 'integer', 'between:1,999'],
             'difficulty' => ['nullable', Rule::in(['basic', 'intermediate', 'advanced'])],
@@ -111,7 +116,11 @@ class StudyResourceController extends Controller
                 ResourceType::cases()
             ))],
 
-            'url' => ['sometimes', 'url', 'max:500'],
+            'url' => ['sometimes', 'url', 'max:500', function ($attr, $value, $fail) {
+                if (!(new AiOutputValidator())->isUrlAllowed($value)) {
+                    $fail('La URL debe provenir de un dominio educativo permitido.');
+                }
+            }],
 
             'estimated_duration' => ['nullable', 'integer', 'between:1,999'],
             'difficulty' => ['nullable', Rule::in(['basic', 'intermediate', 'advanced'])],

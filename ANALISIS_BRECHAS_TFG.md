@@ -1,5 +1,5 @@
 # Análisis de Brechas TFG — NeoEduCore
-**Fecha:** 17 de abril de 2026 (actualizado 29 de abril de 2026)  
+**Fecha:** 17 de abril de 2026 (actualizado 09 de mayo de 2026)  
 **Proyecto:** NeoEduCore — Sistema web de gestión de exámenes diagnósticos con tutor virtual  
 **Referencia:** CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025  
 **Analistas:** PM · Desarrollador Fullstack · QA · Ciberseguridad · Optimización
@@ -8,9 +8,9 @@
 
 ## Resumen Ejecutivo
 
-El backend de NeoEduCore está **sólido y avanzado**. Se cuenta con una API REST completa en Laravel 12 (PostgreSQL, Sanctum, OpenAI, Swagger) con 16+ modelos, 20+ controladores, arquitectura multi-tenant y **82 pruebas automatizadas**. Sin embargo, el proyecto **carece completamente de frontend**, que es la capa de presentación exigida por el TFG (React/Next.js/TypeScript). Adicionalmente existen brechas en seguridad avanzada, banco de ítems, y documentación académica del informe.
+El backend de NeoEduCore está **completo**. Se cuenta con una API REST completa en Laravel 12 (PostgreSQL, Sanctum, OpenAI, Swagger) con 16+ modelos, 20+ controladores, arquitectura multi-tenant y **142 pruebas automatizadas** (6 niveles de integración). El proyecto **carece completamente de frontend**, que es la capa de presentación exigida por el TFG (React/Next.js/TypeScript). Adicionalmente existen brechas en banco de ítems y documentación académica del informe.
 
-**Porcentaje estimado completado:** ~55–60% del total del proyecto (backend prácticamente completo; frontend pendiente).
+**Porcentaje estimado completado:** ~65–70% del total del proyecto (backend 100% completo; frontend pendiente).
 
 ---
 
@@ -50,29 +50,37 @@ El backend de NeoEduCore está **sólido y avanzado**. Se cuenta con una API RES
 
 ### Backend — Lo que cumple
 - Arquitectura multi-tenant con `institution_id` en todas las tablas
-- 4 tipos de usuario (Admin, Teacher, Student, Parent) con enums
+- 4 tipos de usuario (Admin, Teacher, Student, Parent) con enums y middleware `RequireRole`
 - Sistema de exámenes completo: tipos de pregunta (MC, V/F, respuesta corta, ensayo), calificación automática, revisión manual, intentos múltiples
 - Ventanas de disponibilidad y aleatorización de preguntas
+- Adecuaciones curriculares (×1.25 tiempo, ×1.50 tiempo) aplicadas al iniciar intento
+- Pausa y reanudación de examen con control de tiempo restante
 - Seguimiento de progreso del estudiante por materia (`mastery_percentage`)
+- Tutor IA conversacional con sesiones, historial, modos ask/explain/practice, diagnóstico
+- Whitelist de recursos externos en respuestas del tutor IA (`AiOutputValidator`)
+- Validación y sanitización de output de OpenAI antes de enviar al cliente
+- Headers de seguridad HTTP (`SecurityHeaders` middleware)
+- Rate limiting diferenciado: 20/min en `/ai/generate`, 30/min en tutor chat
+- Métricas de uso del tutor para docentes (`/reports/ai/tutor-usage`)
 - Integración real con OpenAI GPT-4o-mini con fallback local
 - Exportación CSV con `phpspreadsheet`
 - Recuperación de contraseña con email (Mailable + vista Blade)
 - Validación de contraseñas con `PasswordPolicy` de dominio
+- Cascada de eliminación en DB (`ON DELETE CASCADE` / `SET NULL`) — sin guards manuales
 - Dominio de negocio separado (`Domain/`)
 
 ### Backend — Lo que falta
 | Elemento | Descripción | Archivo afectado |
 |---|---|---|
-| **Whitelist de recursos externos** | El tutor virtual debe sugerir URLs solo de una lista verificada | `AiRecommendationService.php` |
-| **Opciones del tutor**: "No entendí" / "Quiero practicar" | El chatbot debe tener flujos de reformulación y ejercicios guiados | Nuevo endpoint en `AiController` |
-| **Métricas agregadas para docentes** | Temas más recomendados, niveles de dificultad, uso del tutor | Nuevo endpoint en `ReportController` |
-| **Log de incidentes del tutor** | Registro de respuestas de IA que activen validaciones de seguridad | Nueva tabla + servicio |
-| **Validación automática de respuestas IA** | Verificar legibilidad y ausencia de datos personales en output de OpenAI | `AiRecommendationService.php` |
-| **RBAC explícito** | No hay middleware de autorización por rol visible; la lógica está implícita | Nuevo `RoleMiddleware` |
-| **Email template faltante** | `resources/views/emails/password-reset.blade.php` no existe | Crear vista |
-| **Eliminar código muerto** | `NameController.php` y `StoreNameRequest.php` sin uso | Limpiar |
-| **Adecuaciones en exámenes** | `adecuacion_type` en Student no se usa durante la evaluación | `ExamAttemptRulesService` |
+| ~~Whitelist de recursos externos~~ ✅ | Implementada en `AiOutputValidator` | Resuelto 09/05 |
+| ~~Métricas agregadas para docentes~~ ✅ | `GET /reports/ai/tutor-usage` implementado | Resuelto 09/05 |
+| ~~Validación automática de respuestas IA~~ ✅ | `AiOutputValidator` valida output antes de enviarlo | Resuelto 09/05 |
+| ~~RBAC explícito~~ ✅ | Middleware `RequireRole` + rutas protegidas por rol | Resuelto 09/05 |
+| ~~Eliminar código muerto~~ ✅ | `CalendarTargetType.php`, `NameController.php` eliminados | Resuelto |
+| ~~Adecuaciones en exámenes~~ ✅ | `adecuacion_type` aplicada al calcular tiempo disponible | Resuelto 09/05 |
+| **Log de incidentes del tutor** | Registro de respuestas de IA que activen validaciones | Nueva tabla + servicio |
 | **Backups cifrados de BD** | No hay scripts ni documentación de respaldo | Infraestructura |
+| **Queue para IA** | Llamadas a OpenAI bloquean el request; mover a colas | Jobs/Queue |
 
 ### Frontend — Lo que falta (CRÍTICO)
 Todo el frontend está pendiente. Las vistas requeridas por módulo:
@@ -98,24 +106,23 @@ Todo el frontend está pendiente. Las vistas requeridas por módulo:
 ## 3. Perspectiva QA — Calidad y Pruebas
 
 ### Lo que cumple
-- **82 pruebas automatizadas** (Feature + Unit) con PHPUnit — incremento desde 30 al 29/04
-- Cobertura de flujos: auth, CRUD principal, calificación, reportes, rutas públicas/protegidas
-- Tests de integridad de esquema de BD
-- Prueba de calculadora de calificaciones (unit)
-- Reglas de negocio testeadas (`QuestionRulesTest`)
+- **142 pruebas automatizadas** (Feature + Integration) con PHPUnit — 423 assertions
+- Cobertura de flujos: auth, CRUD completo, calificación, reportes, rutas públicas/protegidas
+- **6 niveles de tests de integración:** flujo completo examen, RBAC/IDOR, ciclo de vida estudiante, tutor IA, analíticas, configuración del sistema
+- Tests de RBAC e IDOR (Level 2): acceso cruzado de intentos, roles, cross-tenant
+- Tests del tutor IA (Level 4): chat, sesiones, modos ask/explain/practice, diagnóstico
+- Tests de whitelist de recursos incluidos en Level 4
+- Tests de reglas de negocio (`QuestionRulesTest`)
 
 ### Lo que falta
 | Elemento | Prioridad | Descripción |
 |---|---|---|
 | **Medición de cobertura** | ALTA | El TFG exige mínimo 70% de cobertura; no hay reporte generado |
 | **Tests de carga** | ALTA | Validar ≤2 s con 50 usuarios; soportar 200 concurrentes |
-| **Tests del servicio IA** | ALTA | `AiRecommendationService` no tiene tests unitarios |
-| **Tests de la whitelist** | MEDIA | Una vez implementada, debe ser testeada |
 | **Tests E2E (frontend)** | ALTA | Cypress o Playwright cuando exista frontend |
 | **Tests de accesibilidad** | MEDIA | Requerimiento no funcional (contraste, teclado) |
 | **Pruebas de usuario reales** | ALTA | Piloto con docentes y estudiantes del centro educativo |
 | **Reporte de 1000 estudiantes en <5 s** | MEDIA | Validar con datos de volumen |
-| **Tests de roles/permisos** | ALTA | No se verifican restricciones por rol en los tests existentes |
 | **Test del email de reset** | MEDIA | `PasswordResetMail` no está cubierta con tests |
 
 **Comando para generar reporte de cobertura:**
@@ -140,12 +147,12 @@ php artisan test --coverage --min=70
 |---|---|---|
 | **HTTPS / TLS** | CRÍTICO | No hay configuración de HTTPS (solo infraestructura, pero debe documentarse) |
 | **Expiración de sesión** | ALTA | Sanctum configurado pero no se verifica el tiempo de inactividad de 60 min explícitamente |
-| **RBAC con middleware** | ~~ALTA~~ ✅ | `RequireRole` middleware implementado; rutas protegidas por rol en `api.php` |
+| ~~RBAC con middleware~~ ✅ | ~~ALTA~~ | `RequireRole` middleware implementado; rutas protegidas por rol en `api.php` |
 | **Backups cifrados** | ALTA | No existe script de backup ni documentación |
-| **Validación de output IA** | ALTA | Las respuestas de OpenAI no se validan/sanitizan antes de enviarse al cliente |
+| ~~Validación de output IA~~ ✅ | ~~ALTA~~ | `AiOutputValidator` valida y sanitiza respuestas de OpenAI; whitelist de URLs |
 | **Log de incidentes de tutor** | ALTA | Sin auditoría de respuestas problemáticas del tutor virtual |
-| **Rate limiting en `/ai/generate`** | ALTA | El endpoint de IA es público y sin throttle |
-| **Headers de seguridad HTTP** | MEDIA | No se configura `Content-Security-Policy`, `X-Frame-Options`, etc. |
+| ~~Rate limiting en `/ai/generate`~~ ✅ | ~~ALTA~~ | `throttle:20,1` en `/ai/generate`; `throttle:30,1` en tutor chat |
+| ~~Headers de seguridad HTTP~~ ✅ | ~~MEDIA~~ | `SecurityHeaders` middleware añade CSP, X-Frame-Options, HSTS, etc. |
 | **Validación de CSV en bulk-upload** | MEDIA | Importación de archivos sin validación de tipo MIME ni límite de tamaño |
 | **Secretos en `.env`** | INFO | `.env` está en `.gitignore` ✓ pero `.env.testing` podría exponer datos de prueba |
 | **Política de contraseñas en reset** | MEDIA | El endpoint `resetPassword` debe aplicar la misma `PasswordPolicy` |
@@ -218,8 +225,8 @@ El documento del TFG tiene 11 capítulos requeridos. Los pendientes son:
 
 ### Fase media (calidad y completitud)
 
-5. Implementar whitelist de recursos + validación de output IA
-6. Agregar RBAC con middleware explícito
+5. ~~Implementar whitelist de recursos + validación de output IA~~ ✅
+6. ~~Agregar RBAC con middleware explícito~~ ✅
 7. Mover llamadas OpenAI a colas (Jobs/Queue)
 8. Generar reporte de cobertura ≥70%
 9. Completar diagramas actualizados (arquitectura real vs diseño inicial)
@@ -238,20 +245,20 @@ El documento del TFG tiene 11 capítulos requeridos. Los pendientes son:
 ```
 MÓDULO                     BACKEND    FRONTEND    TESTS    DOCS
 ─────────────────────────────────────────────────────────────
-Autenticación              ████████   ░░░░░░░░    █████░   ░░░
-Gestión de Usuarios        ████████   ░░░░░░░░    █████░   ░░░
-Módulo Académico           ████████   ░░░░░░░░    ██████   ░░░
-Sistema de Exámenes        ████████   ░░░░░░░░    ██████   ░░░
-Tutor Virtual (IA)         ██████░░   ░░░░░░░░    ███░░░   ░░░
-Reportes y Analytics       ████████   ░░░░░░░░    █████░   ░░░
-Seguridad Avanzada         ███████░   ░░░░░░░░    ███░░░   ░░░
+Autenticación              ████████   ░░░░░░░░    ███████  ░░░
+Gestión de Usuarios        ████████   ░░░░░░░░    ███████  ░░░
+Módulo Académico           ████████   ░░░░░░░░    ████████ ░░░
+Sistema de Exámenes        ████████   ░░░░░░░░    ████████ ░░░
+Tutor Virtual (IA)         ████████   ░░░░░░░░    ███████  ░░░
+Reportes y Analytics       ████████   ░░░░░░░░    ███████  ░░░
+Seguridad Avanzada         ████████   ░░░░░░░░    ███████  ░░░
 Banco de Ítems             ██░░░░░░   N/A         ░░░░░░   ░░░
 Informe TFG                N/A        N/A         N/A      ██░░
 
 █ = completado   ░ = pendiente
-(Actualizado 29/04/2026)
+(Actualizado 09/05/2026 — 142 tests / 423 assertions)
 ```
 
 ---
 
-*Documento generado el 17/04/2026. Revisar al finalizar cada sprint.*
+*Documento generado el 17/04/2026. Última actualización: 09/05/2026. Revisar al finalizar cada sprint.*

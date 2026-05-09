@@ -1,9 +1,9 @@
 # Informe de Seguridad — NeoEduCore
-**Fecha:** 21 de abril de 2026  
+**Fecha:** 21 de abril de 2026 (actualizado 09 de mayo de 2026)  
 **Rama:** Darwin  
 **Metodología:** Revisión estática de código + análisis de flujo de datos  
-**Estado al iniciar:** 82 tests pasando / 0 fallando  
-**Estado al finalizar:** 82 tests pasando / 0 fallando  
+**Estado al iniciar (17/04):** 82 tests pasando / 0 fallando  
+**Estado al finalizar (09/05):** 142 tests pasando / 0 fallando  
 
 ---
 
@@ -233,7 +233,7 @@ if ($user->user_type->value === 'teacher') {
 
 ---
 
-## 4. Resumen ejecutivo
+## 4. Resumen ejecutivo — Sesión S (17–21/04/2026)
 
 | # | Vulnerabilidad | Archivos afectados | Severidad | Estado |
 |---|----------------|--------------------|-----------|--------|
@@ -247,9 +247,20 @@ if ($user->user_type->value === 'teacher') {
 `teacher` solo puede operar sobre recursos vinculados a los exámenes que creó.  
 `student` solo puede acceder a sus propios datos.
 
-**Tests antes/después:** 82 pasando / 0 fallando en ambos casos.  
-Los tests de `AiRecommendationsTest` y `StudentProgressTest` fueron actualizados para reflejar los nuevos controles de autorización, verificando que los escenarios legítimos (docente accediendo a datos de sus propios estudiantes) siguen funcionando correctamente.
+---
+
+## 5. Mejoras de seguridad adicionales — Sesión 09/05/2026
+
+Las siguientes mejoras de seguridad proactivas se implementaron durante la sesión de brechas TFG:
+
+| # | Mejora | Archivo | Estado |
+|---|--------|---------|--------|
+| S5 | **Rate limiting en IA** — `throttle:20,1` en `/ai/generate`; `throttle:30,1` en `/ai/tutor/chat`; `throttle:10,1` en diagnóstico | `routes/api.php` | ✅ |
+| S6 | **Headers de seguridad HTTP** — middleware `SecurityHeaders` añade `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `HSTS` | `app/Http/Middleware/SecurityHeaders.php` | ✅ |
+| S7 | **Validación de output IA** — `AiOutputValidator` verifica longitud mínima/máxima, ausencia de datos personales, URLs solo de whitelist verificada | `app/Services/AI/AiOutputValidator.php` | ✅ |
+| S8 | **RBAC con middleware** — `RequireRole` middleware reemplaza chequeos inline; rutas agrupadas por rol en `api.php` | `app/Http/Middleware/RequireRole.php` | ✅ |
+| S9 | **Tests de RBAC/IDOR** — Level 2 integration tests cubren acceso cruzado de intentos, exámenes, cross-tenant (12 tests) | `tests/Feature/Integration/Level2_RbacIdorTest.php` | ✅ |
 
 ---
 
-*Revisión realizada el 21/04/2026 sobre la rama `Darwin`.*
+*Revisión de la Sesión S realizada el 21/04/2026. Mejoras adicionales (S5–S9) el 09/05/2026. Rama `Darwin`.*

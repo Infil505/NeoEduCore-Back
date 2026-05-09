@@ -5,6 +5,7 @@ namespace App\Services\AI;
 use App\Models\AI\AiRecommendation;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Academic\StudyResource;
+use App\Services\AI\AiOutputValidator;
 use OpenAI\Laravel\Facades\OpenAI;
 
 class AiRecommendationService
@@ -259,6 +260,11 @@ class AiRecommendationService
             $candidate = $m[0];
             $decoded = json_decode($candidate, true);
             if (is_array($decoded)) {
+                // Validar URL contra whitelist antes de persistir
+                $url = $decoded['url'] ?? null;
+                if ($url && !(new AiOutputValidator())->isUrlAllowed($url)) {
+                    unset($decoded['url']);
+                }
                 $resourceJson = $decoded;
             }
         }

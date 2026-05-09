@@ -29,10 +29,10 @@ class AnalyticsController extends Controller
 
         return response()->json([
             'data' => [
-                'total_students'           => $totalStudents,
-                'active_students'          => $activeStudents,
-                'exams_completed'          => $examsCompleted,
-                'average_score_percentage' => $avgPct ? round((float) $avgPct, 2) : 0,
+                'total_students'    => $totalStudents,
+                'active_students'   => $activeStudents,
+                'exams_completed'   => $examsCompleted,
+                'average_score_pct' => $avgPct ? round((float) $avgPct, 2) : 0,
             ],
         ]);
     }
@@ -101,11 +101,11 @@ class AnalyticsController extends Controller
 
         return response()->json([
             'data' => [
-                'student'                  => $student,
-                'total_attempts'           => (int) ($stats->total_attempts ?? 0),
-                'average_score_percentage' => $stats->avg_pct ? round((float) $stats->avg_pct, 2) : 0,
-                'progress_by_subject'      => $student->progress,
-                'recent_attempts'          => $recentAttempts,
+                'student'           => $student,
+                'attempts_count'    => (int) ($stats->total_attempts ?? 0),
+                'average_score_pct' => $stats->avg_pct ? round((float) $stats->avg_pct, 2) : 0,
+                'progress'          => $student->progress,
+                'recent_attempts'   => $recentAttempts,
             ],
         ]);
     }

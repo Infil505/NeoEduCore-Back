@@ -1,7 +1,7 @@
 # NeoEduCore — Estado del proyecto y pendientes
-**Última actualización:** 29 de abril de 2026  
+**Última actualización:** 9 de mayo de 2026  
 **Rama activa:** Darwin  
-**Tests:** 82 pasando / 0 fallando
+**Tests:** 142 pasando / 0 fallando
 
 ---
 
@@ -62,8 +62,9 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 ---
 
 ### ✅ Gestión de usuarios (admin)
-- CRUD completo: list, show, update, set-status, reset-password
-- Ruta: `GET/PUT/PATCH /api/users/{id}`
+- CRUD completo: list, show, update, set-status, reset-password, **delete**
+- Ruta: `GET/PUT/PATCH/DELETE /api/users/{id}`
+- `DELETE /api/users/{id}` — revoca tokens y elimina el usuario; cascada a perfil `Student`, intentos, respuestas, progreso y recomendaciones. Los exámenes que creó el profesor quedan con `created_by_teacher_id = NULL`.
 
 ---
 
@@ -76,12 +77,14 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 ### ✅ Materias (Subjects)
 - CRUD completo
 - Ruta: `/api/subjects`
+- `DELETE /api/subjects/{id}` — cascada DB: exámenes → preguntas → opciones → intentos → respuestas. También elimina inscripciones (`student_subjects`) y progreso por materia.
 
 ---
 
 ### ✅ Grupos
 - CRUD completo + asignación/baja de estudiantes (upsert batch)
 - Ruta: `/api/groups`
+- `DELETE /api/groups/{id}` — cascada DB: membresías (`group_students`) y asignaciones de examen (`exam_targets`). Los estudiantes y exámenes NO se eliminan.
 
 ---
 
@@ -274,7 +277,7 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 
 ## 4. Bugs activos
 
-> ✅ Todos los bugs identificados hasta el 29/04/2026 han sido corregidos.  
+> ✅ Todos los bugs identificados hasta el 09/05/2026 han sido corregidos.  
 > Ver detalle completo en `INFORME_BUGS_ABRIL_2026.md`.
 
 ### Bugs corregidos en sesión 21/04/2026
@@ -303,6 +306,26 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | C1 | `student_answers` | `review_status` era `varchar` en DB — convertido a ENUM PostgreSQL nativo | ✅ |
 | C2 | `TenantScoped.php` | Silencioso en HTTP sin tenant_id — ahora lanza `RuntimeException` | ✅ |
 | C3 | `.env.example` | Faltaba `OPENAI_REQUEST_TIMEOUT=15` | ✅ |
+
+### Correcciones y mejoras (09/05/2026) — Tests de integración Niveles 1-6
+
+| # | Archivo(s) | Descripción | Estado |
+|---|-----------|-------------|--------|
+| D1 | `Exam.php` | Método `syncGroups()` agregado; usa `syncWithPivotValues` para pasar `institution_id` al pivot `exam_targets` (antes violaba NOT NULL) | ✅ |
+| D2 | `ExamController.php` | `groups()->sync()` → `syncGroups()` en `store()` y `update()` | ✅ |
+| D3 | `ExamGradingService.php` | `selectedOptions()->sync()` → `syncWithPivotValues(['institution_id'])` en pivot `student_answer_options` | ✅ |
+| D4 | `ExamAttemptController.php` | IDOR en `show()` retornaba 403 en vez de 404; `diffInSeconds()` retornaba float (Carbon 3.x) — cast a `(int)` | ✅ |
+| D5 | `SetTenantFromAuth.php` | Resuelve usuario vía `auth()->guard('sanctum')->user()` para funcionar antes de `auth:sanctum` | ✅ |
+| D6 | `bootstrap/app.php` | `SetTenantFromAuth` prepended al grupo `api` para ejecutarse antes de `SubstituteBindings` | ✅ |
+| D7 | `routes/api.php` | Eliminado middleware `tenant` redundante de las rutas (ahora en grupo `api`) | ✅ |
+| D8 | `config/database.php` | `'timezone' => 'UTC'` agregado en conexión `pgsql` (evita desfase de 6h con server en UTC-6) | ✅ |
+| D9 | `Student.php` | `->withTimestamps(false)` en `groups()` generaba columna vacía `""` en SQL de PostgreSQL — eliminado | ✅ |
+| D10 | `routes/api.php` | Ruta literal `GET /students/me/subjects` movida antes de la paramétrica `/{student_user_id}/subjects` (evitaba que `me` matcheara como ID) | ✅ |
+| D11 | `AiTutorService.php` | `Collection::takeLast()` no existe en Laravel — reemplazado por `take(-n)` | ✅ |
+| D12 | `AnalyticsController.php` | Claves de respuesta renombradas: `average_score_percentage` → `average_score_pct`, `total_attempts` → `attempts_count`, `progress_by_subject` → `progress` | ✅ |
+| D13 | `ReportController.php` | Clave `attempts` → `results` en respuesta de `examResults()` | ✅ |
+| D14 | `InstitutionFactory.php` | Código `INST-####` solo tenía 10,000 variantes → colisiones intermitentes en suite completa. Ahora usa UUID de 8 chars (4 billones de variantes) | ✅ |
+| D15 | `01_schema.sql` / migración | FKs de `exams`: `subject_id` → `ON DELETE CASCADE`; `created_by_teacher_id` → nullable + `ON DELETE SET NULL` | ✅ |
 
 ---
 
@@ -356,18 +379,52 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 
 ---
 
-### 🟢 Prioridad Baja — Pendientes
+### ✅ Brechas vs TFG — Completado (09/05/2026)
 
-- [ ] **Endpoint de configuración del sistema**
-  - Ruta: `GET/PUT /api/system/config`
-  - Configuraciones básicas por institución: nombre, logo, timezone, etc.
+- [x] **Rate limiting en `/ai/generate`** — `throttle:20,1` agregado (era el único endpoint de IA sin throttle)
+- [x] **Headers de seguridad HTTP** — middleware `SecurityHeaders` (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) aplicado a grupos `api` y `web`
+- [x] **Código muerto eliminado** — `NameController.php` y `StoreNameRequest.php` borrados
+- [x] **Flujos interactivos del tutor IA** — parámetros `mode` (`ask`/`explain`/`practice`) y `topic` en `POST /ai/tutor/chat`; nuevo `GET /ai/tutor/diagnosis` con resumen IA del progreso
+- [x] **Adecuación curricular en exámenes** — `ExamAttemptRulesService` aplica tiempo extra: `acceso` → ×1.25, `evaluacion` → ×1.50
+- [x] **Validación de output IA** — `AiOutputValidator` verifica longitud y patrones PII; aplicado en `AiController` y `AiTutorService`
+- [x] **Whitelist de URLs en recursos IA** — `config/ai_resources.php` con dominios permitidos; validación en `StudyResourceController` (store/update) y en `AiRecommendationService::extractResource()`
+- [x] **Métricas de uso del tutor** — `GET /reports/ai/tutor-usage` con total sesiones/mensajes, estudiantes únicos, top tipos de recomendación y top estudiantes por uso
 
-- [ ] **`StudentSubject` — inscripción explícita a materias**
-  - Nueva tabla pivot: `student_subjects (student_user_id, subject_id, institution_id, enrolled_at)`
-  - Solo si el documento TFG lo exige como entidad separada de `student_progress`
+---
 
-- [ ] **Validación de `subject_id` en ExamController**
-  - Agregar `Rule::exists('subjects', 'id')` a la validación del examen
+### ✅ Prioridad Baja — Completado (09/05/2026)
+
+- [x] **Validación de `subject_id` en ExamController**
+  - `Rule::exists('subjects', 'id')` en `store()` y `update()`
+
+- [x] **Endpoint de configuración del sistema**
+  - `GET /api/system/config` — admin y teacher
+  - `PUT /api/system/config` — solo admin
+  - Campos: `timezone`, `language`, `logo_url`, `max_exam_duration`, `allow_registration`, `contact_email`
+  - Almacenado como JSONB en `institutions.settings`; defaults en `Institution::$defaultSettings`
+
+- [x] **`StudentSubject` — inscripción explícita a materias**
+  - Tabla `student_subjects (institution_id, student_user_id, subject_id, enrolled_at)` con UNIQUE por par
+  - Modelo `StudentSubject`, relación `Student::subjects()` (belongsToMany)
+  - `GET /api/students/{id}/subjects` — listado (admin/teacher)
+  - `POST /api/students/{id}/subjects` — inscribir (admin/teacher)
+  - `DELETE /api/students/{id}/subjects/{subject}` — desinscribir (admin/teacher)
+  - `GET /api/students/me/subjects` — mis materias (student)
+
+---
+
+### ✅ Tests de integración y cascada de eliminación — Completado (09/05/2026)
+
+- [x] **Suite de integración completa** — 60 nuevos tests (Niveles 1-6) que cubren el flujo end-to-end, RBAC, ciclo de vida del estudiante, tutor IA, analíticas y configuración del sistema. Total: **142 tests, 423 assertions**.
+- [x] **Cascada de eliminación en Subject** — `DELETE /subjects/{id}` elimina en cascada exámenes → preguntas → opciones → intentos → respuestas; también inscripciones y progreso. Antes bloqueaba si el subject tenía exámenes.
+- [x] **Cascada de eliminación en Group** — `DELETE /groups/{id}` elimina membresías y asignaciones de examen en cascada. Antes bloqueaba si había estudiantes activos.
+- [x] **Eliminación de User** — nueva ruta `DELETE /users/{id}` (admin). Revoca tokens y elimina en cascada el perfil student y toda su actividad. Los exámenes del profesor quedan con `created_by_teacher_id = NULL`.
+- [x] **Migración de FKs** — `exams.subject_id ON DELETE CASCADE` y `exams.created_by_teacher_id ON DELETE SET NULL` (nullable). Antes ambos eran RESTRICT implícito.
+
+---
+
+> **Backend completado al 100%** — todos los módulos, bugs, seguridad, optimizaciones, brechas TFG, tests de integración y comportamiento de eliminación implementados.
+> Quedan pendientes: frontend (React/Next.js), banco de ítems (60+ preguntas), piloto con usuarios, documento académico.
 
 ---
 
@@ -380,7 +437,9 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | POST | `/api/register` | Registro de usuario |
 | POST | `/api/auth/login` | Login |
 | POST | `/api/password/forgot` | Solicitar reset |
-| POST | `/api/password/verify` | Verificar token |
+| POST | `/api/password/verify` | Verificar 
+
+ |
 | POST | `/api/password/reset` | Resetear contraseña |
 
 ### Autenticados — Solo estudiante
@@ -420,6 +479,7 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | GET/PUT/PATCH | `/api/users/{id}` | Ver/editar usuario |
 | PATCH | `/api/users/{id}/status` | Cambiar estado usuario |
 | PATCH | `/api/users/{id}/reset-password` | Resetear contraseña |
+| DELETE | `/api/users/{id}` | Eliminar usuario (solo admin) — cascada a student, intentos, etc. |
 | GET | `/api/students` | Lista estudiantes |
 | GET/PUT | `/api/students/{id}` | Ver/editar estudiante |
 | PATCH | `/api/students/{id}/status` | Cambiar estado estudiante |
@@ -449,6 +509,19 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | GET | `/api/analytics/subjects` | Rendimiento por materia |
 | GET | `/api/analytics/students/{id}` | Detalle analítico de estudiante |
 
+### Autenticados — Solo Estudiante (adicionales)
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/students/me/subjects` | Mis materias inscritas |
+| GET | `/api/ai/tutor/diagnosis` | Diagnóstico IA de mi progreso |
+
+### Autenticados — Admin y Profesor (materias del estudiante)
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/students/{id}/subjects` | Materias inscritas de un estudiante |
+| POST | `/api/students/{id}/subjects` | Inscribir estudiante a materia |
+| DELETE | `/api/students/{id}/subjects/{subject}` | Desinscribir estudiante de materia |
+
 ### Autenticados — Solo Admin
 | Método | Ruta | Descripción |
 |--------|------|-------------|
@@ -458,4 +531,4 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 
 ---
 
-*Documento actualizado el 29/04/2026.*
+*Documento actualizado el 09/05/2026.*

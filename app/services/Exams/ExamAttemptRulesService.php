@@ -2,11 +2,26 @@
 
 namespace App\Services\Exams;
 
+use App\Enums\AdecuacionType;
 use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
+use App\Models\Students\Student;
 
 class ExamAttemptRulesService
 {
+    /**
+     * Multiplicador de tiempo según adecuación curricular del estudiante (Costa Rica).
+     * acceso/evaluacion → tiempo extra; contenido → sin cambio en tiempo.
+     */
+    private function timeMultiplierFor(?Student $student): float
+    {
+        return match ($student?->adecuacion_type) {
+            AdecuacionType::Acceso    => 1.25,
+            AdecuacionType::Evaluacion => 1.50,
+            default                   => 1.0,
+        };
+    }
+
     public function assertExamIsStartable(Exam $exam): void
     {
         if ($exam->status->value !== 'active') {
@@ -30,7 +45,7 @@ class ExamAttemptRulesService
         }
     }
 
-    public function assertAttemptIsSubmittable(Exam $exam, ExamAttempt $attempt): void
+    public function assertAttemptIsSubmittable(Exam $exam, ExamAttempt $attempt, ?Student $student = null): void
     {
         if ($attempt->exam_id !== $exam->id) {
             throw new \RuntimeException('Intento no corresponde a este examen');
@@ -41,13 +56,16 @@ class ExamAttemptRulesService
         }
 
         if ($exam->duration_minutes && $attempt->started_at) {
+            $multiplier  = $this->timeMultiplierFor($student);
+            $adjustedMin = (int) ceil($exam->duration_minutes * $multiplier);
+
             // Descontar tiempo acumulado en pausas + 30 s de gracia para latencia
             $pausedSoFar = (int) ($attempt->total_paused_seconds ?? 0);
             if ($attempt->paused_at) {
                 $pausedSoFar += now()->diffInSeconds($attempt->paused_at);
             }
             $deadline = $attempt->started_at->copy()
-                ->addMinutes($exam->duration_minutes)
+                ->addMinutes($adjustedMin)
                 ->addSeconds($pausedSoFar)
                 ->addSeconds(30);
             if (now()->gt($deadline)) {

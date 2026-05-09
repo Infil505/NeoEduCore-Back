@@ -20,16 +20,27 @@ class Institution extends Model
     protected $keyType = 'string';
 
     protected $fillable = [
-        'code',      // Código institucional (RN-GLOB-001)
-        'name',      // Nombre completo
+        'code',
+        'name',
         'address',
         'phone',
         'email',
         'is_active',
+        'settings',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'settings'  => 'array',
+    ];
+
+    public static array $defaultSettings = [
+        'timezone'           => 'America/Costa_Rica',
+        'language'           => 'es',
+        'logo_url'           => null,
+        'max_exam_duration'  => 180,
+        'allow_registration' => true,
+        'contact_email'      => null,
     ];
 
     /* =========================

@@ -8,30 +8,41 @@ Este proyecto contiene tests feature completos para todos los endpoints de la AP
 tests/
 ├── Feature/
 │   ├── Auth/
-│   │   ├── AuthSessionTest.php       (GET /auth/me, POST /auth/logout)
-│   │   ├── LoginRegisterTest.php     (Register, Login)
-│   │   └── PasswordResetTest.php     (Password reset & change)
+│   │   ├── AuthSessionTest.php           (GET /auth/me, POST /auth/logout)
+│   │   ├── LoginRegisterTest.php         (Register, Login)
+│   │   └── PasswordResetTest.php         (Password reset & change)
 │   ├── Crud/
-│   │   ├── StudentsCrudTest.php      (All student endpoints)
-│   │   ├── GroupsCrudTest.php        (All group endpoints)
-│   │   ├── SubjectsTest.php          (All subject endpoints)
-│   │   ├── ExamsCrudTest.php         (All exam endpoints)
-│   │   ├── QuestionsCrudTest.php     (All question endpoints)
-│   │   ├── ExamAttemptsTest.php      (Exam attempt endpoints)
-│   │   ├── StudentAnswersTest.php    (Student answer endpoints)
-│   │   ├── StudyResourcesTest.php    (Study resource endpoints)
-│   │   ├── CalendarEventsTest.php    (Calendar event endpoints)
-│   │   ├── StudentProgressTest.php   (Student progress endpoints)
-│   │   ├── UsersTest.php             (User management endpoints)
-│   │   ├── InstitutionsTest.php      (Institution endpoints)
-│   │   ├── AiRecommendationsTest.php (AI recommendation endpoints)
-│   │   └── ReportsTest.php           (Report endpoints)
-│   └── HealthTest.php                (GET /ping)
+│   │   ├── StudentsCrudTest.php          (All student endpoints)
+│   │   ├── GroupsCrudTest.php            (All group endpoints)
+│   │   ├── SubjectsTest.php              (All subject endpoints)
+│   │   ├── ExamsCrudTest.php             (All exam endpoints)
+│   │   ├── QuestionsCrudTest.php         (All question endpoints)
+│   │   ├── ExamAttemptsTest.php          (Exam attempt endpoints)
+│   │   ├── StudentAnswersTest.php        (Student answer endpoints)
+│   │   ├── StudyResourcesTest.php        (Study resource endpoints)
+│   │   ├── CalendarEventsTest.php        (Calendar event endpoints)
+│   │   ├── StudentProgressTest.php       (Student progress endpoints)
+│   │   ├── UsersTest.php                 (User management endpoints)
+│   │   ├── InstitutionsTest.php          (Institution endpoints)
+│   │   ├── AiRecommendationsTest.php     (AI recommendation endpoints)
+│   │   └── ReportsTest.php               (Report endpoints)
+│   ├── Integration/
+│   │   ├── Level1_ExamFullFlowTest.php   (Flujo completo: start→submit→grade→AI)
+│   │   ├── Level2_RbacIdorTest.php       (RBAC, IDOR, cross-tenant)
+│   │   ├── Level3_StudentLifecycleTest.php (Grupos, materias, exámenes disponibles)
+│   │   ├── Level4_AiTutorFlowTest.php    (Tutor IA: chat, sesiones, modos, diagnóstico)
+│   │   ├── Level5_AnalyticsReportsTest.php (Analíticas y reportes)
+│   │   └── Level6_SystemConfigTest.php   (Configuración del sistema)
+│   └── Routes/
+│       ├── ProtectedRoutesRequireAuthTest.php
+│       └── PublicRoutesTest.php
 ├── Traits/
-│   ├── ApiAuth.php                   (signInTeacher, signInAdmin helpers)
-│   └── UsesPostgresSchema.php        (Database setup)
-└── TestCase.php                      (Base test class)
+│   ├── ApiAuth.php                       (signInTeacher, signInAdmin, signInStudent)
+│   └── UsesPostgresSchema.php            (Recrea schema PostgreSQL desde 01_schema.sql)
+└── TestCase.php                          (Base test class)
 ```
+
+**Total: 142 tests, 423 assertions**
 
 ## Ejecución
 
@@ -146,12 +157,13 @@ php artisan test --verbose
 - ✅ GET /ai-recommendations/{id}
 - ✅ POST /exam-attempts/{attempt}/recommendations/regenerate
 
-### Usuarios (5 tests)
+### Usuarios (6 tests)
 - ✅ GET /users
 - ✅ GET /users/{id}
 - ✅ PUT /users/{id}
 - ✅ PATCH /users/{id}/status
 - ✅ PATCH /users/{id}/reset-password
+- ✅ DELETE /users/{id}
 
 ### Instituciones (4 tests)
 - ✅ GET /institutions
@@ -164,7 +176,15 @@ php artisan test --verbose
 - ✅ GET /reports/exams/{exam}/results.csv
 - ✅ GET /reports/students/{student}/history
 
-**Total: 80+ tests**
+### Tests de Integración (60 tests)
+- ✅ Level 1 — Flujo completo examen (11 tests): start, submit, auto-grade, pausa/resume, expiración, adecuación curricular, IA
+- ✅ Level 2 — RBAC e IDOR (12 tests): acceso cruzado de intentos/exámenes, roles, cross-tenant
+- ✅ Level 3 — Ciclo de vida del estudiante (8 tests): grupos, materias, exámenes disponibles
+- ✅ Level 4 — Tutor IA (12 tests): chat, sesiones, modos ask/explain/practice, diagnóstico
+- ✅ Level 5 — Analíticas y reportes (9 tests): institution/subjects/student analytics, CSV, historial, tutor usage
+- ✅ Level 6 — Configuración del sistema (8 tests): lectura/escritura config, validaciones, roles
+
+**Total: 142 tests, 423 assertions**
 
 ## Helpers de Autenticación
 

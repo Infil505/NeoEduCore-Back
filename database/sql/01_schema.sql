@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS institutions (
   phone text,
   email text,
   is_active boolean NOT NULL DEFAULT true,
+  settings jsonb,
 
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
@@ -201,8 +202,8 @@ CREATE TABLE IF NOT EXISTS exams (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   institution_id uuid NOT NULL REFERENCES institutions(id) ON DELETE CASCADE,
 
-  created_by_teacher_id uuid NOT NULL REFERENCES users(id),
-  subject_id uuid NOT NULL REFERENCES subjects(id),
+  created_by_teacher_id uuid REFERENCES users(id) ON DELETE SET NULL,
+  subject_id uuid NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
 
   title text NOT NULL,
   instructions text,
@@ -461,3 +462,18 @@ CREATE TABLE IF NOT EXISTS ai_chat_sessions (
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_student ON ai_chat_sessions(student_user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_institution ON ai_chat_sessions(institution_id);
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_active ON ai_chat_sessions(student_user_id, ended_at);
+
+-- Inscripción explícita estudiante-materia
+CREATE TABLE IF NOT EXISTS student_subjects (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  institution_id uuid NOT NULL REFERENCES institutions(id) ON DELETE CASCADE,
+  student_user_id uuid NOT NULL REFERENCES students(user_id) ON DELETE CASCADE,
+  subject_id uuid NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+  enrolled_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (student_user_id, subject_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_student_subjects_student ON student_subjects(student_user_id);
+CREATE INDEX IF NOT EXISTS idx_student_subjects_institution ON student_subjects(institution_id);

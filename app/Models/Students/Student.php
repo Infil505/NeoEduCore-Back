@@ -86,8 +86,7 @@ class Student extends Model
             'group_students',
             'student_user_id',
             'group_id'
-        )->withPivot(['joined_at', 'left_at'])
-         ->withTimestamps(false);
+        )->withPivot(['joined_at', 'left_at']);
     }
 
     public function attempts()
@@ -98,6 +97,18 @@ class Student extends Model
     public function progress()
     {
         return $this->hasMany(StudentProgress::class, 'student_user_id', 'user_id');
+    }
+
+    public function subjects()
+    {
+        return $this->belongsToMany(
+            \App\Models\Academic\Subject::class,
+            'student_subjects',
+            'student_user_id',
+            'subject_id',
+            'user_id',
+            'id'
+        )->withPivot('enrolled_at')->withTimestamps();
     }
 
     /**

@@ -70,17 +70,20 @@ php artisan test tests/Feature/Auth/
 php artisan test tests/Feature/Crud/StudentsCrudTest.php
 php artisan test tests/Feature/Crud/StudentsCrudTest.php::test_list_students
 
-# Tests con salida detallada
-php artisan test --verbose
+# Tests de integración (niveles 1-6)
+php artisan test tests/Feature/Integration/
+php artisan test tests/Feature/Integration/Level1_ExamFullFlowTest.php
+php artisan test tests/Feature/Integration/Level2_RbacIdorTest.php
 
 # Tests con coverage (cobertura de código)
 php artisan test --coverage
+php artisan test --coverage --min=70
 
 # Tests en paralelo (más rápido)
 php artisan test --parallel
 
-# Tests sin parar en primer error
-php artisan test --bail=false
+# Parar al primer fallo
+php artisan test --stop-on-failure
 ```
 
 ### Limpiar Tests
@@ -666,6 +669,6 @@ php -m (ver extensiones)
 
 ---
 
-**Última actualización**: 29 de Abril de 2026
+**Última actualización**: 09 de Mayo de 2026
 **Laravel Version**: 12
 **PHP Version**: 8.2+

@@ -111,19 +111,12 @@ class GroupController extends Controller
     }
 
     /**
-     * Eliminar grupo
-     * - Si tiene estudiantes activos, no permitir (recomendado para evitar huérfanos)
+     * Eliminar grupo.
+     * Cascada DB: group_students (membresías) y exam_targets (asignaciones).
+     * Los estudiantes y exámenes NO se eliminan.
      */
     public function destroy(Group $group)
     {
-        $activeCount = $group->students()->wherePivotNull('left_at')->count();
-
-        if ($activeCount > 0) {
-            return response()->json([
-                'message' => 'No se puede eliminar un grupo con estudiantes asignados',
-            ], 409);
-        }
-
         $group->delete();
 
         return response()->noContent();

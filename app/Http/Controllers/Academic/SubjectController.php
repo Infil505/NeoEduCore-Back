@@ -117,29 +117,15 @@ class SubjectController extends Controller
     }
 
     /**
-     * Eliminar materia (tenant scoped)
-     * - recomendado: si tiene exámenes asociados, bloquear
+     * Eliminar materia.
+     * Cascada DB: exámenes → preguntas → opciones → intentos → respuestas.
      */
     public function destroy(Request $request, Subject $subject)
     {
         $user = $request->user();
 
-        if (!$user || !$user->institution_id) {
-            return response()->json([
-                'message' => 'Usuario sin institución asignada.',
-            ], 409);
-        }
-
         if ($subject->institution_id !== $user->institution_id) {
-            return response()->json([
-                'message' => 'No autorizado para eliminar esta materia.',
-            ], 403);
-        }
-
-        if ($subject->exams()->exists()) {
-            return response()->json([
-                'message' => 'No se puede eliminar una materia con exámenes asociados',
-            ], 409);
+            return response()->json(['message' => 'No autorizado'], 403);
         }
 
         $subject->delete();

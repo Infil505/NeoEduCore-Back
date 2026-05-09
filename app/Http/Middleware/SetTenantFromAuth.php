@@ -10,7 +10,9 @@ class SetTenantFromAuth
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $user = $request->user();
+        // Resolve via sanctum guard so this middleware can run before SubstituteBindings
+        // (Sanctum reads the Bearer token directly without needing auth:sanctum to have run)
+        $user = auth()->guard('sanctum')->user() ?? $request->user();
 
         if ($user && $user->institution_id) {
             app()->instance('tenant_id', $user->institution_id);

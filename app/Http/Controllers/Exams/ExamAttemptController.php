@@ -96,9 +96,11 @@ class ExamAttemptController extends Controller
             return response()->json(['message' => 'Intento no válido'], 404);
         }
 
-        // RN: intentos submittable
+        $student = Student::where('user_id', $user->id)->first();
+
+        // RN: intentos submittable (pasa Student para aplicar adecuación curricular)
         try {
-            $rules->assertAttemptIsSubmittable($exam, $attempt);
+            $rules->assertAttemptIsSubmittable($exam, $attempt, $student);
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 409);
         }
@@ -226,7 +228,7 @@ class ExamAttemptController extends Controller
         $user = $request->user();
 
         if ($attempt->exam_id !== $exam->id || $attempt->student_user_id !== $user->id) {
-            return response()->json(['message' => 'No autorizado'], 403);
+            return response()->json(['message' => 'No encontrado'], 404);
         }
 
         $attempt->load([
@@ -276,7 +278,7 @@ class ExamAttemptController extends Controller
             return response()->json(['message' => 'El intento no está pausado'], 409);
         }
 
-        $pausedSeconds = now()->diffInSeconds($attempt->paused_at);
+        $pausedSeconds = (int) abs(now()->diffInSeconds($attempt->paused_at));
 
         $attempt->update([
             'paused_at'            => null,
