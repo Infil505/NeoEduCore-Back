@@ -89,6 +89,13 @@ class Exam extends Model
         )->withPivot(['institution_id']);
     }
 
+    public function syncGroups(array $groupIds): void
+    {
+        $this->groups()->syncWithPivotValues($groupIds, [
+            'institution_id' => $this->institution_id,
+        ]);
+    }
+
     public function questions()
     {
         return $this->hasMany(Question::class);

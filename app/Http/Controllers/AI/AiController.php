@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Exams\Exam;
 use App\Models\Students\Student;
 use App\Models\Academic\Subject;
+use App\Services\AI\AiOutputValidator;
 use App\Services\AI\AiRecommendationService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -25,7 +26,7 @@ class AiController extends Controller
      *   "resource": { ... } // opcional (si type=resource)
      * }
      */
-    public function generate(Request $request, AiRecommendationService $aiService)
+    public function generate(Request $request, AiRecommendationService $aiService, AiOutputValidator $validator)
     {
         $user = $request->user();
 
@@ -93,13 +94,18 @@ class AiController extends Controller
             ], 502);
         }
 
+        $validationError = $validator->validate($text);
+        if ($validationError !== null) {
+            return response()->json(['message' => $validationError], 422);
+        }
+
         // Guardar recomendación (institution_id puede llenarse por backend o triggers)
         $rec = $aiService->create(
             $data['student_user_id'],
             $data['subject_id'],
             $data['exam_id'] ?? null,
             $data['type'],
-            trim($text),
+            $validator->sanitize($text),
             $data['resource'] ?? null
         );
 

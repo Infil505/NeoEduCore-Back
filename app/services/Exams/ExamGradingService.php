@@ -76,7 +76,9 @@ class ExamGradingService
                     ->whereIn('id', array_map('strval', $selectedIds))
                     ->pluck('id');
 
-                $answer->selectedOptions()->sync($validIds);
+                $answer->selectedOptions()->syncWithPivotValues($validIds, [
+                    'institution_id' => $attempt->institution_id,
+                ]);
             }
         }
 

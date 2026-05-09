@@ -1,8 +1,12 @@
 openapi: 3.0.3
 info:
   title: NeoEduCore API
-  version: 1.0.0
-  description: API documentation - endpoints defined in routes/api.php
+  version: 1.1.0
+  description: >
+    API REST de NeoEduCore — sistema de exámenes diagnósticos con tutor virtual IA.
+    Autenticación vía Bearer token (Laravel Sanctum). Todos los endpoints protegidos
+    requieren el header `Authorization: Bearer {token}`.
+    Actualizado: 09/05/2026.
 servers:
   - url: http://localhost
     description: Local development
@@ -143,6 +147,7 @@ tags:
   - name: health
   - name: auth
   - name: students
+  - name: student-subjects
   - name: groups
   - name: subjects
   - name: exams
@@ -152,9 +157,12 @@ tags:
   - name: study-resources
   - name: calendar-events
   - name: ai
+  - name: ai-tutor
   - name: users
   - name: institutions
   - name: reports
+  - name: analytics
+  - name: system-config
 
 paths:
 
@@ -370,7 +378,7 @@ paths:
     get:
       operationId: get_students_me
       tags: [students]
-      summary: Current student profile
+      summary: Current student profile (role:student)
       security:
         - bearerAuth: []
       responses:
@@ -380,6 +388,84 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Student'
+
+  /students/me/available-exams:
+    get:
+      operationId: get_students_me_available_exams
+      tags: [students]
+      summary: List exams available for the authenticated student (role:student)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Available exams list
+          content:
+            application/json:
+              example:
+                data:
+                  - id: "e_77"
+                    title: "Examen Unidad 1"
+                    subject: "Matematicas"
+                    available_until: "2026-06-01T23:59:00Z"
+
+  /students/me/subjects:
+    get:
+      operationId: get_students_me_subjects
+      tags: [student-subjects]
+      summary: List subjects enrolled for the authenticated student (role:student)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Enrolled subjects
+          content:
+            application/json:
+              example:
+                data:
+                  - id: "s_5"
+                    name: "Matematicas"
+                    enrolled_at: "2026-03-01"
+
+  /students/bulk-upload/template:
+    get:
+      operationId: get_students_bulk_upload_template
+      tags: [students]
+      summary: Download CSV template for bulk student import (role:admin,teacher)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: CSV template file
+          content:
+            text/csv:
+              example: "full_name,email,student_code,grade,section"
+
+  /students/bulk-upload:
+    post:
+      operationId: post_students_bulk_upload
+      tags: [students]
+      summary: Bulk import students from CSV (role:admin,teacher)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Import result
+          content:
+            application/json:
+              example:
+                created: 45
+                skipped: 2
+                errors: []
 
   /students/{student_user_id}:
     get:
@@ -443,6 +529,76 @@ paths:
       responses:
         '200':
           description: Status updated
+
+  /students/{student_user_id}/subjects:
+    get:
+      operationId: get_student_subjects
+      tags: [student-subjects]
+      summary: List subjects for a student (role:admin,teacher)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: student_user_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Subject list
+          content:
+            application/json:
+              example:
+                data:
+                  - id: "s_5"
+                    name: "Matematicas"
+    post:
+      operationId: post_enroll_student_subject
+      tags: [student-subjects]
+      summary: Enroll student in a subject (role:admin,teacher)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: student_user_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              subject_id: "s_5"
+      responses:
+        '201':
+          description: Enrolled
+          content:
+            application/json:
+              example:
+                message: "Student enrolled"
+
+  /students/{student_user_id}/subjects/{subject}:
+    delete:
+      operationId: delete_student_subject
+      tags: [student-subjects]
+      summary: Unenroll student from a subject (role:admin,teacher)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: student_user_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: subject
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Unenrolled
 
   # ─── Groups ───────────────────────────────────────────────────────────────
 
@@ -870,7 +1026,44 @@ paths:
     post:
       operationId: post_exam_attempt_submit
       tags: [exam-attempts]
-      summary: Submit attempt
+      summary: Submit attempt (role:student)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: exam
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: attempt
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            example:
+              answers:
+                - question_id: "q_1"
+                  selected_option_ids: ["opt_3"]
+                - question_id: "q_2"
+                  text_answer: "La respuesta es 42"
+      responses:
+        '200':
+          description: Attempt submitted and graded
+          content:
+            application/json:
+              example:
+                score: 8.5
+                grade_status: "graded"
+                passed: true
+
+  /exams/{exam}/attempts/{attempt}/pause:
+    patch:
+      operationId: patch_exam_attempt_pause
+      tags: [exam-attempts]
+      summary: Pause attempt (role:student)
       security:
         - bearerAuth: []
       parameters:
@@ -886,7 +1079,60 @@ paths:
             type: string
       responses:
         '200':
-          description: Attempt submitted
+          description: Attempt paused
+          content:
+            application/json:
+              example:
+                message: "Attempt paused"
+                remaining_seconds: 1800
+
+  /exams/{exam}/attempts/{attempt}/resume:
+    patch:
+      operationId: patch_exam_attempt_resume
+      tags: [exam-attempts]
+      summary: Resume paused attempt (role:student)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: exam
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: attempt
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Attempt resumed
+          content:
+            application/json:
+              example:
+                message: "Attempt resumed"
+                remaining_seconds: 1800
+
+  /exam-attempts/{attempt}/recommendations/regenerate:
+    post:
+      operationId: post_attempt_recommendations_regenerate_v2
+      tags: [ai]
+      summary: Regenerate AI recommendations for a completed attempt (role:student)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: attempt
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Recommendations regenerated
+          content:
+            application/json:
+              example:
+                message: "Recommendations generated"
 
   # ─── Student Answers ──────────────────────────────────────────────────────
 
@@ -1194,47 +1440,68 @@ paths:
     post:
       operationId: post_ai_generate
       tags: [ai]
-      summary: Generate AI content
+      summary: Generate AI recommendations manually for an attempt (role:admin,teacher)
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             example:
-              prompt: "Resume este texto sobre fracciones"
-              max_tokens: 150
+              attempt_id: "ea_333"
       responses:
         '200':
-          description: Generated content
+          description: Recommendations generated
           content:
             application/json:
               example:
-                text: "Resumen generado por IA..."
+                message: "Recommendations generated"
+                count: 3
 
   /ai-recommendations:
     get:
       operationId: get_ai_recommendations
       tags: [ai]
-      summary: List AI recommendations
+      summary: List AI recommendations (role:admin,teacher)
       security:
         - bearerAuth: []
+      parameters:
+        - in: query
+          name: recommendation_type
+          schema:
+            type: string
+            enum: [strength, weakness, resource, action]
+        - in: query
+          name: student_user_id
+          schema:
+            type: string
       responses:
         '200':
           description: Recommendations list
           content:
             application/json:
               example:
-                - id: "ar_1"
-                  recommendation: "Estudiar mas sobre fracciones"
-                - id: "ar_2"
-                  recommendation: "Practicar ejercicios de algebra"
+                data:
+                  - id: "ar_1"
+                    recommendation_type: "weakness"
+                    content: "Reforzar fracciones"
+                  - id: "ar_2"
+                    recommendation_type: "resource"
+                    content: "Ver video de algebra"
 
   /ai-recommendations/me:
     get:
       operationId: get_ai_recommendations_me
       tags: [ai]
-      summary: My AI recommendations
+      summary: My AI recommendations (role:student)
       security:
         - bearerAuth: []
+      parameters:
+        - in: query
+          name: recommendation_type
+          schema:
+            type: string
+            enum: [strength, weakness, resource, action]
       responses:
         '200':
           description: My recommendations
@@ -1243,7 +1510,7 @@ paths:
     get:
       operationId: get_ai_recommendation_by_id
       tags: [ai]
-      summary: Get AI recommendation
+      summary: Get AI recommendation (role:admin,teacher)
       security:
         - bearerAuth: []
       parameters:
@@ -1256,26 +1523,90 @@ paths:
         '200':
           description: Recommendation
 
-  /exam-attempts/{attempt}/recommendations/regenerate:
+  # ─── AI Tutor ─────────────────────────────────────────────────────────────
+
+  /ai/tutor/chat:
     post:
-      operationId: post_attempt_recommendations_regenerate
-      tags: [ai]
-      summary: Regenerate recommendations for an attempt
+      operationId: post_ai_tutor_chat
+      tags: [ai-tutor]
+      summary: Send message to the conversational AI tutor (role:student)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              message: "No entiendo las fracciones"
+              mode: "ask"
+              session_id: null
+      responses:
+        '200':
+          description: Tutor reply
+          content:
+            application/json:
+              example:
+                session_id: "sess_abc123"
+                reply: "Las fracciones representan partes de un todo..."
+                mode: "ask"
+
+  /ai/tutor/diagnosis:
+    get:
+      operationId: get_ai_tutor_diagnosis
+      tags: [ai-tutor]
+      summary: Get AI diagnostic summary for the student (role:student)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Diagnosis
+          content:
+            application/json:
+              example:
+                strengths: ["Algebra basica", "Geometria"]
+                weaknesses: ["Fracciones", "Probabilidad"]
+                recommended_topics: ["Fracciones equivalentes"]
+
+  /ai/tutor/sessions:
+    get:
+      operationId: get_ai_tutor_sessions
+      tags: [ai-tutor]
+      summary: List tutor chat sessions for the student (role:student)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Sessions list
+          content:
+            application/json:
+              example:
+                data:
+                  - id: "sess_abc123"
+                    mode: "ask"
+                    started_at: "2026-05-09T10:00:00Z"
+                    ended_at: null
+                    message_count: 5
+
+  /ai/tutor/sessions/{sessionId}/end:
+    patch:
+      operationId: patch_ai_tutor_session_end
+      tags: [ai-tutor]
+      summary: End a tutor session (role:student)
       security:
         - bearerAuth: []
       parameters:
         - in: path
-          name: attempt
+          name: sessionId
           required: true
           schema:
             type: string
       responses:
         '200':
-          description: Recommendations regenerated
+          description: Session ended
           content:
             application/json:
               example:
-                message: "Recommendations generated"
+                message: "Session ended"
 
   # ─── Users ────────────────────────────────────────────────────────────────
 
@@ -1300,7 +1631,7 @@ paths:
     get:
       operationId: get_users_by_id
       tags: [users]
-      summary: Get user
+      summary: Get user (role:admin,teacher)
       security:
         - bearerAuth: []
       parameters:
@@ -1319,7 +1650,7 @@ paths:
     put:
       operationId: put_users_by_id
       tags: [users]
-      summary: Update user
+      summary: Update user (role:admin,teacher)
       security:
         - bearerAuth: []
       parameters:
@@ -1328,12 +1659,12 @@ paths:
           required: true
           schema:
             type: string
-
       requestBody:
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/User'
+            example:
+              full_name: "Maria Perez Actualizada"
+              email: "maria@example.com"
       responses:
         '200':
           description: Updated user
@@ -1341,10 +1672,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
-    patch:
-      operationId: patch_users_by_id
+    delete:
+      operationId: delete_users_by_id
       tags: [users]
-      summary: Update user status or reset password
+      summary: Delete user and revoke all tokens (role:admin,teacher)
       security:
         - bearerAuth: []
       parameters:
@@ -1353,20 +1684,63 @@ paths:
           required: true
           schema:
             type: string
-
-      requestBody:
-        content:
-          application/json:
-            example:
-              status: "active"
-              reset_password: false
       responses:
-        '200':
-          description: User updated
+        '204':
+          description: User deleted
+        '409':
+          description: Cannot delete own account
           content:
             application/json:
               example:
-                message: "User updated"
+                message: "No puedes eliminar tu propia cuenta"
+
+  /users/{user}/status:
+    patch:
+      operationId: patch_users_status
+      tags: [users]
+      summary: Set user active/inactive status (role:admin,teacher)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: user
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              status: "inactive"
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              example:
+                message: "Status updated"
+
+  /users/{user}/reset-password:
+    patch:
+      operationId: patch_users_reset_password
+      tags: [users]
+      summary: Force-reset user password (role:admin,teacher)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: user
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Temporary password returned
+          content:
+            application/json:
+              example:
+                temporary_password: "Xk9#mQ2p"
 
   # ─── Institutions ─────────────────────────────────────────────────────────
 
@@ -1391,7 +1765,7 @@ paths:
     get:
       operationId: get_institutions_by_id
       tags: [institutions]
-      summary: Get institution
+      summary: Get institution (role:admin)
       security:
         - bearerAuth: []
       parameters:
@@ -1410,7 +1784,7 @@ paths:
     put:
       operationId: put_institutions_by_id
       tags: [institutions]
-      summary: Update institution
+      summary: Update institution (role:admin)
       security:
         - bearerAuth: []
       parameters:
@@ -1419,7 +1793,6 @@ paths:
           required: true
           schema:
             type: string
-
       requestBody:
         content:
           application/json:
@@ -1432,10 +1805,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Institution'
+
+  /institutions/{institution}/toggle:
     patch:
-      operationId: patch_institutions_by_id
+      operationId: patch_institutions_toggle
       tags: [institutions]
-      summary: Toggle institution status
+      summary: Toggle institution active/inactive status (role:admin)
       security:
         - bearerAuth: []
       parameters:
@@ -1444,19 +1819,14 @@ paths:
           required: true
           schema:
             type: string
-
-      requestBody:
-        content:
-          application/json:
-            example:
-              active: true
       responses:
         '200':
-          description: Toggled
+          description: Status toggled
           content:
             application/json:
               example:
-                message: "Institution status updated"
+                is_active: false
+                message: "Institution deactivated"
 
   # ─── Reports ──────────────────────────────────────────────────────────────
 
@@ -1510,7 +1880,7 @@ paths:
     get:
       operationId: get_student_history_report
       tags: [reports]
-      summary: Student history report
+      summary: Student exam history report (role:admin,teacher)
       security:
         - bearerAuth: []
       parameters:
@@ -1529,3 +1899,133 @@ paths:
                 attempts:
                   - exam_id: "e_77"
                     score: 8.5
+
+  /reports/ai/tutor-usage:
+    get:
+      operationId: get_tutor_usage_report
+      tags: [reports]
+      summary: AI tutor usage metrics for the institution (role:admin,teacher)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Tutor usage stats
+          content:
+            application/json:
+              example:
+                total_sessions: 120
+                total_messages: 1450
+                avg_messages_per_session: 12.1
+                sessions_by_mode:
+                  ask: 60
+                  explain: 35
+                  practice: 25
+                top_topics:
+                  - topic: "fracciones"
+                    count: 34
+
+  # ─── Analytics ────────────────────────────────────────────────────────────
+
+  /analytics/institution:
+    get:
+      operationId: get_analytics_institution
+      tags: [analytics]
+      summary: Aggregated institution analytics (role:admin,teacher)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Institution analytics
+          content:
+            application/json:
+              example:
+                total_students: 240
+                total_exams: 18
+                attempts_count: 520
+                average_score_pct: 71.4
+
+  /analytics/subjects:
+    get:
+      operationId: get_analytics_subjects
+      tags: [analytics]
+      summary: Per-subject analytics (role:admin,teacher)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Per-subject stats
+          content:
+            application/json:
+              example:
+                data:
+                  - subject_id: "s_5"
+                    name: "Matematicas"
+                    average_score_pct: 68.2
+                    attempts_count: 130
+
+  /analytics/students/{student_user_id}:
+    get:
+      operationId: get_analytics_student
+      tags: [analytics]
+      summary: Individual student analytics (role:admin,teacher)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: student_user_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Student analytics
+          content:
+            application/json:
+              example:
+                student_user_id: "u_12345"
+                attempts_count: 12
+                average_score_pct: 74.5
+                progress:
+                  - subject: "Matematicas"
+                    mastery_percentage: 72
+
+  # ─── System Config ────────────────────────────────────────────────────────
+
+  /system/config:
+    get:
+      operationId: get_system_config
+      tags: [system-config]
+      summary: Get system configuration (role:admin,teacher)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: System config
+          content:
+            application/json:
+              example:
+                ai_enabled: true
+                max_attempts_per_exam: 3
+                default_exam_duration_minutes: 60
+                tutor_rate_limit_per_minute: 30
+    put:
+      operationId: put_system_config
+      tags: [system-config]
+      summary: Update system configuration (role:admin)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              ai_enabled: true
+              max_attempts_per_exam: 5
+              default_exam_duration_minutes: 90
+      responses:
+        '200':
+          description: Config updated
+          content:
+            application/json:
+              example:
+                message: "Configuration updated"

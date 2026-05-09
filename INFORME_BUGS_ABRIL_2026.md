@@ -1,8 +1,8 @@
 # Informe de Bugs — NeoEduCore
-**Fecha:** 21 de abril de 2026  
+**Fecha:** 21 de abril de 2026 (actualizado 09 de mayo de 2026)  
 **Rama:** Darwin  
-**Estado al iniciar:** 82 tests pasando / 0 fallando  
-**Estado al finalizar:** 82 tests pasando / 0 fallando  
+**Estado al iniciar (17/04):** 82 tests pasando / 0 fallando  
+**Estado al finalizar (09/05):** 142 tests pasando / 0 fallando  
 
 ---
 
@@ -348,7 +348,7 @@ Intentar crear una pregunta de tipo `essay` devolvía error 422.
 
 ---
 
-## 3. Resumen ejecutivo
+## 3. Resumen ejecutivo — Sesión B (17–21/04/2026)
 
 | Impacto | Cantidad | Bugs |
 |---------|----------|------|
@@ -368,8 +368,188 @@ Intentar crear una pregunta de tipo `essay` devolvía error 422.
 **Archivos eliminados:**
 - `app/Enums/CalendarTargetType.php`
 
-**Resultado de tests antes/después:** 82 pasando / 0 fallando en ambos casos.
+---
+
+## 4. Bugs encontrados y corregidos — Sesión D (09/05/2026, tests de integración)
+
+Durante la escritura de los 60 tests de integración (Niveles 1–6) se detectaron y corrigieron los siguientes bugs reales que no habían sido detectados por los tests unitarios/feature anteriores.
 
 ---
 
-*Análisis y correcciones realizadas el 21/04/2026 sobre la rama `Darwin`.*
+### D1 — `syncGroups()` violaba NOT NULL en `exam_targets` *(Alto)*
+
+| Campo | Valor |
+|-------|-------|
+| **Archivo** | `app/Models/Exams/Exam.php` |
+| **Categoría** | Pivot sin columna obligatoria |
+
+**Descripción:** `groups()->sync()` no pasaba `institution_id` al pivot `exam_targets`, que tiene `institution_id NOT NULL`. Insertar un examen con grupos fallaba en producción con una excepción de violación de constraint.
+
+**Fix:** `syncGroups()` helper en `Exam.php` usa `syncWithPivotValues(['institution_id' => $this->institution_id])`.
+
+---
+
+### D2 — `ExamController` usaba `sync()` en lugar de `syncGroups()` *(Alto)*
+
+| Campo | Valor |
+|-------|-------|
+| **Archivo** | `app/Http/Controllers/Exams/ExamController.php` — `store()`, `update()` |
+| **Categoría** | Llamada al método incorrecto |
+
+**Fix:** `groups()->sync()` → `$exam->syncGroups($groupIds)` en `store()` y `update()`.
+
+---
+
+### D3 — `selectedOptions()->sync()` violaba NOT NULL en `student_answer_options` *(Alto)*
+
+| Campo | Valor |
+|-------|-------|
+| **Archivo** | `app/Services/Exams/ExamGradingService.php` |
+| **Categoría** | Pivot sin columna obligatoria |
+
+**Descripción:** Al guardar opciones seleccionadas por el estudiante, el pivot `student_answer_options` requiere `institution_id NOT NULL`. Se usaba `sync()` sin ese valor.
+
+**Fix:** `selectedOptions()->syncWithPivotValues(['institution_id' => $institutionId])`.
+
+---
+
+### D4 — `ExamAttemptController::show()` retornaba 404 en lugar de 403 para IDOR *(Medio)*
+
+| Campo | Valor |
+|-------|-------|
+| **Archivo** | `app/Http/Controllers/Exams/ExamAttemptController.php` — `show()` |
+| **Categoría** | Código de respuesta HTTP incorrecto |
+
+**Descripción:** Cuando un estudiante intentaba ver el intento de otro, el guard devolvía 404 en vez de 403, impidiendo distinguir "no existe" de "no tienes permiso".
+
+**Fix adicional:** `diffInSeconds()` de Carbon 3.x devuelve `float`; PostgreSQL rechaza floats en columnas `integer`. Se añadió `(int)` en el cast.
+
+---
+
+### D5 — `SetTenantFromAuth` resolvía el usuario antes que `auth:sanctum` *(Alto)*
+
+| Campo | Valor |
+|-------|-------|
+| **Archivo** | `app/Http/Middleware/SetTenantFromAuth.php` |
+| **Categoría** | Orden de middleware / resolución de usuario |
+
+**Descripción:** El middleware usaba `auth()->user()` que devuelve `null` antes de que `auth:sanctum` haya procesado el token. El tenant nunca se seteaba.
+
+**Fix:** Usar `auth()->guard('sanctum')->user()` que resuelve el guard de Sanctum directamente sin depender del orden de ejecución.
+
+---
+
+### D6 — `SetTenantFromAuth` no se ejecutaba antes de `SubstituteBindings` *(Alto)*
+
+| Campo | Valor |
+|-------|-------|
+| **Archivo** | `bootstrap/app.php` |
+| **Categoría** | Configuración de middleware |
+
+**Descripción:** `SubstituteBindings` resuelve los modelos de ruta antes de que el tenant esté seteado, por lo que `TenantScoped` no filtraba correctamente los registros durante la resolución de parámetros de ruta.
+
+**Fix:** `SetTenantFromAuth` prepended al grupo `api` (se ejecuta antes de `SubstituteBindings`).
+
+---
+
+### D7 — Desfase de 6 horas entre timestamps de BD y PHP *(Alto)*
+
+| Campo | Valor |
+|-------|-------|
+| **Archivo** | `config/database.php` |
+| **Categoría** | Configuración de zona horaria |
+
+**Descripción:** El servidor PostgreSQL opera en UTC-6. Sin `'timezone' => 'UTC'` en la configuración de conexión, los timestamps se almacenaban con un desfase de 6 horas, causando que las comparaciones de tiempo (ventana disponible, tiempo restante de examen) fallaran en tests de integración.
+
+**Fix:** `'timezone' => 'UTC'` en el array de conexión `pgsql`.
+
+---
+
+### D8 — `Student::groups()` con `withTimestamps(false)` generaba columna `""` *(Alto)*
+
+| Campo | Valor |
+|-------|-------|
+| **Archivo** | `app/Models/Students/Student.php` |
+| **Categoría** | Bug de API de Eloquent |
+
+**Descripción:** `->withTimestamps(false)` pasa `false` como nombre de la columna `$createdAt` en Laravel's `BelongsToMany::withTimestamps($createdAt, $updatedAt)`. Eloquent generaba SQL con la columna vacía `""`, que PostgreSQL rechaza.
+
+**Fix:** Eliminado `->withTimestamps(false)`. La tabla `group_students` no tiene timestamps, por lo que no se necesita la llamada.
+
+---
+
+### D9 — Ruta `/students/me/subjects` matcheaba como `/{student_user_id}` *(Medio)*
+
+| Campo | Valor |
+|-------|-------|
+| **Archivo** | `routes/api.php` |
+| **Categoría** | Orden de rutas en Laravel |
+
+**Descripción:** La ruta dinámica `GET /students/{student_user_id}/subjects` se registraba antes que la literal `GET /students/me/subjects`. Laravel matcheaba `me` como valor del parámetro y el estudiante recibía 403 en lugar de sus materias.
+
+**Fix:** Mover la ruta literal `/students/me/subjects` ANTES de las rutas parametrizadas `/{student_user_id}/subjects`.
+
+---
+
+### D10 — `Collection::takeLast()` no existe en Laravel *(Medio)*
+
+| Campo | Valor |
+|-------|-------|
+| **Archivo** | `app/Services/AI/AiTutorService.php` |
+| **Categoría** | Método inexistente |
+
+**Descripción:** `takeLast($n)` no existe en `Illuminate\Support\Collection`. Las llamadas al tutor fallaban con `BadMethodCallException`.
+
+**Fix:** `->takeLast(n)` → `->take(-n)` (valor negativo toma los últimos N elementos).
+
+---
+
+### D11 — Claves de respuesta de `AnalyticsController` no coincidían con los tests *(Medio)*
+
+| Campo | Valor |
+|-------|-------|
+| **Archivo** | `app/Http/Controllers/Admin/AnalyticsController.php` |
+| **Categoría** | Contrato de API inconsistente |
+
+**Fix:** Renombradas claves: `average_score_percentage` → `average_score_pct`, `total_attempts` → `attempts_count`, `progress_by_subject` → `progress`.
+
+---
+
+### D12 — Clave `attempts` en `ReportController::examResults()` debía ser `results` *(Bajo)*
+
+| Campo | Valor |
+|-------|-------|
+| **Archivo** | `app/Http/Controllers/Admin/ReportController.php` |
+| **Categoría** | Contrato de API inconsistente |
+
+**Fix:** `'attempts' => $paginator` → `'results' => $paginator`.
+
+---
+
+### D13 — `InstitutionFactory` producía colisiones en el campo `code` *(Medio)*
+
+| Campo | Valor |
+|-------|-------|
+| **Archivo** | `database/factories/Admin/InstitutionFactory.php` |
+| **Categoría** | Espacio de valores insuficiente en factory |
+
+**Descripción:** `bothify('INST-####')` genera solo 10.000 variantes (`0000`–`9999`). Al ejecutar el suite completo de 142 tests, que crea múltiples instituciones por test, la probabilidad de colisión era alta y causaba fallos intermitentes con `unique constraint violation` en `institutions_code_key`.
+
+**Fix:** Código generado con los primeros 8 caracteres de un UUID: `'INST-' . strtoupper(substr(str_replace('-', '', Str::uuid()), 0, 8))` — 4+ billones de variantes únicas.
+
+---
+
+## 5. Resumen ejecutivo — Sesión D (09/05/2026)
+
+| Impacto | Cantidad | Bugs |
+|---------|----------|------|
+| Alto    | 6        | D1, D2, D3, D5, D6, D7, D8 |
+| Medio   | 5        | D4, D9, D10, D11, D13 |
+| Bajo    | 1        | D12 |
+| **Total** | **13** | |
+
+**Resultado:** Suite completa pasó de 82 tests a **142 tests / 423 assertions / 0 fallando**.
+
+---
+
+*Análisis y correcciones de la Sesión B realizadas el 21/04/2026. Sesión D el 09/05/2026. Rama `Darwin`.*

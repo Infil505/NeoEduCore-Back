@@ -246,8 +246,7 @@ class QuestionController extends Controller
             ], 409);
         }
 
-        $question->options()->delete();
-        $question->delete();
+        $question->delete(); // opciones eliminadas en cascada por DB
 
         return response()->noContent();
     }

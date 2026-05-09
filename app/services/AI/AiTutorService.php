@@ -6,6 +6,7 @@ use App\Models\AI\AiChatSession;
 use App\Models\Students\Student;
 use Illuminate\Support\Facades\Log;
 use OpenAI\Laravel\Facades\OpenAI;
+use App\Services\AI\AiOutputValidator;
 
 class AiTutorService
 {
@@ -18,7 +19,9 @@ class AiTutorService
         string $studentUserId,
         string $message,
         ?string $sessionId = null,
-        ?string $subjectId = null
+        ?string $subjectId = null,
+        string $mode = 'ask',
+        ?string $topic = null
     ): array {
         $student = Student::with(['user', 'progress.subject'])
             ->where('user_id', $studentUserId)
@@ -27,17 +30,20 @@ class AiTutorService
         $session = $this->resolveSession($studentUserId, $sessionId, $subjectId);
 
         $history = collect($session->messages ?? [])
-            ->takeLast(self::MAX_HISTORY_MESSAGES)
+            ->take(-self::MAX_HISTORY_MESSAGES)
             ->values()
             ->all();
 
-        $history[] = ['role' => 'user', 'content' => $message];
+        $modePrefix = $this->buildModePrefix($mode, $topic);
+        $userContent = $modePrefix !== '' ? "{$modePrefix}\n\n{$message}" : $message;
 
-        $reply = $this->callOpenAi($student, $history);
+        $history[] = ['role' => 'user', 'content' => $userContent];
+
+        $reply = $this->callOpenAi($student, $history, $mode);
 
         $now = now()->toISOString();
         $allMessages   = $session->messages ?? [];
-        $allMessages[] = ['role' => 'user',      'content' => $message, 'created_at' => $now];
+        $allMessages[] = ['role' => 'user',      'content' => $message, 'mode' => $mode, 'created_at' => $now];
         $allMessages[] = ['role' => 'assistant', 'content' => $reply,   'created_at' => now()->toISOString()];
 
         // Truncar mensajes antiguos para que el JSONB no crezca indefinidamente
@@ -89,7 +95,61 @@ class AiTutorService
         ]);
     }
 
-    private function callOpenAi(Student $student, array $history): string
+    public function getDiagnosis(string $studentUserId): string
+    {
+        $student = Student::with(['user', 'progress.subject'])
+            ->where('user_id', $studentUserId)
+            ->firstOrFail();
+
+        $name = $student->user?->full_name ?? 'el estudiante';
+
+        $progressLines = $student->progress->map(function ($p) {
+            $status = $p->mastery_percentage >= 70 ? 'Dominado' : ($p->mastery_percentage >= 40 ? 'En progreso' : 'Por reforzar');
+            return "  - {$p->subject?->name}: {$p->mastery_percentage}% ({$status})";
+        })->join("\n");
+
+        if ($progressLines === '') {
+            return "Hola {$name}. Aún no tienes exámenes registrados. ¡Realiza tu primer examen para ver tu diagnóstico personalizado!";
+        }
+
+        $prompt = "Genera un diagnóstico educativo breve y motivador para {$name}.\n\n"
+            . "Progreso por materia:\n{$progressLines}\n\n"
+            . "Incluye: resumen general, fortalezas, áreas por mejorar y 1-2 acciones concretas. "
+            . "Máximo 4 párrafos. Usa español claro y alentador.";
+
+        try {
+            $response = OpenAI::chat()->create([
+                'model'    => config('services.openai.model', 'gpt-4o-mini'),
+                'messages' => [
+                    ['role' => 'system', 'content' => 'Eres un tutor educativo. Genera diagnósticos motivadores y accionables.'],
+                    ['role' => 'user', 'content' => $prompt],
+                ],
+                'temperature' => 0.6,
+                'max_tokens'  => 500,
+            ]);
+
+            $text = trim((string) ($response->choices[0]->message->content ?? ''));
+            return $text !== '' ? $text : $this->fallbackDiagnosis($name, $progressLines);
+        } catch (\Throwable $e) {
+            Log::warning('AiTutorService: diagnosis OpenAI error', ['error' => $e->getMessage()]);
+            return $this->fallbackDiagnosis($name, $progressLines);
+        }
+    }
+
+    private function buildModePrefix(string $mode, ?string $topic): string
+    {
+        return match ($mode) {
+            'explain'  => $topic
+                ? "[MODO: explicar '{$topic}'] El estudiante no entendió este tema. Explícalo de otra manera con un ejemplo diferente."
+                : '[MODO: explicar] El estudiante no entendió. Reformula la explicación anterior con otro enfoque.',
+            'practice' => $topic
+                ? "[MODO: práctica '{$topic}'] Genera 3 ejercicios prácticos de dificultad progresiva sobre este tema. Incluye la respuesta al final."
+                : '[MODO: práctica] Genera 3 ejercicios prácticos sobre el último tema tratado, de dificultad progresiva.',
+            default    => '',
+        };
+    }
+
+    private function callOpenAi(Student $student, array $history, string $mode = 'ask'): string
     {
         // El timeout se configura vía OPENAI_REQUEST_TIMEOUT=15 en .env
         // para liberar workers PHP rápido bajo carga concurrente.
@@ -100,12 +160,23 @@ class AiTutorService
                     [['role' => 'system', 'content' => $this->buildSystemPrompt($student)]],
                     $history
                 ),
-                'temperature' => 0.7,
-                'max_tokens'  => self::MAX_TOKENS,
+                'temperature' => $mode === 'practice' ? 0.5 : 0.7,
+                'max_tokens'  => $mode === 'practice' ? 800 : self::MAX_TOKENS,
             ]);
 
             $text = trim((string) ($response->choices[0]->message->content ?? ''));
-            return $text !== '' ? $text : $this->fallbackReply();
+
+            if ($text === '') {
+                return $this->fallbackReply();
+            }
+
+            $validator = new AiOutputValidator();
+            if ($validator->validate($text) !== null) {
+                Log::warning('AiTutorService: output bloqueado por validación PII/longitud');
+                return $this->fallbackReply();
+            }
+
+            return $validator->sanitize($text);
         } catch (\Throwable $e) {
             Log::warning('AiTutorService: OpenAI error', ['error' => $e->getMessage()]);
             return $this->fallbackReply();
@@ -158,5 +229,11 @@ class AiTutorService
     private function fallbackReply(): string
     {
         return 'Lo siento, no puedo responder en este momento. Por favor intenta de nuevo más tarde.';
+    }
+
+    private function fallbackDiagnosis(string $name, string $progressLines): string
+    {
+        return "Hola {$name}, aquí está tu diagnóstico actual:\n\n{$progressLines}\n\n"
+            . "Continúa practicando en las áreas con menor porcentaje y consulta al tutor si tienes dudas.";
     }
 }

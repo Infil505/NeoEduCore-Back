@@ -113,6 +113,23 @@ class UserController extends Controller
     }
 
     /**
+     * Eliminar usuario.
+     * Cascada DB: perfil Student → intentos → respuestas → progreso → recomendaciones.
+     * Los exámenes creados por el usuario quedan con created_by_teacher_id = NULL.
+     */
+    public function destroy(Request $request, User $user)
+    {
+        if ($request->user()->id === $user->id) {
+            return response()->json(['message' => 'No puedes eliminar tu propia cuenta'], 409);
+        }
+
+        $user->tokens()->delete();
+        $user->delete();
+
+        return response()->noContent();
+    }
+
+    /**
      * Reset password (admin/teacher)
      * - Cambia el hash directamente
      * - Recomendado: invalidar tokens (opcional)

@@ -12,11 +12,11 @@ class InstitutionFactory extends Factory
     public function definition(): array
     {
         return [
-            'code' => strtoupper(fake()->unique()->bothify('INST-####')),
+            'code' => 'INST-' . strtoupper(substr(str_replace('-', '', (string) \Illuminate\Support\Str::uuid()), 0, 8)),
             'name' => fake()->company(),
             'address' => fake()->address(),
             'phone' => fake()->phoneNumber(),
-            'email' => fake()->unique()->companyEmail(),
+            'email' => fake()->unique()->safeEmail(),
             'is_active' => true,
         ];
     }

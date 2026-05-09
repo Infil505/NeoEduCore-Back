@@ -44,7 +44,7 @@ class ExamController extends Controller
     {
         $data = $request->validate([
             'title' => ['required', 'string', 'min:3', 'max:150'],
-            'subject_id' => ['required', 'uuid'],
+            'subject_id' => ['required', 'uuid', Rule::exists('subjects', 'id')],
             'grade' => ['required', 'integer', 'between:7,12'],
             'instructions' => ['nullable', 'string', 'max:2000'],
             'duration_minutes' => ['required', 'integer', 'between:1,300'],
@@ -88,7 +88,7 @@ class ExamController extends Controller
         // Asignar grupos objetivo (validando que pertenecen al tenant por TenantScoped en Group)
         if (!empty($data['group_ids'])) {
             $groups = Group::whereIn('id', $data['group_ids'])->pluck('id')->all();
-            $exam->groups()->sync($groups);
+            $exam->syncGroups($groups);
         }
 
         return response()->json([
@@ -124,7 +124,7 @@ class ExamController extends Controller
 
         $data = $request->validate([
             'title' => ['sometimes', 'string', 'min:3', 'max:150'],
-            'subject_id' => ['sometimes', 'uuid'],
+            'subject_id' => ['sometimes', 'uuid', Rule::exists('subjects', 'id')],
             'grade' => ['sometimes', 'integer', 'between:7,12'],
             'instructions' => ['nullable', 'string', 'max:2000'],
             'duration_minutes' => ['sometimes', 'integer', 'between:1,300'],
@@ -149,7 +149,7 @@ class ExamController extends Controller
                 ? []
                 : Group::whereIn('id', $data['group_ids'])->pluck('id')->all();
 
-            $exam->groups()->sync($groups);
+            $exam->syncGroups($groups);
         }
 
         return response()->json([

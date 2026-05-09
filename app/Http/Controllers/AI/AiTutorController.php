@@ -23,13 +23,17 @@ class AiTutorController extends Controller
             'message'    => ['required', 'string', 'min:1', 'max:2000'],
             'session_id' => ['nullable', 'uuid'],
             'subject_id' => ['nullable', 'uuid'],
+            'mode'       => ['nullable', 'string', 'in:ask,explain,practice'],
+            'topic'      => ['nullable', 'string', 'max:200'],
         ]);
 
         $result = $tutorService->chat(
             studentUserId: $user->id,
             message:       $data['message'],
             sessionId:     $data['session_id'] ?? null,
-            subjectId:     $data['subject_id'] ?? null
+            subjectId:     $data['subject_id'] ?? null,
+            mode:          $data['mode'] ?? 'ask',
+            topic:         $data['topic'] ?? null
         );
 
         return response()->json(['data' => $result]);
@@ -46,6 +50,20 @@ class AiTutorController extends Controller
         }
 
         return response()->json(['message' => 'Sesión finalizada']);
+    }
+
+    public function diagnosis(Request $request, AiTutorService $tutorService)
+    {
+        $user = $request->user();
+
+        $student = Student::where('user_id', $user->id)->first();
+        if (!$student) {
+            return response()->json(['message' => 'Solo estudiantes pueden ver el diagnóstico IA'], 403);
+        }
+
+        $text = $tutorService->getDiagnosis($user->id);
+
+        return response()->json(['data' => ['diagnosis' => $text]]);
     }
 
     public function sessions(Request $request)
