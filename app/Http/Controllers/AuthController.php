@@ -5,11 +5,12 @@ namespace App\Http\Controllers;
 use App\Enums\StudentStatus;
 use App\Enums\UserStatus;
 use App\Enums\UserType;
-use App\Models\Admin\Institution;
 use App\Models\Students\Student;
 use App\Models\Admin\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use OpenApi\Attributes as OA;
 
@@ -17,8 +18,11 @@ class AuthController extends Controller
 {
     #[OA\Post(
         path: '/api/register',
-        summary: 'Registro de usuario',
+        summary: 'Alta de usuario (solo admin)',
+        description: 'Crea un usuario dentro de la institución del admin autenticado. '
+            . 'El rol se toma de user_type o se infiere por el email. No devuelve token.',
         tags: ['Auth'],
+        security: [['sanctum' => []]],
         requestBody: new OA\RequestBody(
             required: true,
             content: new OA\JsonContent(
@@ -28,14 +32,13 @@ class AuthController extends Controller
                     new OA\Property(property: 'email', type: 'string', format: 'email'),
                     new OA\Property(property: 'password', type: 'string', format: 'password'),
                     new OA\Property(property: 'password_confirmation', type: 'string', format: 'password'),
-                    new OA\Property(property: 'institution_id', type: 'string', format: 'uuid', nullable: true),
-                    new OA\Property(property: 'institution_code', type: 'string', nullable: true),
-                    new OA\Property(property: 'institution_name', type: 'string', nullable: true),
+                    new OA\Property(property: 'user_type', type: 'string', enum: ['admin', 'teacher', 'student', 'parent'], nullable: true),
                 ]
             )
         ),
         responses: [
-            new OA\Response(response: 201, description: 'Usuario creado con token'),
+            new OA\Response(response: 201, description: 'Usuario creado'),
+            new OA\Response(response: 403, description: 'No autorizado (no admin)'),
             new OA\Response(response: 422, description: 'Validación fallida'),
         ]
     )]
@@ -52,67 +55,61 @@ class AuthController extends Controller
                 'confirmed',
             ],
 
-            // SaaS: asociar a institución existente
-            'institution_id' => ['nullable', 'uuid', 'exists:institutions,id'],
-
-            // o crear institución desde el registro
-            'institution_code' => ['nullable', 'string', 'max:40'],
-            'institution_name' => ['nullable', 'string', 'max:120'],
+            // El admin puede fijar el rol explícitamente; si no, se infiere por email.
+            'user_type' => ['nullable', Rule::in([
+                UserType::Admin->value,
+                UserType::Teacher->value,
+                UserType::Student->value,
+                UserType::Parent->value,
+            ])],
         ]);
 
         $email = strtolower($data['email']);
 
-        // Crear o asociar institución
-        $institutionId = $data['institution_id'] ?? null;
+        // El usuario se crea SIEMPRE dentro de la institución del admin autenticado.
+        $institutionId = $request->user()->institution_id;
 
-        if (
-            !$institutionId &&
-            !empty($data['institution_code']) &&
-            !empty($data['institution_name'])
-        ) {
-            $inst = Institution::create([
-                'code' => strtoupper(trim($data['institution_code'])),
-                'name' => trim($data['institution_name']),
-                'is_active' => true,
-            ]);
+        // Rol: explícito si viene en el request; si no, se infiere por el email.
+        $userType = $data['user_type'] ?? $this->detectUserTypeByEmail($email);
 
-            $institutionId = $inst->id;
-        }
-
-        // Rol NO viene del request; se detecta por email
-        $userType = $this->detectUserTypeByEmail($email);
-
-        $user = User::create([
-            'institution_id' => $institutionId,
-            'full_name' => trim($data['full_name']),
-            'email' => $email,
-            'password_hash' => Hash::make($data['password']),
-            'user_type' => $userType,
-            'status' => UserStatus::Active->value,
-        ]);
-
-        // AUTOREGISTRO: si es estudiante, crear perfil Student
-        if ($userType === UserType::Student->value) {
-            Student::create([
+        // Transacción: el usuario y su perfil de estudiante se crean de forma
+        // atómica. Si fallara la creación del perfil, no queda un User huérfano.
+        $user = DB::transaction(function () use ($data, $email, $institutionId, $userType) {
+            $user = User::create([
                 'institution_id' => $institutionId,
-                'user_id' => $user->id,
-
-                // Código provisional (puede editarse luego desde el panel)
-                'student_code' => 'STU-' . strtoupper(substr($user->id, 0, 8)),
-
-                // Datos académicos iniciales (se completan luego)
-                'grade' => null,
-                'section' => null,
-
-                'status' => StudentStatus::Active->value,
-                'enrolled_at' => now(),
-                'last_activity_at' => null,
-                'exams_completed_count' => 0,
-                'overall_average' => 0,
+                'full_name' => trim($data['full_name']),
+                'email' => $email,
+                'password_hash' => Hash::make($data['password']),
+                'user_type' => $userType,
+                'status' => UserStatus::Active->value,
             ]);
-        }
 
-        $token = $user->createToken('web')->plainTextToken;
+            // Si es estudiante, crear su perfil Student
+            if ($userType === UserType::Student->value) {
+                Student::create([
+                    'institution_id' => $institutionId,
+                    'user_id' => $user->id,
+
+                    // Código provisional (puede editarse luego desde el panel).
+                    // Se usa el UUID completo (sin guiones) para garantizar unicidad:
+                    // los primeros chars de un UUIDv7 son el prefijo de timestamp y
+                    // colisionan entre registros creados en la misma ventana de tiempo.
+                    'student_code' => 'STU-' . strtoupper(str_replace('-', '', $user->id)),
+
+                    // Datos académicos iniciales (se completan luego)
+                    'grade' => null,
+                    'section' => null,
+
+                    'status' => StudentStatus::Active->value,
+                    'enrolled_at' => now(),
+                    'last_activity_at' => null,
+                    'exams_completed_count' => 0,
+                    'overall_average' => 0,
+                ]);
+            }
+
+            return $user;
+        });
 
         return response()->json([
             'user' => [
@@ -123,7 +120,6 @@ class AuthController extends Controller
                 'status' => $user->status->value,
                 'institution_id' => $user->institution_id,
             ],
-            'token' => $token,
         ], 201);
     }
 
@@ -238,10 +234,10 @@ class AuthController extends Controller
             return UserType::Teacher->value;
         }
 
-        if (str_contains($email, 'parent') || str_contains($email, 'padre')) {
-            return UserType::Parent->value;
-        }
-
+        // Nota: el rol `parent` queda RESERVADO para un futuro portal de acudientes,
+        // pero NO se infiere por email: hoy no tiene rutas, así que un usuario parent
+        // recibiría 403 en todo. Si se necesita, el admin puede crearlo explícitamente
+        // pasando user_type=parent en /register.
         return UserType::Student->value;
     }
 }

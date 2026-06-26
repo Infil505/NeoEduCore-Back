@@ -18,7 +18,6 @@ class PublicRoutesTest extends TestCase
         // Nota: algunos pueden devolver 422 por validación si faltan datos, y eso está bien.
         $endpoints = [
             ['POST', '/api/ai/generate'],
-            ['POST', '/api/register'],
             ['POST', '/api/auth/login'],
             ['POST', '/api/password/forgot'],
             ['POST', '/api/password/verify'],

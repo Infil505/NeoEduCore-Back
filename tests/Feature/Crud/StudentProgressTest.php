@@ -95,6 +95,7 @@ class StudentProgressTest extends TestCase
         \Illuminate\Support\Facades\DB::table('group_students')->insert([
             'student_user_id' => $studentUser->id,
             'group_id'        => $group->id,
+            'institution_id'  => $institution->id,
             'joined_at'       => now(),
         ]);
 

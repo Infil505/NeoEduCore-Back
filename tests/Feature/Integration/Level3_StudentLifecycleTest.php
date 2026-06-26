@@ -36,7 +36,7 @@ class Level3_StudentLifecycleTest extends TestCase
 
         $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
         Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
-        $group->students()->attach($studentUser->id, ['joined_at' => now()]);
+        $group->students()->attach($studentUser->id, ['joined_at' => now(), 'institution_id' => $institution->id]);
 
         $exam = Exam::factory()->active()->create([
             'institution_id'        => $institution->id,
@@ -87,7 +87,7 @@ class Level3_StudentLifecycleTest extends TestCase
         $group = Group::factory()->create(['institution_id' => $institution->id]);
         $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
         Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
-        $group->students()->attach($studentUser->id, ['joined_at' => now()]);
+        $group->students()->attach($studentUser->id, ['joined_at' => now(), 'institution_id' => $institution->id]);
 
         // Examen en draft (no activo)
         $exam = Exam::factory()->create([
@@ -112,7 +112,7 @@ class Level3_StudentLifecycleTest extends TestCase
         $group = Group::factory()->create(['institution_id' => $institution->id]);
         $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
         Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
-        $group->students()->attach($studentUser->id, ['joined_at' => now()]);
+        $group->students()->attach($studentUser->id, ['joined_at' => now(), 'institution_id' => $institution->id]);
 
         $exam = Exam::factory()->active()->create([
             'institution_id'        => $institution->id,

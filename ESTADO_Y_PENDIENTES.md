@@ -1,7 +1,7 @@
 # NeoEduCore — Estado del proyecto y pendientes
-**Última actualización:** 9 de mayo de 2026  
+**Última actualización:** 23 de junio de 2026  
 **Rama activa:** Darwin  
-**Tests:** 142 pasando / 0 fallando
+**Tests:** 148 pasando / 0 fallando
 
 ---
 
@@ -37,7 +37,10 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 
 **Servicios externos:**
 - OpenAI GPT-4o-mini — recomendaciones IA (regenerate) y tutor conversacional
-- SMTP — correo de recuperación de contraseña
+- SMTP — correos (reset de contraseña + alta por carga masiva). **Asíncronos vía cola** (`QUEUE_CONNECTION=database`). Formas de procesarla (todas gratis):
+  - **Local:** `composer run dev` (levanta `serve` + `queue:listen` en un comando), o `php artisan queue:work` en otra terminal. (Nota: se quitó `pail` del script porque requiere la extensión `pcntl`, no disponible en Windows.)
+  - **Producción con cron** (hosting gratuito sin daemons): una línea `* * * * * php artisan schedule:run` — el scheduler drena la cola cada minuto (definido en `routes/console.php`).
+  - **Sin cola:** `QUEUE_CONNECTION=sync` (cero configuración, pero el envío bloquea la request).
 
 **Multi-tenancy:** cada request autenticado inyecta `institution_id` via `SetTenantFromAuth`, activando el scope `TenantScoped` en todos los modelos. Si el scope detecta contexto HTTP sin `institution_id`, lanza `RuntimeException` (detección temprana de bugs de configuración).
 
@@ -48,7 +51,7 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 ## 2. Estado actual por módulo
 
 ### ✅ Autenticación
-- **Register** `POST /api/register` — crea user + perfil student automáticamente si es estudiante
+- **Register** `POST /api/register` — **solo admin** (desde 23/06/2026). Crea un usuario en la institución del admin; perfil `Student` automático si es estudiante. Acepta `user_type` o lo infiere por email. No devuelve token. El primer admin se crea con el seeder
 - **Login** `POST /api/auth/login` — Sanctum token, verifica contra `password_hash`
 - **Logout** `POST /api/auth/logout`
 - **Me** `GET /api/auth/me`
@@ -327,6 +330,24 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | D14 | `InstitutionFactory.php` | Código `INST-####` solo tenía 10,000 variantes → colisiones intermitentes en suite completa. Ahora usa UUID de 8 chars (4 billones de variantes) | ✅ |
 | D15 | `01_schema.sql` / migración | FKs de `exams`: `subject_id` → `ON DELETE CASCADE`; `created_by_teacher_id` → nullable + `ON DELETE SET NULL` | ✅ |
 
+### Sesión 23/06/2026 — Bug de seeding + refactor de permisos
+
+| # | Archivo(s) | Descripción | Estado |
+|---|-----------|-------------|--------|
+| E1 | `AuthController.php` | `student_code` se generaba con `substr($user->id, 0, 8)`. Al ser UUIDv7 (ordenado por tiempo) los primeros 8 hex son el prefijo de timestamp → colisión de la constraint `unique(student_code)` para estudiantes creados en la misma ventana de ~65 s. Ahora usa el UUID completo (único por usuario). Detectado sembrando 60 estudiantes con k6 | ✅ |
+| E2 | `routes/api.php`, `AuthController.php` | `POST /register` pasa a **admin-only** (`auth:sanctum` + `role:admin`). Fuerza `institution_id` del admin, acepta `user_type` explícito (o lo infiere por email) y ya no devuelve token. El primer admin se crea con el seeder | ✅ |
+| E3 | `routes/api.php` | Permisos de `/users` reorganizados: lectura (`index`/`show`) admin+teacher; mutaciones (`update`, `status`, `reset-password`, `delete`) **solo admin**. Antes un teacher podía borrar/editar a cualquier usuario, incl. admins | ✅ |
+| E4 | `UserController.php` | `/users` no usaba `TenantScoped` (User es público en login) → exponía usuarios de otras instituciones. Añadido filtro por institución en `index` y guard 404 cross-tenant en `show/update/setStatus/destroy/resetPassword` | ✅ |
+| E5 | `tests/`, `k6/seed_users.js` | Tests actualizados al nuevo flujo de register (+2 nuevos: requiere admin / requiere auth). Script k6 adaptado: login admin → alta con token + `user_type` | ✅ |
+| E6 | `StudentController.php`, `PasswordSetupService.php`, `routes/api.php` | **Carga masiva mejorada:** ahora crea cuentas de usuario (columnas `full_name`/`email`) además de perfiles `Student`, y encola para cada nuevo usuario un correo para establecer su contraseña (fuera de la transacción). Todas las búsquedas de usuario filtran por institución del actor (cierra el IDOR cross-tenant). Normaliza celdas vacías (`''` → NULL) — corrige bug latente con `birth_date` vacío. `bulk-upload` pasa a **admin-only** por crear cuentas. Respuesta añade `users_created`, `emails_queued`, `email_failures`. +4 tests | ✅ |
+| E7 | `.env`, `PasswordResetMail.php`, `ForgotPasswordController.php`, `emails/password-reset.blade.php`, migraciones `jobs`/`failed_jobs`, `01_schema.sql` | **Correos asíncronos (cola).** `QUEUE_CONNECTION=database` + tablas `jobs`/`failed_jobs`; `PasswordResetMail` ahora es `ShouldQueue` y se envía con `->queue()` → la request ya no se bloquea esperando al SMTP. **Requiere worker:** `php artisan queue:work`. De paso se corrigió un bug latente: la vista del correo era una copia del formulario de reset (usaba `$email`/`$token` no provistos) → fallaba al renderizar, pero el `try/catch` de `sendResetLink` lo ocultaba. Reescrita como email real con enlace a `password.reset.form`. El `Mailable` ahora arma la URL correcta desde el token | ✅ |
+| E8 | `Factories/Students/StudentFactory.php`, `Factories/Admin/StudentFactory.php` | `student_code` de los factories pasó de `STU-####` (10⁴, flaky) a `STU-##########` (10¹⁰) — elimina colisiones de unicidad intermitentes al crear muchos estudiantes en la suite | ✅ |
+| E13 | `composer.json/lock`, `Dockerfile`, `.dockerignore`, `DEPLOY_COOLIFY.md`, `routes/console.php` | **Preparación de despliegue (DO + Coolify).** (4) `composer.json` desincronizado corregido: `phpspreadsheet` `^2.4`→`^5.4` (coincide con el lock real 5.4.0). (5) `laravel/octane ^2.17` añadido al lock (framework intacto en v12.24 vía `-m`). (6) `Dockerfile` (FrankenPHP + Octane, opcache+JIT), `.dockerignore` y guía `DEPLOY_COOLIFY.md` (app + worker `queue:work` + scheduled `schedule:run` + migrate post-deploy + region SFO3 + session pooler 5432 + `BCRYPT_ROUNDS=10`). **Nota:** octane no se extrae en local por un bloqueo del indexador/antivirus de Windows en `vendor/`; el contenedor (Linux) lo instala sin problema. | ✅ |
+| E12 | comando `schema:dump-sql`, `01_schema.sql` (regenerado), migración `fix_pivot_uuid_defaults_and_obsolete_check`, 3 tests | **Causa de fondo resuelta: fuente única de verdad.** `database/sql/01_schema.sql` (que cargan los tests) pasa a ser un **artefacto GENERADO** desde la BD real (= migraciones) con `php artisan schema:dump-sql` (pg_dump + limpieza). Ya no puede divergir de las migraciones. Alinear ambos destapó **3 bugs reales de prod** que el SQL a mano ocultaba: (1) pivotes `group_students`/`exam_targets`/`student_answer_options` sin `DEFAULT gen_random_uuid()` en `id` → insert sin id fallaba; (2) `review_status` con CHECK obsoleto `('auto_graded','needs_review')` sin `reviewed` (leftover de C1) → revisar respuesta daba 500; (3) `group_students.institution_id` NOT NULL (integridad de tenant) que los tests omitían vía `attach()`. **Workflow:** cambiar esquema con migración → `migrate` → `schema:dump-sql` → commit de ambos. Requiere `PG_DUMP_PATH` en `.env`. | ✅ |
+| E11 | migración `convert_enum_columns_to_native_pg_enums` | **Auditoría completa de enums.** 9 de 12 columnas enum eran `varchar` en la BD real (migraciones usaban `$table->enum()` = varchar+CHECK; `01_schema.sql` usa enum PG nativo → **drift schema/migraciones**). Riesgo: valor inválido → 500 al hidratar. **Bug concreto encontrado:** `students.status` tenía CHECK `('active','inactive')` → `PATCH /students/{id}/status` con `suspended` (válido en la app) daba **500 Check violation**. Fix: migración que convierte las 9 columnas a enums PG nativos (set completo y correcto), quitando los CHECK heredados. 0 datos dañados en BD. Verificado: suspender alumno → 200, insert inválido rechazado. **Meta-causa:** los tests construyen el esquema desde `01_schema.sql` (correcto) y no desde migraciones, por eso pasaban en verde mientras la BD real fallaba | ✅ |
+| E10 | datos BD, `CoreTablesSeeder.php`, migración `convert_recommendation_type_to_enum` | **Bug reportado (exámenes/recomendaciones): 500 al listar recomendaciones.** `GET /ai-recommendations` y `/ai-recommendations/me` daban `ValueError: "study_plan"/"support_resource" is not a valid backing value for enum AiRecommendationType`. Causa: el `CoreTablesSeeder` insertaba `study_plan`/`support_resource`, que no son valores del enum (`strength,weakness,resource,action`), y la columna era `varchar` (la migración original) en vez del enum PG → permitía colar basura que reventaba al hidratar el modelo. Fix: (1) datos corregidos (study_plan→action, support_resource→resource), (2) seeder corregido, (3) columna convertida a enum PG nativo → ahora un valor inválido falla en el INSERT. Detectado con el flujo completo de examen (start→submit→ver recomendaciones) | ✅ |
+| E9 | `.env` (`DB_PORT`) | **Stress test (k6) detectó 500 intermitentes bajo carga.** La BD es Supabase vía pooler en modo *transaction* (`:6543`), que NO conserva prepared statements entre transacciones → `prepared statement does not exist`. Cambiado al pooler en modo *session* (`:5432`), que mantiene afinidad de conexión. (Nota: `EMULATE_PREPARES=true` también lo evita pero rompe los booleanos en PostgreSQL, así que se descartó.) **Pendiente de arquitectura para 200+ concurrentes** — ver sección de escalado | ✅ (dev) |
+
 ---
 
 ## 5. TODO priorizado
@@ -423,8 +444,16 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 
 ---
 
-> **Backend completado al 100%** — todos los módulos, bugs, seguridad, optimizaciones, brechas TFG, tests de integración y comportamiento de eliminación implementados.
-> Quedan pendientes: frontend (React/Next.js), banco de ítems (60+ preguntas), piloto con usuarios, documento académico.
+### 📌 Pendientes abiertos (anotados 23/06/2026)
+
+- [x] ~~**`AuthController::register` sin transacción**~~ → **Resuelto 26/06/2026.** `User::create` + `Student::create` envueltos en `DB::transaction()` (atómico, no quedan huérfanos). De paso `/students/me` degrada elegante (200 con `data:null` en vez de 404).
+- [x] ~~**Rol `parent` sin superficie de API**~~ → **Decidido 26/06/2026.** Queda RESERVADO para un futuro portal de acudientes, pero se quitó la auto-detección por email (un email ya no crea un `parent` accidental sin rutas). El admin puede crearlo explícito con `user_type=parent`.
+- [x] ~~**`students/bulk-upload` confía en `user_id` sin verificar tenant**~~ → **Resuelto 23/06/2026 (E6).** Todas las búsquedas de usuario en bulk-upload ahora filtran por `institution_id` del actor.
+
+---
+
+> **Backend prácticamente completo** — módulos, bugs, seguridad, optimizaciones, brechas TFG, tests de integración y comportamiento de eliminación implementados. Quedan los pendientes abiertos de arriba (no bloqueantes).
+> Fuera del código: frontend (React/Next.js), banco de ítems (60+ preguntas), piloto con usuarios, documento académico.
 
 ---
 
@@ -434,7 +463,6 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/api/ping` | Health check |
-| POST | `/api/register` | Registro de usuario |
 | POST | `/api/auth/login` | Login |
 | POST | `/api/password/forgot` | Solicitar reset |
 | POST | `/api/password/verify` | Verificar 
@@ -475,16 +503,18 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 ### Autenticados — Admin y Profesor
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| GET | `/api/users` | Lista usuarios |
-| GET/PUT/PATCH | `/api/users/{id}` | Ver/editar usuario |
-| PATCH | `/api/users/{id}/status` | Cambiar estado usuario |
-| PATCH | `/api/users/{id}/reset-password` | Resetear contraseña |
-| DELETE | `/api/users/{id}` | Eliminar usuario (solo admin) — cascada a student, intentos, etc. |
+| GET | `/api/users` | Lista usuarios (admin+teacher, scoped por institución) |
+| GET | `/api/users/{id}` | Ver usuario (admin+teacher) |
+| POST | `/api/register` | **Alta de usuario (solo admin)** — en la institución del admin |
+| GET | `/api/students/bulk-upload/template` | Plantilla CSV de carga masiva (**solo admin**) |
+| POST | `/api/students/bulk-upload` | Carga masiva CSV/XLSX (**solo admin**) — crea cuentas + envía correo de contraseña |
+| PUT/PATCH | `/api/users/{id}` | Editar usuario (**solo admin**) |
+| PATCH | `/api/users/{id}/status` | Cambiar estado usuario (**solo admin**) |
+| PATCH | `/api/users/{id}/reset-password` | Resetear contraseña (**solo admin**) |
+| DELETE | `/api/users/{id}` | Eliminar usuario (**solo admin**) — cascada a student, intentos, etc. |
 | GET | `/api/students` | Lista estudiantes |
 | GET/PUT | `/api/students/{id}` | Ver/editar estudiante |
 | PATCH | `/api/students/{id}/status` | Cambiar estado estudiante |
-| GET | `/api/students/bulk-upload/template` | Plantilla CSV de carga masiva |
-| POST | `/api/students/bulk-upload` | Carga masiva (CSV/XLSX) |
 | GET/POST/PUT/DELETE | `/api/groups` | CRUD grupos |
 | POST | `/api/groups/{group}/students` | Asignar estudiantes a grupo |
 | DELETE | `/api/groups/{group}/students` | Retirar estudiantes de grupo |
