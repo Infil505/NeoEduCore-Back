@@ -4,14 +4,18 @@ namespace App\Http\Controllers\Students;
 
 use App\Http\Controllers\Controller;
 use App\Enums\StudentStatus;
+use App\Enums\UserStatus;
+use App\Enums\UserType;
 use App\Enums\AdecuacionType;
 use App\Enums\LearningStyle;
 use App\Models\Admin\User;
 use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
+use App\Services\Auth\PasswordSetupService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
@@ -25,9 +29,17 @@ class StudentController extends Controller
     private const GRADE_MIN        = 6;
     private const GRADE_MAX        = 12;
 
-    // Columnas que se leen del archivo; institution_id se ignora por seguridad (viene del tenant)
+    // Columnas de PERFIL (tabla students) que se vuelcan al modelo Student.
+    // institution_id se ignora por seguridad (lo asigna TenantScoped desde el tenant).
     private const ALLOWED_COLUMNS = [
         'user_id', 'student_code', 'grade', 'section', 'status',
+        'birth_date', 'parent_name', 'parent_email', 'group_code', 'adecuacion_type',
+    ];
+
+    // Columnas que muestra la plantilla. full_name/email son del USUARIO (tabla users)
+    // y solo se usan para crear la cuenta; no se vuelcan al modelo Student.
+    private const TEMPLATE_COLUMNS = [
+        'full_name', 'email', 'user_id', 'student_code', 'grade', 'section', 'status',
         'birth_date', 'parent_name', 'parent_email', 'group_code', 'adecuacion_type',
     ];
 
@@ -94,6 +106,10 @@ class StudentController extends Controller
     #[OA\Post(
         path: '/api/students/bulk-upload',
         summary: 'Carga masiva de estudiantes (CSV o XLSX)',
+        description: 'Crea/actualiza perfiles de estudiante. Si la fila trae «email» y no '
+            . 'existe el usuario, crea también la cuenta (en la institución del actor) y le '
+            . 'envía un correo para que establezca su contraseña. Todos los datos quedan '
+            . 'ligados a la institución del usuario autenticado.',
         tags: ['Students'],
         security: [['sanctum' => []]],
         requestBody: new OA\RequestBody(
@@ -114,7 +130,7 @@ class StudentController extends Controller
             new OA\Response(response: 422, description: 'Archivo inválido o supera límites'),
         ]
     )]
-    public function bulkUpload(Request $request)
+    public function bulkUpload(Request $request, PasswordSetupService $passwordSetup)
     {
         $maxKb = self::BULK_MAX_MB * 1024;
 
@@ -145,21 +161,30 @@ class StudentController extends Controller
 
         // Verificar que exista al menos una columna identificadora
         $firstRow = $rows[0];
-        if (!array_key_exists('user_id', $firstRow) && !array_key_exists('student_code', $firstRow)) {
+        if (
+            !array_key_exists('user_id', $firstRow) &&
+            !array_key_exists('student_code', $firstRow) &&
+            !array_key_exists('email', $firstRow)
+        ) {
             return response()->json([
-                'message' => 'El archivo debe contener al menos la columna "user_id" o "student_code".',
+                'message' => 'El archivo debe contener al menos una columna identificadora: "email" (para crear), "user_id" o "student_code".',
             ], 422);
         }
 
         $created         = 0;
         $updated         = 0;
+        $usersCreated    = 0;
+        $newUsers        = []; // usuarios creados → reciben enlace de contraseña tras el commit
         $errors          = [];
         $validAdeValues  = array_map(fn($c) => $c->value, AdecuacionType::cases());
         $validStatValues = array_map(fn($c) => $c->value, StudentStatus::cases());
 
+        // Todo lo creado pertenece a la institución del usuario autenticado.
+        $institutionId = $request->user()->institution_id;
+
         DB::transaction(function () use (
-            $rows, $validAdeValues, $validStatValues,
-            &$created, &$updated, &$errors
+            $rows, $validAdeValues, $validStatValues, $institutionId,
+            &$created, &$updated, &$errors, &$usersCreated, &$newUsers
         ) {
             foreach ($rows as $idx => $row) {
                 $lineNumber = $idx + 2; // +2: encabezado en fila 1
@@ -220,26 +245,71 @@ class StudentController extends Controller
                     }
                 }
 
-                // --- user_id existe ---
-                if (!empty($row['user_id'])) {
-                    if (!User::where('id', $row['user_id'])->exists()) {
-                        $errors[] = "Fila {$lineNumber}: user_id «{$row['user_id']}» no existe en el sistema.";
-                        continue;
-                    }
+                // --- email (si viene) ---
+                $email = !empty($row['email']) ? Str::lower($row['email']) : null;
+                if ($email !== null && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $errors[] = "Fila {$lineNumber}: email inválido «{$row['email']}».";
+                    continue;
                 }
 
-                // --- Buscar estudiante existente ---
-                $student = null;
+                // --- Resolver el USUARIO dueño del perfil (siempre dentro del tenant) ---
+                $user = null;
                 if (!empty($row['user_id'])) {
-                    $student = Student::where('user_id', $row['user_id'])->first();
+                    $user = User::where('institution_id', $institutionId)
+                        ->where('id', $row['user_id'])
+                        ->first();
+                    if (!$user) {
+                        $errors[] = "Fila {$lineNumber}: user_id «{$row['user_id']}» no existe en tu institución.";
+                        continue;
+                    }
+                } elseif ($email) {
+                    $user = User::where('institution_id', $institutionId)
+                        ->where('email', $email)
+                        ->first();
+                }
+
+                // --- Buscar estudiante existente (Student ya está scoped por tenant) ---
+                $student = null;
+                if ($user) {
+                    $student = Student::where('user_id', $user->id)->first();
                 }
                 if (!$student && !empty($row['student_code'])) {
                     $student = Student::where('student_code', $row['student_code'])->first();
+                    if ($student && !$user) {
+                        $user = User::where('institution_id', $institutionId)
+                            ->where('id', $student->user_id)
+                            ->first();
+                    }
                 }
 
-                if (!$student && empty($row['user_id'])) {
-                    $errors[] = "Fila {$lineNumber}: no se encontró un estudiante con ese student_code y no se indicó user_id para crear uno nuevo.";
-                    continue;
+                // --- Si no hay usuario ni estudiante: crear cuenta nueva (requiere email + full_name) ---
+                if (!$user && !$student) {
+                    if (!$email) {
+                        $errors[] = "Fila {$lineNumber}: para crear un estudiante nuevo se requiere la columna «email» (o un «user_id» existente).";
+                        continue;
+                    }
+                    $fullName = trim((string) ($row['full_name'] ?? ''));
+                    if ($fullName === '') {
+                        $errors[] = "Fila {$lineNumber}: «full_name» es obligatorio para crear el usuario.";
+                        continue;
+                    }
+                    if (User::where('email', $email)->exists()) {
+                        $errors[] = "Fila {$lineNumber}: el email «{$email}» ya está en uso.";
+                        continue;
+                    }
+
+                    $user = User::create([
+                        'institution_id' => $institutionId,
+                        'full_name'      => $fullName,
+                        'email'          => $email,
+                        // Contraseña no usable: el usuario la define vía el enlace que recibe por correo.
+                        'password_hash'  => Hash::make(Str::random(40)),
+                        'user_type'      => UserType::Student->value,
+                        'status'         => UserStatus::Active->value,
+                    ]);
+
+                    $usersCreated++;
+                    $newUsers[] = $user;
                 }
 
                 // --- student_code único ---
@@ -254,12 +324,18 @@ class StudentController extends Controller
                     }
                 }
 
-                // institution_id nunca se toma del archivo — lo asigna TenantScoped
+                // institution_id nunca se toma del archivo — lo asigna TenantScoped.
+                // El user_id del perfil siempre proviene del usuario resuelto/creado.
                 $data = Arr::only($row, self::ALLOWED_COLUMNS);
+                // Quitar celdas vacías: las columnas nullable quedan en NULL (no en '')
+                // y las que tienen default (status, exams_completed_count) lo aplican.
+                $data = array_filter($data, fn($v) => $v !== '' && $v !== null);
+                $data['user_id'] = $user?->id ?? $student->user_id;
 
                 try {
                     if ($student) {
-                        $student->fill($data);
+                        // No reasignar la PK (user_id) al actualizar
+                        $student->fill(Arr::except($data, ['user_id']));
                         $student->save();
                         $updated++;
                     } else {
@@ -274,12 +350,27 @@ class StudentController extends Controller
             }
         });
 
+        // Encolar el enlace de "establece tu contraseña" a los usuarios creados.
+        // FUERA de la transacción: el envío real lo hace el worker; la request no se bloquea.
+        $emailsQueued  = 0;
+        $emailFailures = [];
+        foreach ($newUsers as $newUser) {
+            if ($passwordSetup->sendSetupLink($newUser)) {
+                $emailsQueued++;
+            } else {
+                $emailFailures[] = $newUser->email;
+            }
+        }
+
         return response()->json([
-            'total_rows' => $totalRows,
-            'created'    => $created,
-            'updated'    => $updated,
-            'skipped'    => count($errors),
-            'errors'     => $errors,
+            'total_rows'     => $totalRows,
+            'created'        => $created,
+            'updated'        => $updated,
+            'users_created'  => $usersCreated,
+            'emails_queued'  => $emailsQueued,
+            'email_failures' => $emailFailures,
+            'skipped'        => count($errors),
+            'errors'         => $errors,
         ]);
     }
 
@@ -301,12 +392,14 @@ class StudentController extends Controller
             'Content-Disposition' => "attachment; filename=\"{$filename}\"",
         ];
 
-        $columns = self::ALLOWED_COLUMNS;
+        $columns = self::TEMPLATE_COLUMNS;
 
         // Fila de instrucciones (se muestra como primera fila de datos en Excel)
         $instructions = [
-            '(UUID del usuario — requerido para crear)',
-            '(Código único, ej: EST-0001 — requerido si no hay user_id)',
+            '(Nombre completo del estudiante — requerido para crear cuenta nueva)',
+            '(Correo del estudiante — requerido para crear; recibe enlace para fijar contraseña)',
+            '(UUID de usuario existente — opcional; si se indica NO se crea cuenta)',
+            '(Código único, ej: EST-0001 — opcional)',
             '(Número entero 6-12)',
             '(A, B, C o D)',
             '(active, inactive, suspended — default: active)',
@@ -318,32 +411,40 @@ class StudentController extends Controller
         ];
 
         $examples = [
+            // Crear cuenta nueva (con email, sin user_id)
             [
-                'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+                'María García Solano',
+                'maria.garcia@ejemplo.com',
+                '',
                 'EST-0001',
                 '10',
                 'A',
                 'active',
                 '2008-03-15',
-                'María García Solano',
-                'maria.garcia@ejemplo.com',
+                'Lucía Solano',
+                'lucia.solano@ejemplo.com',
                 'GRP-2024-10A',
                 '',
             ],
             [
-                'yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy',
+                'Carlos López Mora',
+                'carlos.lopez@ejemplo.com',
+                '',
                 'EST-0002',
                 '11',
                 'B',
                 'active',
                 '2007-07-22',
-                'Carlos López Mora',
-                'carlos.lopez@ejemplo.com',
+                'Pedro López',
+                'pedro.lopez@ejemplo.com',
                 '',
                 'acceso',
             ],
+            // Actualizar/crear perfil para un usuario que YA existe (con user_id)
             [
                 '',
+                '',
+                'yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy',
                 'EST-0003',
                 '9',
                 'C',
@@ -397,14 +498,12 @@ class StudentController extends Controller
         $user    = $request->user();
         $student = Student::with('user')->where('user_id', $user->id)->first();
 
-        if (!$student) {
-            return response()->json([
-                'message' => 'Este usuario no tiene perfil de estudiante',
-            ], 404);
-        }
-
+        // Degradación elegante: si no hay perfil (estado que no debería darse),
+        // se responde 200 con data:null en vez de 404, para que el frontend
+        // pueda manejarlo sin quedarse en blanco.
         return response()->json([
-            'data' => $student,
+            'data'           => $student,
+            'has_profile'    => $student !== null,
         ]);
     }
 

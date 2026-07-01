@@ -11,7 +11,7 @@ class StudentFactory extends Factory
     public function definition(): array
     {
         return [
-            'student_code' => fake()->unique()->bothify('STU-####'),
+            'student_code' => fake()->unique()->numerify('STU-##########'),
             'grade' => fake()->numberBetween(1, 12),
             'section' => fake()->randomElement(['A','B','C']),
             'status' => 'active',

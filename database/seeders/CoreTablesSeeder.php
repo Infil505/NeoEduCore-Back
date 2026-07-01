@@ -307,7 +307,7 @@ class CoreTablesSeeder extends Seeder
             'subject_id' => $math->id,
             'recommendation_text' => 'Basado en tu desempeño (85%), te va muy bien en matemáticas. Continúa practicando con ejercicios avanzados.',
             'generated_at' => now(),
-            'recommendation_type' => 'study_plan',
+            'recommendation_type' => 'action',
         ]);
 
         AiRecommendation::create([
@@ -316,7 +316,7 @@ class CoreTablesSeeder extends Seeder
             'subject_id' => $math->id,
             'recommendation_text' => 'Te recomendamos revisar el recurso "Introducción a Álgebra" para reforzar tus conceptos básicos.',
             'generated_at' => now(),
-            'recommendation_type' => 'support_resource',
+            'recommendation_type' => 'resource',
         ]);
 
         AiRecommendation::create([
@@ -325,7 +325,7 @@ class CoreTablesSeeder extends Seeder
             'subject_id' => $spanish->id,
             'recommendation_text' => 'Tu progreso en español es bueno. Considera explorar ejercicios de nivel intermedio.',
             'generated_at' => now(),
-            'recommendation_type' => 'study_plan',
+            'recommendation_type' => 'action',
         ]);
 
         // 13. Crear más registros de progreso

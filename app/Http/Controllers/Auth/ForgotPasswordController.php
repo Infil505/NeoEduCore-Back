@@ -59,15 +59,9 @@ class ForgotPasswordController extends Controller
             'created_at' => now(),
         ]);
 
-        /**
-         * Link SOLO backend (Blade)
-         * IMPORTANTE: route() depende de APP_URL para armar el host correcto.
-         * Si a veces te sale localhost en prod, es porque APP_URL está mal.
-         */
-        $resetUrl = url('/password/reset/' . $tokenPlain) . '?email=' . urlencode($email);
-
-        // Enviar correo
-        Mail::to($email)->send(new PasswordResetMail($resetUrl, $user));
+        // El Mailable arma el enlace al formulario backend a partir del token.
+        // (Es ShouldQueue: el envío real lo hace el worker, la request no se bloquea.)
+        Mail::to($email)->queue(new PasswordResetMail($tokenPlain, $user));
 
         return $genericResponse;
 

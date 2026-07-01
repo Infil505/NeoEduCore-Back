@@ -14,6 +14,9 @@ class ProtectedRoutesRequireAuthTest extends TestCase
             ['POST', '/api/auth/logout'],
             ['POST', '/api/password/change'],
 
+            // Alta de usuarios: ahora protegida (solo admin)
+            ['POST', '/api/register'],
+
             ['GET',  '/api/students'],
             ['GET',  '/api/students/me'],
             ['GET',  '/api/students/1'],
@@ -83,6 +86,7 @@ class ProtectedRoutesRequireAuthTest extends TestCase
             ['PUT',  '/api/users/1'],
             ['PATCH','/api/users/1/status'],
             ['PATCH','/api/users/1/reset-password'],
+            ['DELETE','/api/users/1'],
 
             ['GET',  '/api/institutions'],
             ['GET',  '/api/institutions/1'],

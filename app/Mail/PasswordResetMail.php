@@ -4,12 +4,13 @@ namespace App\Mail;
 
 use App\Models\Admin\User;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class PasswordResetMail extends Mailable
+class PasswordResetMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
@@ -24,10 +25,10 @@ class PasswordResetMail extends Mailable
     {
         $this->token = $token;
         $this->user = $user;
-        
-        // Construir la URL de reset (ajustar según tu configuración)
-        $frontendUrl = config('app.frontend_url', config('app.url'));
-        $this->resetUrl = $frontendUrl . '/reset-password?token=' . $token . '&email=' . urlencode($user->email);
+
+        // Enlace al formulario de reset servido por el backend
+        // (ruta web `password.reset.form`: GET /password/reset/{token}?email=...).
+        $this->resetUrl = url('/password/reset/' . $token) . '?email=' . urlencode($user->email);
     }
 
     /**

@@ -5,35 +5,71 @@ namespace Tests\Feature\Auth;
 use App\Models\Admin\User;
 use App\Models\Admin\Institution;
 use Tests\TestCase;
+use Tests\Traits\ApiAuth;
 use Illuminate\Support\Facades\Hash;
 
 class LoginRegisterTest extends TestCase
 {
+    use ApiAuth;
+
     public function test_register_success(): void
     {
         $institution = Institution::factory()->create();
+        $admin = $this->signInAdmin(['institution_id' => $institution->id]);
 
         $res = $this->postJson('/api/register', [
+            'full_name' => 'Juan Pérez',
+            'email' => 'juan@example.com',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
+            'user_type' => 'teacher',
+        ]);
+
+        $res->assertStatus(201);
+        // El usuario se crea SIEMPRE en la institución del admin
+        $this->assertDatabaseHas('users', [
+            'email' => 'juan@example.com',
+            'full_name' => 'Juan Pérez',
             'institution_id' => $institution->id,
+            'user_type' => 'teacher',
+        ]);
+    }
+
+    public function test_register_requires_admin(): void
+    {
+        // Un teacher autenticado NO puede dar de alta usuarios
+        $institution = Institution::factory()->create();
+        $this->signInTeacher(['institution_id' => $institution->id]);
+
+        $res = $this->postJson('/api/register', [
             'full_name' => 'Juan Pérez',
             'email' => 'juan@example.com',
             'password' => 'SecurePass123!',
             'password_confirmation' => 'SecurePass123!',
         ]);
 
-        $res->assertStatus(201);
-        $this->assertDatabaseHas('users', [
-            'email' => 'juan@example.com',
+        $res->assertStatus(403);
+    }
+
+    public function test_register_requires_auth(): void
+    {
+        // Sin autenticación → 401 (ya no es público)
+        $res = $this->postJson('/api/register', [
             'full_name' => 'Juan Pérez',
+            'email' => 'juan@example.com',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
         ]);
+
+        $res->assertStatus(401);
     }
 
     public function test_register_validation_fails_weak_password(): void
     {
         $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
 
         $res = $this->postJson('/api/register', [
-            'institution_id' => $institution->id,
             'full_name' => 'Juan Pérez',
             'email' => 'juan@example.com',
             'password' => '123',
@@ -46,9 +82,9 @@ class LoginRegisterTest extends TestCase
     public function test_register_validation_fails_password_mismatch(): void
     {
         $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
 
         $res = $this->postJson('/api/register', [
-            'institution_id' => $institution->id,
             'full_name' => 'Juan Pérez',
             'email' => 'juan@example.com',
             'password' => 'SecurePass123!',

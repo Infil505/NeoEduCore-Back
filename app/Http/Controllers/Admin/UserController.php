@@ -13,6 +13,19 @@ use Illuminate\Validation\Rules\Password;
 class UserController extends Controller
 {
     /**
+     * El modelo User no usa TenantScoped (login/register públicos consultan
+     * por email sin contexto de tenant), así que aquí se filtra el tenant
+     * manualmente. Devuelve 404 si el usuario objetivo es de otra institución,
+     * mismo criterio que el resto de recursos para no revelar su existencia.
+     */
+    private function assertSameTenant(Request $request, User $user): void
+    {
+        if ($user->institution_id !== $request->user()->institution_id) {
+            abort(404);
+        }
+    }
+
+    /**
      * Listar usuarios del tenant (filtrable)
      * Filtros: user_type, status, q (por nombre/email)
      */
@@ -28,7 +41,9 @@ class UserController extends Controller
             'q'         => ['nullable', 'string', 'max:120'],
         ]);
 
-        $query = User::query()->orderByDesc('created_at');
+        $query = User::query()
+            ->where('institution_id', $request->user()->institution_id)
+            ->orderByDesc('created_at');
 
         if (!empty($data['user_type'])) {
             $query->where('user_type', $data['user_type']);
@@ -54,8 +69,10 @@ class UserController extends Controller
     /**
      * Ver usuario
      */
-    public function show(User $user)
+    public function show(Request $request, User $user)
     {
+        $this->assertSameTenant($request, $user);
+
         return response()->json([
             'data' => $user->load(['institution', 'studentProfile']),
         ]);
@@ -66,6 +83,8 @@ class UserController extends Controller
      */
     public function update(Request $request, User $user)
     {
+        $this->assertSameTenant($request, $user);
+
         $data = $request->validate([
             'full_name' => ['sometimes', 'string', 'min:2', 'max:120'],
             'email'     => ['sometimes', 'email', 'max:120', Rule::unique('users', 'email')->ignore($user->id)],
@@ -96,6 +115,8 @@ class UserController extends Controller
      */
     public function setStatus(Request $request, User $user)
     {
+        $this->assertSameTenant($request, $user);
+
         $data = $request->validate([
             'status' => ['required', Rule::in([
                 UserStatus::Active->value,
@@ -119,6 +140,8 @@ class UserController extends Controller
      */
     public function destroy(Request $request, User $user)
     {
+        $this->assertSameTenant($request, $user);
+
         if ($request->user()->id === $user->id) {
             return response()->json(['message' => 'No puedes eliminar tu propia cuenta'], 409);
         }
@@ -136,6 +159,8 @@ class UserController extends Controller
      */
     public function resetPassword(Request $request, User $user)
     {
+        $this->assertSameTenant($request, $user);
+
         $data = $request->validate([
             'password' => [
                 'required',

@@ -35,8 +35,10 @@ Route::get('/ping', fn () => response()->json(['ok' => true]));
 |--------------------------------------------------------------------------
 | AUTH PÚBLICO
 |--------------------------------------------------------------------------
+| El alta de usuarios (/register) NO es pública: solo un admin puede crear
+| cuentas dentro de su institución (ver grupo role:admin más abajo).
+| El primer admin se crea mediante el seeder (php artisan db:seed).
 */
-Route::post('/register', [AuthController::class, 'register'])->name('register');
 Route::post('/auth/login', [AuthController::class, 'login'])->name('login');
 
 /*
@@ -120,18 +122,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
     */
     Route::middleware('role:admin,teacher')->group(function () {
 
-        // Gestión de usuarios
+        // Gestión de usuarios — solo LECTURA para teacher.
+        // Las mutaciones (alta, update, status, reset-password, delete) son admin-only.
         Route::get('/users', [UserController::class, 'index']);
         Route::get('/users/{user}', [UserController::class, 'show']);
-        Route::put('/users/{user}', [UserController::class, 'update']);
-        Route::patch('/users/{user}/status', [UserController::class, 'setStatus']);
-        Route::patch('/users/{user}/reset-password', [UserController::class, 'resetPassword']);
-        Route::delete('/users/{user}', [UserController::class, 'destroy']);
 
         // Gestión de estudiantes
         Route::get('/students', [StudentController::class, 'index']);
-        Route::get('/students/bulk-upload/template', [StudentController::class, 'bulkUploadTemplate']);
-        Route::post('/students/bulk-upload', [StudentController::class, 'bulkUpload'])->middleware('throttle:3,1');
         Route::get('/students/{student_user_id}', [StudentController::class, 'show']);
         Route::put('/students/{student_user_id}', [StudentController::class, 'update']);
         Route::patch('/students/{student_user_id}/status', [StudentController::class, 'setStatus']);
@@ -198,6 +195,19 @@ Route::middleware(['auth:sanctum'])->group(function () {
     |--------------------------------------------------------------------------
     */
     Route::middleware('role:admin')->group(function () {
+
+        // Alta de usuarios y gestión de cuentas — solo admin (en su institución)
+        Route::post('/register', [AuthController::class, 'register'])->name('register');
+
+        // Carga masiva: crea cuentas de usuario, por eso es admin-only
+        Route::get('/students/bulk-upload/template', [StudentController::class, 'bulkUploadTemplate']);
+        Route::post('/students/bulk-upload', [StudentController::class, 'bulkUpload'])->middleware('throttle:3,1');
+
+        Route::put('/users/{user}', [UserController::class, 'update']);
+        Route::patch('/users/{user}/status', [UserController::class, 'setStatus']);
+        Route::patch('/users/{user}/reset-password', [UserController::class, 'resetPassword']);
+        Route::delete('/users/{user}', [UserController::class, 'destroy']);
+
         Route::get('/institutions', [InstitutionController::class, 'index']);
         Route::get('/institutions/{institution}', [InstitutionController::class, 'show']);
         Route::put('/institutions/{institution}', [InstitutionController::class, 'update']);

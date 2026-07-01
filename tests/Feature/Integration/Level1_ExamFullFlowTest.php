@@ -45,7 +45,7 @@ class Level1_ExamFullFlowTest extends TestCase
         ]);
 
         // Añadir estudiante al grupo
-        $group->students()->attach($studentUser->id, ['joined_at' => now()]);
+        $group->students()->attach($studentUser->id, ['joined_at' => now(), 'institution_id' => $institution->id]);
 
         return compact('institution', 'teacher', 'subject', 'group', 'studentUser', 'student');
     }
