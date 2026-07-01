@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AI\AiController;
 use App\Http\Controllers\AI\AiTutorController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\OverviewController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Students\StudentController;
 use App\Http\Controllers\Academic\GroupController;
@@ -80,6 +81,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     | Intentos de examen — solo student
     */
     Route::middleware('role:student')->group(function () {
+        Route::get('/dashboard/student-overview', [OverviewController::class, 'studentOverview']);
         Route::post('/exams/{exam}/attempts/start', [ExamAttemptController::class, 'start']);
         Route::post('/exams/{exam}/attempts/{attempt}/submit', [ExamAttemptController::class, 'submit']);
         Route::patch('/exams/{exam}/attempts/{attempt}/pause', [ExamAttemptController::class, 'pause']);
@@ -121,6 +123,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     |--------------------------------------------------------------------------
     */
     Route::middleware('role:admin,teacher')->group(function () {
+        Route::get('/dashboard/staff-overview', [OverviewController::class, 'staffOverview']);
 
         // Gestión de usuarios — solo LECTURA para teacher.
         // Las mutaciones (alta, update, status, reset-password, delete) son admin-only.
@@ -144,6 +147,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/exams', [ExamController::class, 'store']);
         Route::put('/exams/{exam}', [ExamController::class, 'update']);
         Route::patch('/exams/{exam}', [ExamController::class, 'update']);
+        Route::patch('/exams/{exam}/status', [ExamController::class, 'setStatus']);
         Route::delete('/exams/{exam}', [ExamController::class, 'destroy']);
 
         // Preguntas (CRUD)

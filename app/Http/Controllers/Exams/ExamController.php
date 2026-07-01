@@ -101,8 +101,55 @@ class ExamController extends Controller
      */
     public function show(Exam $exam)
     {
+        $user = request()->user();
+        $exam->load(['subject', 'teacher', 'groups', 'questions.options']);
+
+        if ($user->user_type->value === 'student') {
+            return response()->json([
+                'data' => [
+                    'id' => $exam->id,
+                    'institution_id' => $exam->institution_id,
+                    'created_by_teacher_id' => $exam->created_by_teacher_id,
+                    'title' => $exam->title,
+                    'subject_id' => $exam->subject_id,
+                    'grade' => $exam->grade,
+                    'instructions' => $exam->instructions,
+                    'duration_minutes' => $exam->duration_minutes,
+                    'status' => $exam->status->value,
+                    'max_attempts' => $exam->max_attempts,
+                    'show_results_immediately' => $exam->show_results_immediately,
+                    'allow_review_after_submission' => $exam->allow_review_after_submission,
+                    'randomize_questions' => $exam->randomize_questions,
+                    'available_from' => $exam->available_from,
+                    'available_until' => $exam->available_until,
+                    'created_at' => $exam->created_at,
+                    'updated_at' => $exam->updated_at,
+                    'subject' => $exam->subject,
+                    'teacher' => $exam->teacher,
+                    'groups' => $exam->groups,
+                    'questions' => $exam->questions->map(fn ($question) => [
+                        'id' => $question->id,
+                        'exam_id' => $question->exam_id,
+                        'question_text' => $question->question_text,
+                        'question_type' => $question->question_type->value,
+                        'points' => $question->points,
+                        'order_index' => $question->order_index,
+                        'options' => $question->options
+                            ->sortBy('option_index')
+                            ->values()
+                            ->map(fn ($option) => [
+                                'id' => $option->id,
+                                'question_id' => $option->question_id,
+                                'option_index' => $option->option_index,
+                                'option_text' => $option->option_text,
+                            ]),
+                    ]),
+                ],
+            ]);
+        }
+
         return response()->json([
-            'data' => $exam->load(['subject', 'teacher', 'groups', 'questions.options']),
+            'data' => $exam,
         ]);
     }
 

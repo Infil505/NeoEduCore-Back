@@ -26,8 +26,16 @@ class QuestionController extends Controller
             $query->orderBy('order_index');
         }
 
+        $questions = $query->limit(200)->get();
+
+        if ($request->user()->user_type->value === 'student') {
+            return response()->json([
+                'data' => $questions->map(fn (Question $question) => $this->sanitizeForStudent($question)),
+            ]);
+        }
+
         return response()->json([
-            'data' => $query->limit(200)->get(),
+            'data' => $questions,
         ]);
     }
 
@@ -249,5 +257,26 @@ class QuestionController extends Controller
         $question->delete(); // opciones eliminadas en cascada por DB
 
         return response()->noContent();
+    }
+
+    private function sanitizeForStudent(Question $question): array
+    {
+        return [
+            'id' => $question->id,
+            'exam_id' => $question->exam_id,
+            'question_text' => $question->question_text,
+            'question_type' => $question->question_type->value,
+            'points' => $question->points,
+            'order_index' => $question->order_index,
+            'options' => $question->options
+                ->sortBy('option_index')
+                ->values()
+                ->map(fn (QuestionOption $option) => [
+                    'id' => $option->id,
+                    'question_id' => $option->question_id,
+                    'option_index' => $option->option_index,
+                    'option_text' => $option->option_text,
+                ]),
+        ];
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Enums\UserStatus;
 use App\Models\Admin\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -146,8 +147,76 @@ class UserController extends Controller
             return response()->json(['message' => 'No puedes eliminar tu propia cuenta'], 409);
         }
 
-        $user->tokens()->delete();
-        $user->delete();
+        DB::transaction(function () use ($user) {
+            $now = now();
+
+            $user->tokens()->delete();
+
+            // Conserva recursos y eventos existentes, pero los desacopla del autor eliminado.
+            DB::table('study_resources')
+                ->where('created_by', $user->id)
+                ->update([
+                    'created_by' => null,
+                    'updated_at' => $now,
+                ]);
+
+            DB::table('calendar_events')
+                ->where('created_by', $user->id)
+                ->update([
+                    'created_by' => null,
+                    'updated_at' => $now,
+                ]);
+
+            // Los examenes del docente permanecen visibles aunque el creador ya no exista.
+            DB::table('exams')
+                ->where('created_by_teacher_id', $user->id)
+                ->update([
+                    'created_by_teacher_id' => null,
+                    'updated_at' => $now,
+                ]);
+
+            $attemptIds = DB::table('exam_attempts')
+                ->where('student_user_id', $user->id)
+                ->pluck('id');
+
+            if ($attemptIds->isNotEmpty()) {
+                $answerIds = DB::table('student_answers')
+                    ->whereIn('attempt_id', $attemptIds)
+                    ->pluck('id');
+
+                if ($answerIds->isNotEmpty()) {
+                    DB::table('student_answer_options')
+                        ->whereIn('student_answer_id', $answerIds)
+                        ->delete();
+                }
+
+                DB::table('student_answers')
+                    ->whereIn('attempt_id', $attemptIds)
+                    ->delete();
+
+                DB::table('exam_attempts')
+                    ->whereIn('id', $attemptIds)
+                    ->delete();
+            }
+
+            DB::table('student_progress')
+                ->where('student_user_id', $user->id)
+                ->delete();
+
+            DB::table('ai_recommendations')
+                ->where('student_user_id', $user->id)
+                ->delete();
+
+            DB::table('group_students')
+                ->where('student_user_id', $user->id)
+                ->delete();
+
+            if ($user->studentProfile()->exists()) {
+                $user->studentProfile()->delete();
+            }
+
+            $user->delete();
+        });
 
         return response()->noContent();
     }
