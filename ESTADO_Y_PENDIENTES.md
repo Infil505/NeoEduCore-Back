@@ -1,5 +1,5 @@
 # NeoEduCore — Estado del proyecto y pendientes
-**Última actualización:** 23 de junio de 2026  
+**Última actualización:** 30 de junio de 2026  
 **Rama activa:** Darwin  
 **Tests:** 148 pasando / 0 fallando
 
@@ -348,6 +348,15 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | E10 | datos BD, `CoreTablesSeeder.php`, migración `convert_recommendation_type_to_enum` | **Bug reportado (exámenes/recomendaciones): 500 al listar recomendaciones.** `GET /ai-recommendations` y `/ai-recommendations/me` daban `ValueError: "study_plan"/"support_resource" is not a valid backing value for enum AiRecommendationType`. Causa: el `CoreTablesSeeder` insertaba `study_plan`/`support_resource`, que no son valores del enum (`strength,weakness,resource,action`), y la columna era `varchar` (la migración original) en vez del enum PG → permitía colar basura que reventaba al hidratar el modelo. Fix: (1) datos corregidos (study_plan→action, support_resource→resource), (2) seeder corregido, (3) columna convertida a enum PG nativo → ahora un valor inválido falla en el INSERT. Detectado con el flujo completo de examen (start→submit→ver recomendaciones) | ✅ |
 | E9 | `.env` (`DB_PORT`) | **Stress test (k6) detectó 500 intermitentes bajo carga.** La BD es Supabase vía pooler en modo *transaction* (`:6543`), que NO conserva prepared statements entre transacciones → `prepared statement does not exist`. Cambiado al pooler en modo *session* (`:5432`), que mantiene afinidad de conexión. (Nota: `EMULATE_PREPARES=true` también lo evita pero rompe los booleanos en PostgreSQL, así que se descartó.) **Pendiente de arquitectura para 200+ concurrentes** — ver sección de escalado | ✅ (dev) |
 
+### Sesión 30/06/2026 — Onboarding local + colección Postman
+
+| # | Archivo(s) | Descripción | Estado |
+|---|-----------|-------------|--------|
+| F1 | `postman/` (nuevo) | **Colección Postman de toda la API** para pruebas manuales / con el front. `generate_postman_collection.php` lee `php artisan route:list --json` y genera `NeoEduCore.postman_collection.json` (**93 endpoints en 15 carpetas**, todas las rutas) + `NeoEduCore.postman_environment.json` (base_url, credenciales del seeder, variables de ids) + `README.md`. Login guarda `{{token}}` solo; los `GET` de listado autocapturan ids (`exam_id`, `subject_id`, ...). Como se genera desde las rutas reales, no se desincroniza: al cambiar `routes/api.php` se regenera con un comando. | ✅ |
+| F2 | Nota de arranque local (`composer run dev`) | Aclarado el onboarding para nuevos equipos: `composer run dev` = `php artisan serve` + `php artisan queue:listen` vía `npx concurrently`, por lo que requiere **`npm install`** una vez (trae `concurrently`). Para solo probar el front basta `php artisan serve` (como antes); el worker solo hace falta para correos async/jobs. Alternativa sin Node: los dos comandos en dos terminales. | ✅ |
+
+> **Nota (no bug):** al generar la colección se confirmó que `GroupController::addStudents()` y `removeStudents()` (validan `student_user_ids`) **existen pero NO están enrutados** — `routes/api.php` solo registra `apiResource('groups')`, sin `POST/DELETE /groups/{group}/students`. La sección 6 de este documento los listaba como existentes. Ver pendientes abiertos.
+
 ---
 
 ## 5. TODO priorizado
@@ -449,6 +458,7 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 - [x] ~~**`AuthController::register` sin transacción**~~ → **Resuelto 26/06/2026.** `User::create` + `Student::create` envueltos en `DB::transaction()` (atómico, no quedan huérfanos). De paso `/students/me` degrada elegante (200 con `data:null` en vez de 404).
 - [x] ~~**Rol `parent` sin superficie de API**~~ → **Decidido 26/06/2026.** Queda RESERVADO para un futuro portal de acudientes, pero se quitó la auto-detección por email (un email ya no crea un `parent` accidental sin rutas). El admin puede crearlo explícito con `user_type=parent`.
 - [x] ~~**`students/bulk-upload` confía en `user_id` sin verificar tenant**~~ → **Resuelto 23/06/2026 (E6).** Todas las búsquedas de usuario en bulk-upload ahora filtran por `institution_id` del actor.
+- [ ] **Rutas de asignación de estudiantes a grupo sin enrutar (30/06/2026).** `GroupController::addStudents()` y `removeStudents()` existen (upsert batch, validan `student_user_ids`) pero `routes/api.php` solo tiene `apiResource('groups')` → hoy no hay forma de llamarlos por HTTP. Decidir: (a) enrutar `POST/DELETE /groups/{group}/students`, o (b) borrar los métodos si la asignación se hará por otra vía. Detectado al generar la colección Postman.
 
 ---
 
@@ -515,9 +525,9 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | GET | `/api/students` | Lista estudiantes |
 | GET/PUT | `/api/students/{id}` | Ver/editar estudiante |
 | PATCH | `/api/students/{id}/status` | Cambiar estado estudiante |
-| GET/POST/PUT/DELETE | `/api/groups` | CRUD grupos |
-| POST | `/api/groups/{group}/students` | Asignar estudiantes a grupo |
-| DELETE | `/api/groups/{group}/students` | Retirar estudiantes de grupo |
+| GET/POST/PUT/DELETE | `/api/groups` | CRUD grupos (`apiResource`) |
+| ~~POST~~ | ~~`/api/groups/{group}/students`~~ | ⚠️ Métodos `addStudents`/`removeStudents` implementados en el controlador pero **NO enrutados** (ver pendientes abiertos) |
+| ~~DELETE~~ | ~~`/api/groups/{group}/students`~~ | ⚠️ Ídem — falta wiring en `routes/api.php` |
 | POST/PUT/DELETE | `/api/subjects` | Mutaciones de materias |
 | POST/PUT/DELETE | `/api/exams` | Mutaciones de exámenes |
 | POST/PUT/DELETE | `/api/exams/{exam}/questions` | Mutaciones de preguntas |
@@ -561,4 +571,4 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 
 ---
 
-*Documento actualizado el 09/05/2026.*
+*Documento actualizado el 30/06/2026.*
