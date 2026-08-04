@@ -19,7 +19,8 @@ class SubjectsCrudSmokeTest extends TestCase
 
     public function test_subjects_store_is_not_server_error(): void
     {
-        $this->signInTeacher();
+        // La creación de materias es admin-only
+        $this->signInAdmin();
 
         // ✅ NO se envía institution_id; debe salir del usuario autenticado
         $res = $this->postJson('/api/subjects', [
@@ -33,7 +34,7 @@ class SubjectsCrudSmokeTest extends TestCase
 
     public function test_subjects_show_not_server_error(): void
     {
-        $this->signInTeacher();
+        $this->signInAdmin();
 
         // Creamos subject primero
         $create = $this->postJson('/api/subjects', [

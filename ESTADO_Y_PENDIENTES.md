@@ -1,7 +1,7 @@
 # NeoEduCore — Estado del proyecto y pendientes
-**Última actualización:** 30 de junio de 2026  
+**Última actualización:** 31 de julio de 2026  
 **Rama activa:** Darwin  
-**Tests:** 148 pasando / 0 fallando
+**Tests:** 226 pasando / 0 fallando
 
 ---
 
@@ -78,8 +78,9 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 ---
 
 ### ✅ Materias (Subjects)
-- CRUD completo
-- Ruta: `/api/subjects`
+- CRUD completo. **Lectura** abierta a admin/teacher/student; **todas las mutaciones son admin-only**
+- Ruta: `/api/subjects` — `GET` admite `search` y `per_page`, y devuelve `exams_count`
+- **Nombre único por institución**, ignorando mayúsculas y espacios: índice funcional `UNIQUE (institution_id, lower(btrim(name)))`. Coexisten "Matemática 1er grado" y "Matemática 2do grado"; no dos "Matemática"
 - `DELETE /api/subjects/{id}` — cascada DB: exámenes → preguntas → opciones → intentos → respuestas. También elimina inscripciones (`student_subjects`) y progreso por materia.
 
 ---
@@ -87,7 +88,19 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 ### ✅ Grupos
 - CRUD completo + asignación/baja de estudiantes (upsert batch)
 - Ruta: `/api/groups`
+- `POST`/`DELETE /api/groups/{group}/students` — alta y baja **lógica** (`left_at`) por lista de ids. La baja conserva la fila como historial
+- `student_count` se recalcula en cada alta/baja (RN-STU-012)
 - `DELETE /api/groups/{id}` — cascada DB: membresías (`group_students`) y asignaciones de examen (`exam_targets`). Los estudiantes y exámenes NO se eliminan.
+
+---
+
+### ✅ Ciclo académico — reasignación masiva y repitentes
+- Rutas (**admin-only**, `throttle:10,1`): `POST /api/bulk/reassign-group`, `POST /api/bulk/reassign-subjects`, `POST /api/bulk/reset-progress`
+- Lógica en `app/services/Academic/BulkReassignmentService.php`; el controlador solo valida y traduce a HTTP
+- Cubre el ciclo completo de fin de año: promoción, repitentes, alumnos nuevos y plan de materias
+- **Repitentes:** `reset-progress` marca `student_progress.reset_at`, y `StudentProgressService::recalcFromAttempts` ignora los intentos anteriores al corte. Sin esa marca el reseteo se desharía en el siguiente examen. El historial de intentos **no** se borra
+- Todo transaccional (lote entero o nada); los ids desconocidos vuelven en `skipped` sin abortar
+- Contrato y **receta paso a paso de la promoción de fin de año** en la [sección 6](#6-referencia-de-endpoints-existentes)
 
 ---
 
@@ -354,8 +367,23 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 |---|-----------|-------------|--------|
 | F1 | `postman/` (nuevo) | **Colección Postman de toda la API** para pruebas manuales / con el front. `generate_postman_collection.php` lee `php artisan route:list --json` y genera `NeoEduCore.postman_collection.json` (**93 endpoints en 15 carpetas**, todas las rutas) + `NeoEduCore.postman_environment.json` (base_url, credenciales del seeder, variables de ids) + `README.md`. Login guarda `{{token}}` solo; los `GET` de listado autocapturan ids (`exam_id`, `subject_id`, ...). Como se genera desde las rutas reales, no se desincroniza: al cambiar `routes/api.php` se regenera con un comando. | ✅ |
 | F2 | Nota de arranque local (`composer run dev`) | Aclarado el onboarding para nuevos equipos: `composer run dev` = `php artisan serve` + `php artisan queue:listen` vía `npx concurrently`, por lo que requiere **`npm install`** una vez (trae `concurrently`). Para solo probar el front basta `php artisan serve` (como antes); el worker solo hace falta para correos async/jobs. Alternativa sin Node: los dos comandos en dos terminales. | ✅ |
+| F3 | `AiOutputValidator.php`, `AiTutorService.php`, `AiTutorController.php`, `config/sanctum.php`, `routes/console.php`, `.env.example` | **Endurecimiento del chatbot IA (auditoría de acceso y datos).** Se confirmó que el tutor NO es accesible sin auth (401 `auth:sanctum` → 403 `role:student` → 403 chequeo de perfil en controlador) y que el aislamiento de datos es **estructural**: el prompt solo lleva datos del propio estudiante y `AiChatSession` es `TenantScoped` + filtrado por `student_user_id` (sin IDOR ni fuga cross-tenant, incluso ante prompt injection). Ajustes aplicados: (A) filtro PII afinado — el patrón de teléfono `[0-9]{7,15}` marcaba números normales de matemáticas/fechas → reemplazado por patrones de teléfono/DNI reales (prefijo `+`, 3 grupos con separador, o ≥10 dígitos), sin bloquear resultados ni rangos de años; (B) `getDiagnosis` ahora también pasa por `AiOutputValidator` (coherencia con `chat`); (C) `subject_id` del chat se valida scoped por tenant (422 si no pertenece a la institución); (D) tokens Sanctum ahora **expiran** (`SANCTUM_TOKEN_EXPIRATION_MINUTES`, 12 h por defecto) + `sanctum:prune-expired` diario en el scheduler. **+11 tests** (`tests/Unit/AI/AiOutputValidatorTest.php`: PII no bloquea números de matemáticas/rangos de años pero sí email/teléfono/documento; `Level4_AiTutorFlowTest`: chat requiere auth 401, `subject_id` de otro tenant → 422, mismo tenant → 200). Suite: **159/159**. | ✅ |
 
-> **Nota (no bug):** al generar la colección se confirmó que `GroupController::addStudents()` y `removeStudents()` (validan `student_user_ids`) **existen pero NO están enrutados** — `routes/api.php` solo registra `apiResource('groups')`, sin `POST/DELETE /groups/{group}/students`. La sección 6 de este documento los listaba como existentes. Ver pendientes abiertos.
+> **Nota (resuelta 31/07/2026):** al generar la colección se detectó que `GroupController::addStudents()` y `removeStudents()` existían pero **no estaban enrutados**. Ya lo están (`POST`/`DELETE /api/groups/{group}/students`) — ver sesión 31/07/2026, G4.
+
+### Sesión 31/07/2026 — Catálogo de materias, drift de esquema y reasignación masiva
+
+| # | Archivo(s) | Descripción | Estado |
+|---|-----------|-------------|--------|
+| G1 | `SubjectController.php`, `routes/api.php` | **Catálogo de materias reservado al admin.** `GET /subjects` gana filtros `search` (ILIKE con comodines escapados) y `per_page` (1..100), y devuelve `exams_count` por materia. Las **cuatro mutaciones** (POST/PUT/PATCH/DELETE) pasan de `admin,teacher` a **admin-only**: el catálogo define la oferta académica y `DELETE` cascadea a exámenes → preguntas → intentos → respuestas. Doble guarda: middleware `role:admin` + helper `denyIfNotAdmin()` en el controlador, para no depender solo del cableado de rutas. Los `GET` siguen abiertos a admin/teacher/student. **+10 tests** | ✅ |
+| G2 | migración `add_unique_subject_name_per_institution`, `01_schema.sql`, `SubjectFactory.php` | **Nombre de materia único por institución.** Índice funcional `UNIQUE (institution_id, lower(btrim(name)))`: pueden coexistir "Matemática 1er grado" y "Matemática 2do grado", pero no dos "Matemática" ni variantes por mayúsculas/espacios. La migración **aborta con la lista de duplicados** si los hubiera, en vez de fallar a medias. El controlador valida en espejo (422 legible) y la BD es la garantía ante carreras. `SubjectFactory` pasa a componer nombres con contador estático (antes sorteaba entre 5 fijos y habría colisionado). Aplicada en Supabase: 206 materias, 0 duplicados | ✅ |
+| G3 | migración Sanctum original, `fix_personal_access_tokens_tokenable_id_to_uuid`, `SchemaIntegrityTest.php` | **Drift real corregido: `personal_access_tokens.tokenable_id`.** Era `uuid` en prod pero las migraciones generaban `bigint` (Sanctum usa `morphs()`; los users tienen PK uuid) → **cualquier entorno recién migrado tenía la auth rota**. Arreglo en dos capas: la migración original pasa a `uuidMorphs('tokenable')` (entornos nuevos) + migración correctiva **idempotente** (entornos rezagados; no-op si ya es uuid — verificado en prod: 427 tokens intactos). Nuevo `SchemaIntegrityTest` como guardián. Tras esto, el único drift entre `01_schema.sql` y las migraciones es el `ENABLE ROW LEVEL SECURITY` que pone Supabase, que es esperado | ✅ |
+| G4 | `routes/api.php`, `GroupController.php`, `GroupStudentsTest.php` | **Pendiente cerrado: membresía de grupo enrutada.** `POST`/`DELETE /api/groups/{group}/students` (admin+teacher). De paso se corrigió un **bug latente**: `addStudents()` no pasaba `institution_id` en su `upsert`, y la columna es `NOT NULL` sin default → habría reventado en la primera llamada real. No se detectó antes porque el método nunca estuvo enrutado. **+7 tests** | ✅ |
+| G9 | `AiTutorService.php`, `bootstrap/app.php`, `routes/api.php`, `.env`/`.env.example`, `AiTutorEfficiencyTest.php` | **Contención del tutor IA (eficiencia y protección del flujo de examen).** (a) Limitador **global** `ai-global` por institución (120/min) en las 3 rutas que llaman a OpenAI — los throttle previos eran por usuario y no acotaban el total. (b) Contexto del estudiante (perfil+progreso del system prompt) **cacheado 5 min**: se releía en cada turno → **7→3 queries por turno**, −54 % en una conversación de 20. (c) **Escritura incremental del JSONB**: `update(['messages' => $todos])` reenviaba la conversación entera cada turno; ahora solo viaja el delta y PostgreSQL concatena y recorta con `||` → **748 bytes constantes**, antes crecía sin parar. (d) **Dos agujeros de configuración**: `OPENAI_REQUEST_TIMEOUT` no estaba en `.env` (regía el default de 30 s, no los 15 que afirmaba el comentario del código) y **`CACHE_STORE=array`**, que con Octane hace que **ningún** rate limiter sea global (contador por worker). Ambos corregidos; `CACHE_STORE` **hay que fijarlo también en Coolify**. **+7 tests** | ✅ |
+| G8 | `ExamGradingService.php`, `QueryBudgetTest.php`, `ANALISIS_CONCURRENCIA.md` | **Corrector de exámenes por lotes.** El bucle de `gradeAttempt` acumula respuestas y opciones en memoria y hace **dos INSERT por lotes** al final, en vez de `create()` + `syncWithPivotValues()` por pregunta. **De `20 + 3·N` a 22 queries constantes** (~80 → 22 en un examen de 20 preguntas); capacidad de entrega **de ~27/s a ~97/s**. Al salir de Eloquent hubo que asumir a mano lo que hacía por nosotros: `id` con `Str::orderedUuid()` (la tabla no tiene DEFAULT), `institution_id` explícito (no corre el hook de `TenantScoped`) y `correct_answer_snapshot` serializado a JSON (no se aplica el cast). Inserción en lotes de 500 por el límite de parámetros de PostgreSQL, y respuestas antes que opciones por la FK. El test pasa de exigir coste marginal acotado a exigir **coste plano**. Suite intacta: 219/219 | ✅ |
+| G7 | `Level7_AcademicCycleTest.php`, `QueryBudgetTest.php`, `ANALISIS_CONCURRENCIA.md` | **Test de integración del ciclo + estimación de concurrencia.** Nivel 7: recorrido end-to-end de la promoción de fin de año (catálogo admin-only → grupos 2026/2027 → historial → repitentes → promovidos vía `from_group_id` → alumnos nuevos → replan → reseteo → verificación de que el corte aguanta el ciclo siguiente) + aislamiento multi-tenant de los tres endpoints masivos. **59 assertions en 2 tests.** `QueryBudgetTest` mide queries por endpoint y actúa de guardia anti-N+1: exige que el coste sea **plano** respecto al volumen (3 vs 40 alumnos, 9 vs 120 inscripciones). **Hallazgo:** todos los endpoints son planos **menos el submit de examen**, que cuesta `29 + 3·N` queries (bucle de `ExamGradingService` con `create()` + `syncWithPivotValues()` por pregunta). Es el cuello de botella de concurrencia — análisis completo y palancas en `ANALISIS_CONCURRENCIA.md` | ✅ |
+| G6 | migración `add_reset_at_to_student_progress`, `StudentProgressService.php`, `StudentProgress.php`, `BulkReassignmentService/Controller`, `01_schema.sql` | **Reseteo de progreso para repitentes — cierra el ciclo académico.** `POST /api/bulk/reset-progress` (admin-only). El punto no trivial: `recalcFromAttempts` promedia **todos** los intentos enviados sin corte temporal, y se dispara en cada submit de examen y en cada revisión de respuesta — así que poner el progreso a 0 sin más se desharía solo. Se añade `student_progress.reset_at` como **marca de corte** que el recálculo respeta. Los intentos y respuestas **no se borran** (historial académico íntegro), solo dejan de contar para el dominio actual; los posteriores al corte cuentan con normalidad. `overall_average` se recomputa; `exams_completed_count` y `last_activity_at` no se tocan (decisión deliberada, documentada). **+11 tests**, incluidos los dos que importan: el reseteo sobrevive a un recálculo, y un intento posterior al corte sí computa | ✅ |
+| G5 | `BulkReassignmentService.php`, `BulkReassignmentController.php`, `routes/api.php` | **Módulo de reasignación masiva** (promoción de fin de año y correcciones en bloque). `POST /api/bulk/reassign-group` y `POST /api/bulk/reassign-subjects`, **admin-only** + `throttle:10,1`. El lote se define por `student_user_ids` **o** `from_group_id` (mutuamente excluyentes). Mover **cierra** la membresía anterior con `left_at` (conserva historial), recuenta `student_count` de origen **y** destino, y sincroniza `students.grade/section/group_code` (flag `sync_student_fields`). Materias con `mode` = `replace`/`add`/`remove`, altas idempotentes vía `insertOrIgnore`. Todo transaccional; los ids desconocidos vuelven en `skipped` sin abortar el lote. **+18 tests** | ✅ |
 
 ---
 
@@ -458,7 +486,17 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 - [x] ~~**`AuthController::register` sin transacción**~~ → **Resuelto 26/06/2026.** `User::create` + `Student::create` envueltos en `DB::transaction()` (atómico, no quedan huérfanos). De paso `/students/me` degrada elegante (200 con `data:null` en vez de 404).
 - [x] ~~**Rol `parent` sin superficie de API**~~ → **Decidido 26/06/2026.** Queda RESERVADO para un futuro portal de acudientes, pero se quitó la auto-detección por email (un email ya no crea un `parent` accidental sin rutas). El admin puede crearlo explícito con `user_type=parent`.
 - [x] ~~**`students/bulk-upload` confía en `user_id` sin verificar tenant**~~ → **Resuelto 23/06/2026 (E6).** Todas las búsquedas de usuario en bulk-upload ahora filtran por `institution_id` del actor.
-- [ ] **Rutas de asignación de estudiantes a grupo sin enrutar (30/06/2026).** `GroupController::addStudents()` y `removeStudents()` existen (upsert batch, validan `student_user_ids`) pero `routes/api.php` solo tiene `apiResource('groups')` → hoy no hay forma de llamarlos por HTTP. Decidir: (a) enrutar `POST/DELETE /groups/{group}/students`, o (b) borrar los métodos si la asignación se hará por otra vía. Detectado al generar la colección Postman.
+- [x] ~~**Rutas de asignación de estudiantes a grupo sin enrutar (30/06/2026)**~~ → **Resuelto 31/07/2026 (G4).** Se optó por (a): `POST`/`DELETE /api/groups/{group}/students` enrutados para admin+teacher. Los métodos se mantienen porque cubren la asignación puntual a *un* grupo; el movimiento *entre* grupos lo cubre `/api/bulk/reassign-group`. De paso se corrigió el `institution_id` faltante en el `upsert`.
+
+### 📌 Pendientes abiertos (anotados 31/07/2026)
+
+- [x] ~~**Cuello de botella de concurrencia: el submit de examen cuesta `20 + 3·N` queries**~~ → **Resuelto 31/07/2026 (G8).** `ExamGradingService::gradeAttempt` acumula las filas y hace dos INSERT por lotes: **22 queries constantes** (antes ~80 para 20 preguntas). Capacidad de entrega **de ~27/s a ~97/s**; el escenario de saturación desaparece del flujo de examen. `QueryBudgetTest` exige ahora coste plano. Nota: la mejora real fue ≈3,5×, no el ≈8× estimado, porque el coste fijo del endpoint (~20 queries) es ahora el que manda → nueva palanca en `ANALISIS_CONCURRENCIA.md` §5.5.
+- [ ] **Coste fijo del submit: ~20 de las 22 queries son overhead**, no corrección (auth, tenant, validación, `recalcFromAttempts`, recomendaciones). Bajarlo a ~12 daría ~170 entregas/s. No urgente. Perfilarlo antes de tocar; buena parte podría ser `recalcFromAttempts`, diferible a la cola. Ver §5.5.
+- [x] ~~**El tutor IA puede dejar sin workers al resto del sistema**~~ → **Resuelto 03/08/2026 (G9).** Limitador global `ai-global` por institución en las 3 rutas de OpenAI + contexto cacheado (7→3 queries/turno) + escritura incremental del JSONB (bytes constantes) + timeout acotado a 15 s. Ver `ANALISIS_CONCURRENCIA.md` §5.3.
+- [ ] **Validar empíricamente el modelo de concurrencia.** El supuesto más frágil es el RTT de 18 ms app↔BD (medido 152 ms desde el portátil de desarrollo; producción es DO SFO3 → Supabase us-west-2). Medir desde el contenedor desplegado y añadir a `k6/` un escenario de `start`+`submit` — el `stress_all.js` actual excluye el flujo de intentos, que es justo el cuello. Plan en `ANALISIS_CONCURRENCIA.md` §6.
+
+- [ ] **Detección de drift esquema↔migraciones no automatizada.** El drift de `tokenable_id` (G3) vivió meses sin detectarse porque `SchemaIntegrityTest` corre sobre `01_schema.sql`, no contra las migraciones. El chequeo real hay que hacerlo a mano: BD limpia → `php artisan migrate` apuntando ahí → `php artisan schema:dump-sql --output=<tmp>` → `git diff --no-index` contra el artefacto. Si aparece algo más que el `ENABLE ROW LEVEL SECURITY` y la línea de versión de `pg_dump`, hay drift. **Pendiente:** empaquetarlo como comando `schema:check-drift` para poder correrlo en CI. **No regenerar `01_schema.sql` a ciegas:** se perdería el RLS que pone Supabase.
+- [ ] **`ENABLE ROW LEVEL SECURITY` fuera de las migraciones.** Lo aplica Supabase sobre las 24 tablas y no está en el historial de migraciones, así que un despliegue en un PostgreSQL que no sea Supabase no lo tendrá. Hoy no es un problema (el rol de la app es dueño de las tablas y las bypassa, y el aislamiento real lo da `TenantScoped`), pero conviene decidir si se formaliza en una migración.
 
 ---
 
@@ -503,7 +541,7 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | GET | `/api/exams` | Lista exámenes |
 | GET | `/api/exams/{exam}` | Ver examen |
 | GET | `/api/exams/{exam}/questions` | Ver preguntas |
-| GET | `/api/subjects` | Lista materias |
+| GET | `/api/subjects` | Lista materias — filtros `search` (parcial, ignora mayúsculas) y `per_page` (1..100); incluye `exams_count` |
 | GET | `/api/subjects/{subject}` | Ver materia |
 | GET | `/api/study-resources` | Lista recursos |
 | GET | `/api/study-resources/{id}` | Ver recurso |
@@ -526,9 +564,8 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | GET/PUT | `/api/students/{id}` | Ver/editar estudiante |
 | PATCH | `/api/students/{id}/status` | Cambiar estado estudiante |
 | GET/POST/PUT/DELETE | `/api/groups` | CRUD grupos (`apiResource`) |
-| ~~POST~~ | ~~`/api/groups/{group}/students`~~ | ⚠️ Métodos `addStudents`/`removeStudents` implementados en el controlador pero **NO enrutados** (ver pendientes abiertos) |
-| ~~DELETE~~ | ~~`/api/groups/{group}/students`~~ | ⚠️ Ídem — falta wiring en `routes/api.php` |
-| POST/PUT/DELETE | `/api/subjects` | Mutaciones de materias |
+| POST | `/api/groups/{group}/students` | Alta de estudiantes en el grupo (body: `student_user_ids[]`). Idempotente; reabre membresías cerradas |
+| DELETE | `/api/groups/{group}/students` | Baja **lógica** del grupo (body: `student_user_ids[]`) — marca `left_at`, conserva historial |
 | POST/PUT/DELETE | `/api/exams` | Mutaciones de exámenes |
 | POST/PUT/DELETE | `/api/exams/{exam}/questions` | Mutaciones de preguntas |
 | PUT/DELETE | `/api/questions/{question}` | Update/delete pregunta |
@@ -568,7 +605,103 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | GET | `/api/institutions` | Lista instituciones |
 | GET/PUT | `/api/institutions/{id}` | Ver/editar institución |
 | PATCH | `/api/institutions/{id}/toggle` | Activar/desactivar institución |
+| POST | `/api/subjects` | Crear materia — nombre único por institución (ignora mayúsculas/espacios) |
+| PUT/PATCH | `/api/subjects/{subject}` | Renombrar materia — misma regla de unicidad |
+| DELETE | `/api/subjects/{subject}` | Eliminar materia — **cascadea** a exámenes → preguntas → intentos → respuestas |
+| POST | `/api/bulk/reassign-group` | Reasignación masiva de grupo (`throttle:10,1`) |
+| POST | `/api/bulk/reassign-subjects` | Reasignación masiva de materias (`throttle:10,1`) |
+| POST | `/api/bulk/reset-progress` | Reseteo de progreso para repitentes (`throttle:10,1`) |
+
+#### Reasignación masiva — contrato
+
+Ambos endpoints aceptan el lote por **`student_user_ids`** (lista de uuid) **o** por **`from_group_id`** (todos los activos de ese grupo). Son mutuamente excluyentes: mandar los dos da 422.
+
+`POST /api/bulk/reassign-group`
+
+```jsonc
+{
+  "student_user_ids": ["uuid", "..."],   // o "from_group_id": "uuid"
+  "to_group_id": "uuid",                 // requerido
+  "sync_student_fields": true            // opcional (default true)
+}
+```
+
+- Cierra con `left_at` las membresías activas en otros grupos (conserva historial).
+- Da de alta en el destino; si el estudiante ya estuvo ahí y se fue, reabre la fila con `joined_at` nuevo.
+- Los que **ya están activos** en el destino no se tocan (salen como `already_in_group`, no como `moved`).
+- Recalcula `student_count` de los grupos de origen **y** del destino.
+- Con `sync_student_fields` sincroniza `students.grade`, `section` y `group_code` con el grupo destino.
+
+`POST /api/bulk/reassign-subjects`
+
+```jsonc
+{
+  "from_group_id": "uuid",               // o "student_user_ids": ["uuid", ...]
+  "subject_ids": ["uuid", "..."],
+  "mode": "replace"                      // replace | add | remove
+}
+```
+
+| `mode` | Efecto |
+|--------|--------|
+| `replace` | El estudiante queda **exactamente** con las materias indicadas. Con lista vacía queda sin materias (es válido y deliberado) |
+| `add` | Añade las indicadas sin quitar nada. Idempotente: repetir la llamada no duplica ni pisa el `enrolled_at` original |
+| `remove` | Desinscribe solo las indicadas |
+
+`add` y `remove` exigen al menos una materia (422 si va vacío); solo `replace` admite lista vacía.
+
+`POST /api/bulk/reset-progress` — **reseteo de progreso (repitentes)**
+
+```jsonc
+{
+  "from_group_id": "uuid",               // o "student_user_ids": ["uuid", ...]
+  "subject_ids": ["uuid", "..."]         // opcional; vacío = todas sus materias
+}
+```
+
+Pone `mastery_percentage` a 0 **y marca `student_progress.reset_at`**. Esa marca es lo que hace el reseteo duradero: `StudentProgressService::recalcFromAttempts` ignora los intentos anteriores al corte, así que el próximo examen enviado (o la próxima revisión de respuesta) no restaura la nota del año pasado. Sin ella, el reseteo sería puramente cosmético.
+
+- **Los intentos y respuestas NO se borran**: el historial académico se conserva íntegro, solo deja de contar para el dominio actual.
+- `students.overall_average` se recomputa en el acto (deriva del progreso).
+- **No** se toca `exams_completed_count` (es un total histórico: el estudiante sí rindió esos exámenes) ni `last_activity_at` (esto es una acción del admin, no actividad del estudiante).
+- Los intentos **posteriores** al corte vuelven a contar con normalidad.
+
+**Respuesta** (los tres): resumen con `requested`, `skipped` y los contadores de la operación. Los ids que no correspondan a un estudiante de la institución **no abortan el lote**: vuelven en `skipped`. Lo que sí corta es un grupo o materia de otra institución (404 / 422). Todo corre en una transacción: se aplica el lote entero o nada.
+
+#### Receta: promoción de fin de año (con repitentes y alumnos nuevos)
+
+Punto de partida: **quedarse en el mismo grado no es quedarse en el mismo grupo**. Los grupos llevan `year`, así que "7-A 2026" y "7-A 2027" son filas distintas. Un repitente **también se reasigna**: de 7A‑2026 a 7A‑2027. Si no se le mueve, su membresía sigue apuntando al grupo del año pasado y contamina el `student_count` de un grupo que ya no existe operativamente.
+
+El orden importa, y aprovechándolo no hace falta ningún parámetro de exclusión:
+
+1. **Crear los grupos del año nuevo** (7A‑2027, 8A‑2027, …).
+2. **Mover primero a los repitentes**, por lista explícita, al grupo de su mismo grado del año nuevo:
+   ```jsonc
+   { "student_user_ids": ["<repitentes>"], "to_group_id": "<7A-2027>" }
+   ```
+3. **Mover al resto con `from_group_id`**. Como el paso 2 ya cerró la membresía de los repitentes en 7A‑2026, `from_group_id` **solo devuelve a los que quedan**, es decir los promovidos:
+   ```jsonc
+   { "from_group_id": "<7A-2026>", "to_group_id": "<8A-2027>" }
+   ```
+4. **Alumnos nuevos de matrícula:** primero existir (`POST /api/register` o `POST /api/students/bulk-upload`, ambos admin-only), después asignarlos con `POST /api/groups/{group}/students` o con `reassign-group` por lista.
+5. **Plan de materias por grupo**, con `mode: "replace"`:
+   ```jsonc
+   { "from_group_id": "<7A-2027>", "subject_ids": ["<plan de 7º>"], "mode": "replace" }
+   ```
+
+Notas del paso 5 y sus efectos sobre repitentes:
+
+- `replace` **no reinicia** las inscripciones que ya existían: borra solo lo que sobra y las altas usan `insertOrIgnore`, así que una materia que el repitente ya cursaba conserva su `enrolled_at` original.
+- `reassign-subjects` **no toca el progreso**. Para que el repitente arranque de cero está el paso 6.
+
+6. **Resetear el progreso de los repitentes** (solo ellos, no los promovidos):
+   ```jsonc
+   { "student_user_ids": ["<repitentes>"] }   // o "from_group_id": "<7A-2027>"
+   ```
+   `POST /api/bulk/reset-progress`. Sin `subject_ids` resetea todas sus materias; con `subject_ids` solo las indicadas (útil si arrastra únicamente algunas).
+
+> **Mejora opcional no implementada:** un `exclude_student_user_ids` en `reassign-group` permitiría hacer los pasos 2 y 3 sin depender del orden. Con el orden de arriba no es necesario.
 
 ---
 
-*Documento actualizado el 30/06/2026.*
+*Documento actualizado el 31/07/2026.*

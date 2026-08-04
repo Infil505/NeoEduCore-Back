@@ -31,6 +31,15 @@ class ProtectedRoutesRequireAuthTest extends TestCase
             ['PATCH','/api/groups/1'],
             ['DELETE','/api/groups/1'],
 
+            // Membresía de grupo (admin+teacher)
+            ['POST',  '/api/groups/1/students'],
+            ['DELETE','/api/groups/1/students'],
+
+            // Reasignación masiva (admin-only)
+            ['POST', '/api/bulk/reassign-group'],
+            ['POST', '/api/bulk/reassign-subjects'],
+            ['POST', '/api/bulk/reset-progress'],
+
             ['GET',  '/api/subjects'],
             ['POST', '/api/subjects'],
             ['GET',  '/api/subjects/1'],

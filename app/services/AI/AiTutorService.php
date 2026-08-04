@@ -4,6 +4,8 @@ namespace App\Services\AI;
 
 use App\Models\AI\AiChatSession;
 use App\Models\Students\Student;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use OpenAI\Laravel\Facades\OpenAI;
 use App\Services\AI\AiOutputValidator;
@@ -15,6 +17,17 @@ class AiTutorService
     // Máximo de mensajes almacenados en JSONB — evita crecimiento ilimitado del campo
     private const MAX_STORED_MESSAGES = 60;
 
+    /**
+     * TTL del contexto del estudiante (perfil + progreso) usado para armar el
+     * system prompt. Ese contexto cambia solo al entregar un examen, pero se
+     * leía en CADA turno de chat (4 queries: student, user, progress, subjects).
+     * Cachearlo quita esas lecturas del camino caliente del tutor.
+     *
+     * 5 min es el retardo máximo con el que el tutor vería un progreso nuevo;
+     * a cambio, una conversación de 20 turnos pasa de ~80 lecturas a ~4.
+     */
+    private const CONTEXT_TTL = 300;
+
     public function chat(
         string $studentUserId,
         string $message,
@@ -23,9 +36,9 @@ class AiTutorService
         string $mode = 'ask',
         ?string $topic = null
     ): array {
-        $student = Student::with(['user', 'progress.subject'])
-            ->where('user_id', $studentUserId)
-            ->firstOrFail();
+        // El controlador ya verificó que el usuario tiene perfil de estudiante,
+        // así que aquí solo hace falta el contexto para el prompt (cacheable).
+        $systemPrompt = $this->systemPromptCacheado($studentUserId);
 
         $session = $this->resolveSession($studentUserId, $sessionId, $subjectId);
 
@@ -39,25 +52,86 @@ class AiTutorService
 
         $history[] = ['role' => 'user', 'content' => $userContent];
 
-        $reply = $this->callOpenAi($student, $history, $mode);
+        $reply = $this->callOpenAi($systemPrompt, $history, $mode);
 
-        $now = now()->toISOString();
-        $allMessages   = $session->messages ?? [];
-        $allMessages[] = ['role' => 'user',      'content' => $message, 'mode' => $mode, 'created_at' => $now];
-        $allMessages[] = ['role' => 'assistant', 'content' => $reply,   'created_at' => now()->toISOString()];
+        $nuevos = [
+            ['role' => 'user',      'content' => $message, 'mode' => $mode, 'created_at' => now()->toISOString()],
+            ['role' => 'assistant', 'content' => $reply,   'created_at' => now()->toISOString()],
+        ];
 
-        // Truncar mensajes antiguos para que el JSONB no crezca indefinidamente
-        if (count($allMessages) > self::MAX_STORED_MESSAGES) {
-            $allMessages = array_slice($allMessages, -self::MAX_STORED_MESSAGES);
-        }
+        $totalPrevio = count($session->messages ?? []);
 
-        $session->update(['messages' => $allMessages]);
+        $this->anexarMensajes($session->id, $nuevos);
 
         return [
             'session_id'    => $session->id,
             'reply'         => $reply,
-            'message_count' => count($allMessages),
+            // El append + truncado ocurre en SQL; el resultado es determinista,
+            // así que se calcula aquí en vez de releer la fila.
+            'message_count' => min($totalPrevio + count($nuevos), self::MAX_STORED_MESSAGES),
         ];
+    }
+
+    /**
+     * Añade mensajes a la conversación SIN reescribirla entera.
+     *
+     * Antes se hacía `$session->update(['messages' => $todos])`, lo que enviaba
+     * la conversación completa (hasta 60 mensajes de ~600 tokens ≈ cientos de
+     * KB) por la red y reescribía todo el JSONB en cada turno. El coste crecía
+     * con la longitud de la conversación.
+     *
+     * Ahora solo viaja el delta: PostgreSQL concatena con `||` y recorta a los
+     * últimos MAX_STORED_MESSAGES en la misma sentencia. Coste constante.
+     */
+    private function anexarMensajes(string $sessionId, array $nuevos): void
+    {
+        $delta = json_encode($nuevos, JSON_UNESCAPED_UNICODE);
+
+        // SQL explícito en vez del query builder: el builder no permite mezclar
+        // bindings propios dentro de un DB::raw() manteniendo el orden.
+        DB::update(
+            "UPDATE ai_chat_sessions
+                SET messages = (
+                        SELECT COALESCE(jsonb_agg(e ORDER BY o), '[]'::jsonb)
+                        FROM jsonb_array_elements(messages || ?::jsonb)
+                             WITH ORDINALITY AS t(e, o)
+                        WHERE o > GREATEST(
+                            0,
+                            jsonb_array_length(messages || ?::jsonb) - ?
+                        )
+                    ),
+                    updated_at = ?
+              WHERE id = ?",
+            [$delta, $delta, self::MAX_STORED_MESSAGES, now(), $sessionId]
+        );
+    }
+
+    /**
+     * System prompt del estudiante, cacheado. Ver CONTEXT_TTL.
+     */
+    private function systemPromptCacheado(string $studentUserId): string
+    {
+        return Cache::remember(
+            "ai:tutor:prompt:{$studentUserId}",
+            self::CONTEXT_TTL,
+            function () use ($studentUserId) {
+                $student = Student::with(['user', 'progress.subject'])
+                    ->where('user_id', $studentUserId)
+                    ->firstOrFail();
+
+                return $this->buildSystemPrompt($student);
+            }
+        );
+    }
+
+    /**
+     * Invalida el contexto cacheado. Llamar cuando cambie el progreso o el
+     * perfil del estudiante si se quiere que el tutor lo vea al instante en
+     * vez de esperar al TTL.
+     */
+    public static function olvidarContexto(string $studentUserId): void
+    {
+        Cache::forget("ai:tutor:prompt:{$studentUserId}");
     }
 
     public function endSession(string $studentUserId, string $sessionId): bool
@@ -129,7 +203,19 @@ class AiTutorService
             ]);
 
             $text = trim((string) ($response->choices[0]->message->content ?? ''));
-            return $text !== '' ? $text : $this->fallbackDiagnosis($name, $progressLines);
+
+            if ($text === '') {
+                return $this->fallbackDiagnosis($name, $progressLines);
+            }
+
+            // Coherencia con chat(): el diagnóstico también pasa por el filtro PII/longitud.
+            $validator = new AiOutputValidator();
+            if ($validator->validate($text) !== null) {
+                Log::warning('AiTutorService: diagnóstico bloqueado por validación PII/longitud');
+                return $this->fallbackDiagnosis($name, $progressLines);
+            }
+
+            return $validator->sanitize($text);
         } catch (\Throwable $e) {
             Log::warning('AiTutorService: diagnosis OpenAI error', ['error' => $e->getMessage()]);
             return $this->fallbackDiagnosis($name, $progressLines);
@@ -149,15 +235,16 @@ class AiTutorService
         };
     }
 
-    private function callOpenAi(Student $student, array $history, string $mode = 'ask'): string
+    private function callOpenAi(string $systemPrompt, array $history, string $mode = 'ask'): string
     {
-        // El timeout se configura vía OPENAI_REQUEST_TIMEOUT=15 en .env
-        // para liberar workers PHP rápido bajo carga concurrente.
+        // El timeout sale de OPENAI_REQUEST_TIMEOUT (config/openai.php, default
+        // 30 s). Acótalo: mientras dura la llamada el worker de Octane está
+        // bloqueado y no puede atender a nadie más. Ver ANALISIS_CONCURRENCIA.md.
         try {
             $response = OpenAI::chat()->create([
                 'model'    => config('services.openai.model', 'gpt-4o-mini'),
                 'messages' => array_merge(
-                    [['role' => 'system', 'content' => $this->buildSystemPrompt($student)]],
+                    [['role' => 'system', 'content' => $systemPrompt]],
                     $history
                 ),
                 'temperature' => $mode === 'practice' ? 0.5 : 0.7,

@@ -229,4 +229,53 @@ class Level4_AiTutorFlowTest extends TestCase
         $res = $this->postJson('/api/ai/tutor/chat', ['message' => 'Hola']);
         $res->assertStatus(403);
     }
+
+    // -------------------------------------------------------------------------
+    // Acceso y aislamiento de datos
+    // -------------------------------------------------------------------------
+
+    public function test_chat_requires_authentication(): void
+    {
+        // Sin token el tutor no debe ser accesible.
+        $res = $this->postJson('/api/ai/tutor/chat', ['message' => 'Hola']);
+        $res->assertStatus(401);
+    }
+
+    public function test_chat_rejects_subject_from_another_tenant(): void
+    {
+        ['studentUser' => $studentUser] = $this->buildStudent();
+
+        // Materia que pertenece a OTRA institución.
+        $otherInstitution = Institution::factory()->create();
+        $otherSubject     = Subject::factory()->create(['institution_id' => $otherInstitution->id]);
+
+        $this->actingAs($studentUser, 'sanctum');
+
+        $res = $this->postJson('/api/ai/tutor/chat', [
+            'message'    => 'Hola',
+            'subject_id' => $otherSubject->id,
+        ]);
+
+        $res->assertStatus(422);
+    }
+
+    public function test_chat_accepts_subject_from_same_tenant(): void
+    {
+        ['institution' => $institution, 'studentUser' => $studentUser] = $this->buildStudent();
+
+        $subject = Subject::factory()->create(['institution_id' => $institution->id]);
+
+        $this->actingAs($studentUser, 'sanctum');
+
+        $res = $this->postJson('/api/ai/tutor/chat', [
+            'message'    => 'Hola',
+            'subject_id' => $subject->id,
+        ]);
+
+        $res->assertOk();
+        $this->assertDatabaseHas('ai_chat_sessions', [
+            'id'         => $res->json('data.session_id'),
+            'subject_id' => $subject->id,
+        ]);
+    }
 }

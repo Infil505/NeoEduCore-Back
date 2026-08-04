@@ -25,9 +25,18 @@ class StudentProgressService
 
     /**
      * Recalcular desde intentos enviados (promedio de porcentajes)
+     *
+     * Respeta `reset_at`: si al estudiante se le reseteó el progreso en esta
+     * materia (repitente), solo cuentan los intentos posteriores al corte. Los
+     * anteriores siguen en la BD para auditoría, pero no arrastran la nota.
      */
     public function recalcFromAttempts(string $studentUserId, string $subjectId): StudentProgress
     {
+        $resetAt = StudentProgress::query()
+            ->where('student_user_id', $studentUserId)
+            ->where('subject_id', $subjectId)
+            ->value('reset_at');
+
         // JOIN en lugar de whereHas + get() evita cargar registros en RAM para calcular AVG.
         $result = ExamAttempt::query()
             ->join('exams', 'exams.id', '=', 'exam_attempts.exam_id')
@@ -35,6 +44,7 @@ class StudentProgressService
             ->whereNotNull('exam_attempts.submitted_at')
             ->where('exams.subject_id', $subjectId)
             ->where('exam_attempts.max_score', '>', 0)
+            ->when($resetAt, fn ($q) => $q->where('exam_attempts.submitted_at', '>', $resetAt))
             ->selectRaw('COUNT(*) as total, AVG((exam_attempts.score / exam_attempts.max_score) * 100) as avg_pct')
             ->first();
 

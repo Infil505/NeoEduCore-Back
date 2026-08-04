@@ -13,7 +13,12 @@ return new class extends Migration
     {
         Schema::create('personal_access_tokens', function (Blueprint $table) {
             $table->id();
-            $table->morphs('tokenable');
+
+            // uuidMorphs, NO morphs: los users tienen PK uuid. Con morphs()
+            // (bigint) Sanctum no puede resolver el tokenable y toda la auth
+            // se cae en un entorno recién migrado. Ver la migración correctiva
+            // 2026_07_31_000002 para las bases que ya corrieron esto con bigint.
+            $table->uuidMorphs('tokenable');
             $table->text('name');
             $table->string('token', 64)->unique();
             $table->text('abilities')->nullable();

@@ -574,7 +574,8 @@ CREATE TABLE public.student_progress (
     student_user_id uuid NOT NULL,
     subject_id uuid NOT NULL,
     mastery_percentage numeric(5,2) DEFAULT '0'::numeric NOT NULL,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    reset_at timestamp(0) without time zone
 );
 
 
@@ -1208,6 +1209,13 @@ CREATE INDEX personal_access_tokens_tokenable_type_tokenable_id_index ON public.
 --
 
 CREATE INDEX student_subjects_institution_id_index ON public.student_subjects USING btree (institution_id);
+
+
+--
+-- Name: subjects_institution_name_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX subjects_institution_name_unique ON public.subjects USING btree (institution_id, lower(btrim((name)::text)));
 
 
 --
