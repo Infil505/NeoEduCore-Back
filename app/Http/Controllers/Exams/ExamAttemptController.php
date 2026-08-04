@@ -236,8 +236,32 @@ class ExamAttemptController extends Controller
             'answers.selectedOptions',
         ]);
 
+        // `is_correct` y `correct_answer_text` van ocultos por defecto en los
+        // modelos, así que aquí no hace falta filtrarlos: al estudiante nunca
+        // se le revelan (este endpoint es solo para él, ver el guard de arriba).
+        //
+        // Lo que sí hay que gobernar es la corrección de SUS respuestas. Antes
+        // se devolvía siempre, incluso con el intento en curso y aunque el
+        // docente hubiera desactivado la revisión. Con `max_attempts > 1` eso
+        // era filtrar las respuestas de cara al intento siguiente.
+        $entregado = $attempt->submitted_at !== null;
+        $puedeRevisar = $entregado && $exam->allow_review_after_submission;
+
+        if (!$puedeRevisar) {
+            $attempt->answers->each->makeHidden([
+                'is_correct',
+                'points_awarded',
+                'correct_answer_snapshot',
+                'explanation',
+            ]);
+        }
+
         return response()->json([
             'data' => $attempt,
+            'meta' => [
+                'submitted'    => $entregado,
+                'review_shown' => $puedeRevisar,
+            ],
         ]);
     }
 

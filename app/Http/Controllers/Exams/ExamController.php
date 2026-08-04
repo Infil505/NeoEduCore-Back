@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Exams;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\RevelaRespuestas;
 use App\Enums\ExamStatus;
 use App\Models\Exams\Exam;
 use App\Models\Academic\Group;
@@ -11,6 +12,8 @@ use Illuminate\Validation\Rule;
 
 class ExamController extends Controller
 {
+    use RevelaRespuestas;
+
     /**
      * Listar exámenes (filtrado por tenant vía TenantScoped)
      */
@@ -99,10 +102,16 @@ class ExamController extends Controller
     /**
      * Ver examen
      */
-    public function show(Exam $exam)
+    public function show(Exam $exam, Request $request)
     {
+        $exam->load(['subject', 'teacher', 'groups', 'questions.options']);
+
+        // Esta ruta es de lectura compartida (admin, teacher y student): sin
+        // esto, un alumno vería `is_correct` de cada opción antes de entregar.
+        $this->revelarRespuestas($request->user(), $exam->questions);
+
         return response()->json([
-            'data' => $exam->load(['subject', 'teacher', 'groups', 'questions.options']),
+            'data' => $exam,
         ]);
     }
 

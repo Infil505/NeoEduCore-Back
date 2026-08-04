@@ -30,9 +30,12 @@ tests/
 │   │   ├── BulkReassignmentTest.php      (Reasignación masiva: grupo y materias)
 │   │   ├── ResetProgressTest.php         (Reseteo de progreso para repitentes)
 │   │   └── GroupStudentsTest.php         (Alta/baja de estudiantes en un grupo)
+│   ├── Exams/
+│   │   └── AnswerLeakTest.php            (El alumno no ve la respuesta antes de entregar)
 │   ├── Db/
 │   │   ├── SchemaLoadedTest.php          (El schema de tests carga)
-│   │   └── SchemaIntegrityTest.php       (Invariantes: tipos uuid, unique de materia)
+│   │   ├── SchemaIntegrityTest.php       (Invariantes: tipos uuid, unique de materia)
+│   │   └── CascadeIntegrityTest.php      (Cascadas de borrado y FK del modelo TFG)
 │   ├── Integration/
 │   │   ├── Level1_ExamFullFlowTest.php   (Flujo completo: start→submit→grade→AI)
 │   │   ├── Level2_RbacIdorTest.php       (RBAC, IDOR, cross-tenant)
@@ -54,7 +57,7 @@ tests/
 └── TestCase.php                          (Base test class)
 ```
 
-**Total: 226 tests, 770 assertions**
+**Total: 243 tests, 849 assertions**
 
 ## Ejecución
 
@@ -233,7 +236,7 @@ php artisan test --verbose
 - ✅ Level 5 — Analíticas y reportes (9 tests): institution/subjects/student analytics, CSV, historial, tutor usage
 - ✅ Level 6 — Configuración del sistema (8 tests): lectura/escritura config, validaciones, roles
 
-**Total: 226 tests, 770 assertions**
+**Total: 243 tests, 849 assertions**
 
 ## Helpers de Autenticación
 

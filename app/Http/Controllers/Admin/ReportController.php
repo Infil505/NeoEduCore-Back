@@ -77,13 +77,17 @@ class ReportController extends Controller
             fputs($output, "\xEF\xBB\xBF");
             fputcsv($output, $headers);
 
-            // cursor() procesa un registro a la vez — sin cargar la colección entera
+            // lazy() y NO cursor(): `cursor()` ignora el eager loading (necesita
+            // conocer todos los ids de antemano y por diseño va fila a fila), así
+            // que `with(['student.user'])` no se aplicaba y cada fila disparaba 2
+            // queries — ~2000 extra en un examen de 1000 alumnos. `lazy()` mantiene
+            // la memoria acotada igual, pero por lotes, y sí respeta el eager load.
             ExamAttempt::query()
                 ->where('exam_id', $exam->id)
                 ->whereNotNull('submitted_at')
                 ->with(['student.user'])
                 ->orderByDesc('score')
-                ->cursor()
+                ->lazy()
                 ->each(function ($a) use ($output) {
                     fputcsv($output, [
                         $a->student_user_id,

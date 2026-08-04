@@ -3,7 +3,9 @@
 **Fecha:** 31 de julio de 2026
 **Objetivo declarado del TFG:** 200 usuarios concurrentes con tiempos razonables.
 
-> **Qué es esto y qué no.** Es un modelo analítico construido sobre **mediciones reales** de coste por request y de latencia de red, no una prueba de carga. **No** se lanzó carga contra la BD de producción a propósito. Al final está el plan para validarlo empíricamente.
+> **Qué es esto.** Un modelo analítico construido sobre mediciones de coste por request y latencia de red (§2, §3), **validado después con una prueba de carga real** (§6). La carga se ejecutó contra una base local desechable; **en ningún momento contra producción**.
+>
+> **Corrección al modelo tras medir (03/08/2026):** §3.2 asumía ~15 ms de CPU PHP por petición. Medido, el trabajo real de endpoint va de **127 ms** (lecturas) a **231 ms** (entrega de examen) sobre servidor de desarrollo, más **186 ms de arranque del framework** que Octane elimina. La componente PHP **no es despreciable** como suponía el modelo; el orden de magnitud de las capacidades de §3.3 se mantiene, pero las cifras concretas deben tomarse como estimación hasta medir sobre el despliegue real (§6.4).
 
 ---
 
@@ -238,17 +240,91 @@ No es urgente —el flujo de examen ya cumple el objetivo— pero es donde está
 
 ---
 
-## 6. Cómo validar esto empíricamente
+## 6. Resultados de la prueba de carga (03/08/2026)
 
-El modelo necesita confirmarse. Pasos, en orden:
+> **Entorno.** Base PostgreSQL 17.9 **local y desechable** (`neoeducore_load`), sembrada con `LoadTestSeeder`. **En ningún momento se lanzó carga contra la base de producción.** Cliente: k6 v1.7.1. Servidor: `php artisan serve` (ver §6.4 sobre sus límites).
 
-1. **Medir el RTT real desde producción** — el supuesto de 18 ms es el más frágil de todo el análisis. Desde el contenedor desplegado:
+### 6.1 Descomposición del tiempo de respuesta (1 VU, sin contención)
+
+`/api/ping` es una ruta pública mínima: mide arranque del framework y enrutado, nada más. Restándola se aísla el trabajo real de cada endpoint.
+
+| Endpoint | Total | − arranque | Trabajo real |
+|---|---|---|---|
+| `GET /ping` (arranque de Laravel) | 186 ms | — | *(coste fijo)* |
+| `GET /subjects` | 313 ms | −186 | **127 ms** |
+| `GET /exams` | 315 ms | −186 | **129 ms** |
+| `POST /exams/{}/attempts/start` | 366 ms | −186 | **180 ms** |
+| `POST /exams/{}/attempts/{}/submit` (20 preguntas) | 417 ms | −186 | **231 ms** |
+
+**El 45 % de cada petición es arrancar el framework.** Eso es exactamente lo que Octane elimina en producción manteniendo la aplicación en memoria: es la justificación empírica de esa decisión de arquitectura.
+
+### 6.2 Escalado con el número de workers
+
+Cada iteración = ciclo completo de entrega (`start` + `submit` de 20 preguntas).
+
+| VUs | Workers | Throughput | p95 del ciclo | Errores 5xx |
+|---|---|---|---|---|
+| 1 | 1 | 0,72 it/s | 0,97 s | **0** |
+| 10 | 1 | 0,75 it/s | 9,94 s | **0** |
+| 8 | 8 | **4,74 it/s** | 1,19 s | **0** |
+| 24 | 8 | 4,87 it/s | 3,36 s | **0** |
+
+Tres conclusiones, todas medidas:
+
+1. **Escala con los workers.** De 1 a 8 workers el throughput sube ×6,6 (eficiencia ~82 %). El sistema no tiene un punto de serialización interno.
+2. **Satura de forma limpia.** Al triplicar la carga sobre 8 workers (24 VUs), el throughput se queda plano en ~4,9 it/s y lo que crece es la latencia (1,19 s → 3,36 s). Es encolamiento, no rotura: **cero errores 5xx en las cuatro configuraciones**.
+3. **La base de datos no es el cuello.** A 4,74 it/s con ~30 queries por iteración son ~142 queries/s, trivial para PostgreSQL. No hubo agotamiento de conexiones ni bloqueos. El límite era la CPU de los procesos PHP.
+
+Las filas de 1 worker con 1 vs 10 VUs muestran el efecto de encolar contra un único proceso: mismo throughput, latencia ×10.
+
+### 6.3 Requisito «reporte de 1000 estudiantes en menos de 5 s»
+
+Sembrados 1.000 estudiantes, 1.000 intentos entregados y 20.000 respuestas.
+
+| Endpoint | Antes | Después | Requisito |
+|---|---|---|---|
+| **`GET /reports/exams/{}/results.csv`** | **3.790 ms** | **1.068 ms** | < 5.000 ms ✅ |
+| `GET /reports/exams/{}/results` | 413 ms | — | ✅ |
+| `GET /students` (1000, paginado) | 468 ms | — | ✅ |
+| `GET /analytics/institution` | 426 ms | — | ✅ |
+
+**Hallazgo: N+1 en la exportación CSV.** El código usaba `->with(['student.user'])->cursor()`. **`cursor()` ignora el eager loading** —recorre fila a fila y no puede resolver los ids por adelantado—, así que el `with()` no se aplicaba y cada fila disparaba 2 queries: ~2.000 extra en un examen de 1.000 alumnos. El comentario del código («procesa un registro a la vez, sin cargar la colección entera») solo acertaba en lo de la memoria.
+
+Corregido con `->lazy()`, que acota la memoria igual pero por lotes **y sí respeta el eager load**: **3,5× más rápido**, con salida byte a byte idéntica (91.701 bytes). Cubierto por `QueryBudgetTest::test_csv_export_does_not_scale_with_row_count`.
+
+El requisito ya se cumplía por poco (3,79 s de 5 s), pero sin margen y sobre un servidor de desarrollo. Ahora sobra holgura.
+
+### 6.4 Qué NO demuestran estas mediciones
+
+Hay que ser explícito con los límites, porque el entorno de prueba difiere de producción en dos direcciones opuestas:
+
+- **`php artisan serve` es más lento que producción.** No tiene opcache ni Octane: PHP recompila el código en cada petición y el framework arranca de cero (186 ms medidos). En producción Octane mantiene la aplicación en memoria y opcache elimina la recompilación. Los tiempos de §6.1 son una **cota superior**, no una predicción.
+- **La base local es más rápida que producción.** RTT ≈ 0,2 ms frente a los ~18 ms estimados contra Supabase. Con 22 queries por entrega, eso son ~400 ms que aquí no se pagan.
+
+Ambos efectos son grandes y de signo contrario, así que **estos números no se pueden trasladar directamente a producción**. Lo que sí queda validado, y era el objetivo:
+
+- ✅ El coste por petición **no crece** con el volumen de datos (confirma `QueryBudgetTest`).
+- ✅ El throughput **escala** con los workers; no hay serialización interna.
+- ✅ Bajo sobrecarga **degrada encolando, sin errores**.
+- ✅ La base de datos **no es el cuello de botella** a estos ritmos.
+- ✅ El requisito del reporte de 1000 estudiantes **se cumple**.
+
+**Sigue pendiente** la única medición que no se puede hacer desde aquí: el RTT real entre el contenedor desplegado y Supabase (§6.5), que es el parámetro que domina todo el modelo.
+
+### 6.5 Cómo completar la validación
+
+Queda un solo paso, y es el que más pesa en el modelo:
+
+1. **Medir el RTT real desde producción.** El supuesto de 18 ms es el parámetro más frágil de todo el análisis y no se puede medir desde una máquina de desarrollo (desde el portátil salen ~152 ms). Desde el contenedor desplegado:
    ```bash
    psql "$DATABASE_URL" -c '\timing on' -c 'SELECT 1;'
    ```
    Si sale muy por encima de 25 ms, todas las capacidades de §3.3 bajan proporcionalmente.
 
-2. **Carga sobre el flujo de examen** — `k6/stress_all.js` ya existe pero **excluye deliberadamente el flujo de intentos**, que es justo el cuello de botella. Hace falta un escenario nuevo que haga `start` + `submit` con N alumnos entregando en la misma ventana, y medir p95 y errores 5xx.
+2. **Repetir §6.2 contra un despliegue real con Octane**, para sustituir la cota superior de §6.1 por el tiempo de servicio verdadero:
+   ```bash
+   k6 run -e BASE_URL=https://<host>/api -e VUS=50 -e DURATION=60s k6/exam_peak.js
+   ```
 
 3. **Observar las conexiones durante el pico:**
    ```sql
@@ -256,6 +332,12 @@ El modelo necesita confirmarse. Pasos, en orden:
    ```
    Si aparece `too many connections`, el tope de §2.3 llegó antes que el de CPU.
 
-4. **Repetir tras aplicar §5.1** para confirmar el factor ~8×.
+> ⚠️ **No lanzar carga contra la BD de producción con datos reales.** Levantar una instancia Supabase de staging con el mismo esquema (`database/sql/01_schema.sql`) y sembrar con `php artisan db:seed --class=LoadTestSeeder`.
 
-> **No lanzar carga contra la BD de producción con datos reales.** Levantar una instancia Supabase de staging con el mismo esquema (`database/sql/01_schema.sql`) y sembrar con `k6/seed_users.js`.
+### 6.6 Herramientas añadidas
+
+| Fichero | Para qué |
+|---|---|
+| `database/seeders/LoadTestSeeder.php` | Siembra el escenario de pico: institución, grupo, examen activo de N preguntas y N estudiantes matriculados. Parametrizable con `ESTUDIANTES` y `PREGUNTAS`. Se niega a correr en producción |
+| `k6/exam_peak.js` | Escenario del pico de entregas (`start` + `submit`), el que `stress_all.js` excluye. Admite `MODE=ramp` para buscar el punto de saturación y varios backends por coma en `BASE_URLS` |
+| `k6/baseline_decompose.js` | Descompone el tiempo de respuesta separando el arranque del framework del trabajo real de cada endpoint |
