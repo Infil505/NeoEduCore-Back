@@ -142,6 +142,9 @@ class GroupController extends Controller
             // INSERT ... ON CONFLICT (group_id, student_user_id) DO UPDATE SET left_at = NULL
             // preserva joined_at original para reactivaciones; 1 query en lugar de 2N.
             $rows = array_map(fn($id) => [
+                // institution_id es NOT NULL sin default: omitirlo revienta el
+                // INSERT. No se notaba porque este método aún no está enrutado.
+                'institution_id'  => $group->institution_id,
                 'group_id'        => $group->id,
                 'student_user_id' => $id,
                 'joined_at'       => $now,

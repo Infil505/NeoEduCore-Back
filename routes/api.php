@@ -24,6 +24,7 @@ use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\SystemConfigController;
 use App\Http\Controllers\Academic\StudentSubjectController;
+use App\Http\Controllers\Academic\BulkReassignmentController;
 
 /*
 |--------------------------------------------------------------------------
@@ -95,8 +96,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/students/me/available-exams', [StudentController::class, 'availableExams']);
 
         // Tutor IA conversacional
-        Route::post('/ai/tutor/chat', [AiTutorController::class, 'chat'])->middleware('throttle:30,1');
-        Route::get('/ai/tutor/diagnosis', [AiTutorController::class, 'diagnosis'])->middleware('throttle:10,1');
+        // Doble throttle: el primero acota al usuario, el segundo (de institución)
+        // reserva workers para el flujo de examen. Ver bootstrap/app.php.
+        Route::post('/ai/tutor/chat', [AiTutorController::class, 'chat'])
+            ->middleware(['throttle:30,1', 'throttle:ai-global']);
+        Route::get('/ai/tutor/diagnosis', [AiTutorController::class, 'diagnosis'])
+            ->middleware(['throttle:10,1', 'throttle:ai-global']);
         Route::patch('/ai/tutor/sessions/{sessionId}/end', [AiTutorController::class, 'endSession']);
         Route::get('/ai/tutor/sessions', [AiTutorController::class, 'sessions']);
     });
@@ -136,12 +141,15 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/students/{student_user_id}', [StudentController::class, 'update']);
         Route::patch('/students/{student_user_id}/status', [StudentController::class, 'setStatus']);
 
-        // Grupos y materias (CRUD)
+        // Grupos (CRUD)
+        // OJO: las materias son admin-only en todas sus mutaciones, ver más abajo.
         Route::apiResource('groups', GroupController::class);
-        Route::post('/subjects', [SubjectController::class, 'store']);
-        Route::put('/subjects/{subject}', [SubjectController::class, 'update']);
-        Route::patch('/subjects/{subject}', [SubjectController::class, 'update']);
-        Route::delete('/subjects/{subject}', [SubjectController::class, 'destroy']);
+
+        // Membresía de un grupo puntual (alta y baja lógica por lista de ids).
+        // Para mover estudiantes ENTRE grupos usar /bulk/reassign-group, que
+        // además cierra la membresía anterior y recuenta ambos grupos.
+        Route::post('/groups/{group}/students', [GroupController::class, 'addStudents']);
+        Route::delete('/groups/{group}/students', [GroupController::class, 'removeStudents']);
 
         // Exámenes: mutaciones (lectura ya cubierta en shared)
         Route::post('/exams', [ExamController::class, 'store']);
@@ -177,7 +185,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::delete('/calendar-events/{calendar_event}', [CalendarEventController::class, 'destroy']);
 
         // IA: generación manual de recomendaciones por docente
-        Route::post('/ai/generate', [AiController::class, 'generate'])->middleware('throttle:20,1');
+        // También llama a OpenAI → también entra en el presupuesto global de IA
+        Route::post('/ai/generate', [AiController::class, 'generate'])
+            ->middleware(['throttle:20,1', 'throttle:ai-global']);
         Route::get('/ai-recommendations', [AiRecommendationController::class, 'index']);
         Route::get('/ai-recommendations/{aiRecommendation}', [AiRecommendationController::class, 'show']);
 
@@ -217,8 +227,27 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/institutions/{institution}', [InstitutionController::class, 'update']);
         Route::patch('/institutions/{institution}/toggle', [InstitutionController::class, 'toggleStatus']);
 
+        // Catálogo de materias: define la oferta académica de la institución y
+        // borrar una cascadea a exámenes → preguntas → intentos → respuestas,
+        // por eso TODAS sus mutaciones quedan reservadas al administrador.
+        // La lectura (GET) sigue abierta a admin, teacher y student.
+        Route::post('/subjects', [SubjectController::class, 'store']);
+        Route::put('/subjects/{subject}', [SubjectController::class, 'update']);
+        Route::patch('/subjects/{subject}', [SubjectController::class, 'update']);
+        Route::delete('/subjects/{subject}', [SubjectController::class, 'destroy']);
+
         // Configuración del sistema — solo admin puede editar
         Route::put('/system/config', [SystemConfigController::class, 'update']);
+
+        // Reasignación masiva (promoción de fin de año, correcciones en bloque).
+        // Toca membresías, contadores y campos denormalizados de cientos de
+        // filas de una vez, por eso es admin-only y va con throttle.
+        Route::post('/bulk/reassign-group', [BulkReassignmentController::class, 'reassignGroup'])
+            ->middleware('throttle:10,1');
+        Route::post('/bulk/reassign-subjects', [BulkReassignmentController::class, 'reassignSubjects'])
+            ->middleware('throttle:10,1');
+        Route::post('/bulk/reset-progress', [BulkReassignmentController::class, 'resetProgress'])
+            ->middleware('throttle:10,1');
     });
 
     // Configuración del sistema — admin y teacher pueden leer

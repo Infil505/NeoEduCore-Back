@@ -10,6 +10,12 @@ use App\Models\Concerns\TenantScoped;
 
 class Question extends Model
 {
+    /**
+     * La respuesta de las preguntas abiertas tampoco se serializa por defecto.
+     * Ver el comentario equivalente en QuestionOption.
+     */
+    protected $hidden = ['correct_answer_text'];
+
     use HasFactory, HasUuids, TenantScoped;
 
     protected $table = 'questions';

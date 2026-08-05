@@ -4,6 +4,7 @@ namespace App\Http\Controllers\AI;
 
 use App\Http\Controllers\Controller;
 use App\Models\AI\AiChatSession;
+use App\Models\Academic\Subject;
 use App\Models\Students\Student;
 use App\Services\AI\AiTutorService;
 use Illuminate\Http\Request;
@@ -26,6 +27,13 @@ class AiTutorController extends Controller
             'mode'       => ['nullable', 'string', 'in:ask,explain,practice'],
             'topic'      => ['nullable', 'string', 'max:200'],
         ]);
+
+        // La materia debe existir y pertenecer a la institución del estudiante.
+        // Subject es TenantScoped, así que exists() ya filtra por tenant y evita
+        // guardar en la sesión una referencia cruzada a otra institución.
+        if (!empty($data['subject_id']) && !Subject::whereKey($data['subject_id'])->exists()) {
+            return response()->json(['message' => 'Materia no encontrada'], 422);
+        }
 
         $result = $tutorService->chat(
             studentUserId: $user->id,

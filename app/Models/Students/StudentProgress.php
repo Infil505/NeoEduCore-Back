@@ -30,12 +30,16 @@ class StudentProgress extends Model
         // Progreso por materia (0-100)
         'mastery_percentage',
 
+        // Corte para repitentes: el recálculo ignora los intentos anteriores
+        'reset_at',
+
         // Timestamp de última actualización
         'updated_at',
     ];
 
     protected $casts = [
         'mastery_percentage' => 'decimal:2',
+        'reset_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
 

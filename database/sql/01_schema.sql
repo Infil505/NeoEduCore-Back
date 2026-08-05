@@ -3,7 +3,7 @@
 --
 
 
--- Dumped from database version 17.6
+-- Dumped from database version 17.9
 -- Dumped by pg_dump version 17.9
 
 SET statement_timeout = 0;
@@ -574,7 +574,8 @@ CREATE TABLE public.student_progress (
     student_user_id uuid NOT NULL,
     subject_id uuid NOT NULL,
     mastery_percentage numeric(5,2) DEFAULT '0'::numeric NOT NULL,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    reset_at timestamp(0) without time zone
 );
 
 
@@ -1211,6 +1212,13 @@ CREATE INDEX student_subjects_institution_id_index ON public.student_subjects US
 
 
 --
+-- Name: subjects_institution_name_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX subjects_institution_name_unique ON public.subjects USING btree (institution_id, lower(btrim((name)::text)));
+
+
+--
 -- Name: ai_chat_sessions ai_chat_sessions_exam_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1247,7 +1255,15 @@ ALTER TABLE ONLY public.ai_chat_sessions
 --
 
 ALTER TABLE ONLY public.ai_recommendations
-    ADD CONSTRAINT ai_recommendations_exam_id_foreign FOREIGN KEY (exam_id) REFERENCES public.exams(id);
+    ADD CONSTRAINT ai_recommendations_exam_id_foreign FOREIGN KEY (exam_id) REFERENCES public.exams(id) ON DELETE SET NULL;
+
+
+--
+-- Name: ai_recommendations ai_recommendations_institution_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_recommendations
+    ADD CONSTRAINT ai_recommendations_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
 
 
 --
@@ -1255,7 +1271,7 @@ ALTER TABLE ONLY public.ai_recommendations
 --
 
 ALTER TABLE ONLY public.ai_recommendations
-    ADD CONSTRAINT ai_recommendations_student_user_id_foreign FOREIGN KEY (student_user_id) REFERENCES public.users(id);
+    ADD CONSTRAINT ai_recommendations_student_user_id_foreign FOREIGN KEY (student_user_id) REFERENCES public.students(user_id) ON DELETE CASCADE;
 
 
 --
@@ -1263,7 +1279,7 @@ ALTER TABLE ONLY public.ai_recommendations
 --
 
 ALTER TABLE ONLY public.ai_recommendations
-    ADD CONSTRAINT ai_recommendations_subject_id_foreign FOREIGN KEY (subject_id) REFERENCES public.subjects(id);
+    ADD CONSTRAINT ai_recommendations_subject_id_foreign FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE SET NULL;
 
 
 --
@@ -1271,7 +1287,7 @@ ALTER TABLE ONLY public.ai_recommendations
 --
 
 ALTER TABLE ONLY public.calendar_events
-    ADD CONSTRAINT calendar_events_created_by_foreign FOREIGN KEY (created_by) REFERENCES public.users(id);
+    ADD CONSTRAINT calendar_events_created_by_foreign FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
@@ -1279,7 +1295,7 @@ ALTER TABLE ONLY public.calendar_events
 --
 
 ALTER TABLE ONLY public.calendar_events
-    ADD CONSTRAINT calendar_events_exam_id_foreign FOREIGN KEY (exam_id) REFERENCES public.exams(id);
+    ADD CONSTRAINT calendar_events_exam_id_foreign FOREIGN KEY (exam_id) REFERENCES public.exams(id) ON DELETE SET NULL;
 
 
 --
@@ -1287,7 +1303,7 @@ ALTER TABLE ONLY public.calendar_events
 --
 
 ALTER TABLE ONLY public.calendar_events
-    ADD CONSTRAINT calendar_events_group_id_foreign FOREIGN KEY (group_id) REFERENCES public.groups(id);
+    ADD CONSTRAINT calendar_events_group_id_foreign FOREIGN KEY (group_id) REFERENCES public.groups(id) ON DELETE SET NULL;
 
 
 --
@@ -1295,7 +1311,7 @@ ALTER TABLE ONLY public.calendar_events
 --
 
 ALTER TABLE ONLY public.calendar_events
-    ADD CONSTRAINT calendar_events_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id);
+    ADD CONSTRAINT calendar_events_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
 
 
 --
@@ -1303,7 +1319,7 @@ ALTER TABLE ONLY public.calendar_events
 --
 
 ALTER TABLE ONLY public.exam_attempts
-    ADD CONSTRAINT exam_attempts_exam_id_foreign FOREIGN KEY (exam_id) REFERENCES public.exams(id);
+    ADD CONSTRAINT exam_attempts_exam_id_foreign FOREIGN KEY (exam_id) REFERENCES public.exams(id) ON DELETE CASCADE;
 
 
 --
@@ -1311,7 +1327,7 @@ ALTER TABLE ONLY public.exam_attempts
 --
 
 ALTER TABLE ONLY public.exam_attempts
-    ADD CONSTRAINT exam_attempts_student_user_id_foreign FOREIGN KEY (student_user_id) REFERENCES public.users(id);
+    ADD CONSTRAINT exam_attempts_student_user_id_foreign FOREIGN KEY (student_user_id) REFERENCES public.students(user_id) ON DELETE CASCADE;
 
 
 --
@@ -1319,7 +1335,7 @@ ALTER TABLE ONLY public.exam_attempts
 --
 
 ALTER TABLE ONLY public.exam_targets
-    ADD CONSTRAINT exam_targets_exam_id_foreign FOREIGN KEY (exam_id) REFERENCES public.exams(id);
+    ADD CONSTRAINT exam_targets_exam_id_foreign FOREIGN KEY (exam_id) REFERENCES public.exams(id) ON DELETE CASCADE;
 
 
 --
@@ -1327,7 +1343,7 @@ ALTER TABLE ONLY public.exam_targets
 --
 
 ALTER TABLE ONLY public.exam_targets
-    ADD CONSTRAINT exam_targets_group_id_foreign FOREIGN KEY (group_id) REFERENCES public.groups(id);
+    ADD CONSTRAINT exam_targets_group_id_foreign FOREIGN KEY (group_id) REFERENCES public.groups(id) ON DELETE CASCADE;
 
 
 --
@@ -1335,7 +1351,7 @@ ALTER TABLE ONLY public.exam_targets
 --
 
 ALTER TABLE ONLY public.exam_targets
-    ADD CONSTRAINT exam_targets_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id);
+    ADD CONSTRAINT exam_targets_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
 
 
 --
@@ -1351,7 +1367,7 @@ ALTER TABLE ONLY public.exams
 --
 
 ALTER TABLE ONLY public.exams
-    ADD CONSTRAINT exams_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id);
+    ADD CONSTRAINT exams_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
 
 
 --
@@ -1367,7 +1383,7 @@ ALTER TABLE ONLY public.exams
 --
 
 ALTER TABLE ONLY public.group_students
-    ADD CONSTRAINT group_students_group_id_foreign FOREIGN KEY (group_id) REFERENCES public.groups(id);
+    ADD CONSTRAINT group_students_group_id_foreign FOREIGN KEY (group_id) REFERENCES public.groups(id) ON DELETE CASCADE;
 
 
 --
@@ -1383,7 +1399,7 @@ ALTER TABLE ONLY public.group_students
 --
 
 ALTER TABLE ONLY public.group_students
-    ADD CONSTRAINT group_students_student_user_id_foreign FOREIGN KEY (student_user_id) REFERENCES public.users(id);
+    ADD CONSTRAINT group_students_student_user_id_foreign FOREIGN KEY (student_user_id) REFERENCES public.students(user_id) ON DELETE CASCADE;
 
 
 --
@@ -1391,7 +1407,15 @@ ALTER TABLE ONLY public.group_students
 --
 
 ALTER TABLE ONLY public.groups
-    ADD CONSTRAINT groups_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id);
+    ADD CONSTRAINT groups_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: question_options question_options_institution_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_options
+    ADD CONSTRAINT question_options_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
 
 
 --
@@ -1399,7 +1423,7 @@ ALTER TABLE ONLY public.groups
 --
 
 ALTER TABLE ONLY public.question_options
-    ADD CONSTRAINT question_options_question_id_foreign FOREIGN KEY (question_id) REFERENCES public.questions(id);
+    ADD CONSTRAINT question_options_question_id_foreign FOREIGN KEY (question_id) REFERENCES public.questions(id) ON DELETE CASCADE;
 
 
 --
@@ -1407,7 +1431,7 @@ ALTER TABLE ONLY public.question_options
 --
 
 ALTER TABLE ONLY public.questions
-    ADD CONSTRAINT questions_exam_id_foreign FOREIGN KEY (exam_id) REFERENCES public.exams(id);
+    ADD CONSTRAINT questions_exam_id_foreign FOREIGN KEY (exam_id) REFERENCES public.exams(id) ON DELETE CASCADE;
 
 
 --
@@ -1415,7 +1439,7 @@ ALTER TABLE ONLY public.questions
 --
 
 ALTER TABLE ONLY public.questions
-    ADD CONSTRAINT questions_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id);
+    ADD CONSTRAINT questions_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
 
 
 --
@@ -1423,7 +1447,7 @@ ALTER TABLE ONLY public.questions
 --
 
 ALTER TABLE ONLY public.student_answer_options
-    ADD CONSTRAINT student_answer_options_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id);
+    ADD CONSTRAINT student_answer_options_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
 
 
 --
@@ -1431,7 +1455,7 @@ ALTER TABLE ONLY public.student_answer_options
 --
 
 ALTER TABLE ONLY public.student_answer_options
-    ADD CONSTRAINT student_answer_options_option_id_foreign FOREIGN KEY (option_id) REFERENCES public.question_options(id);
+    ADD CONSTRAINT student_answer_options_option_id_foreign FOREIGN KEY (option_id) REFERENCES public.question_options(id) ON DELETE CASCADE;
 
 
 --
@@ -1439,7 +1463,7 @@ ALTER TABLE ONLY public.student_answer_options
 --
 
 ALTER TABLE ONLY public.student_answer_options
-    ADD CONSTRAINT student_answer_options_student_answer_id_foreign FOREIGN KEY (student_answer_id) REFERENCES public.student_answers(id);
+    ADD CONSTRAINT student_answer_options_student_answer_id_foreign FOREIGN KEY (student_answer_id) REFERENCES public.student_answers(id) ON DELETE CASCADE;
 
 
 --
@@ -1447,7 +1471,15 @@ ALTER TABLE ONLY public.student_answer_options
 --
 
 ALTER TABLE ONLY public.student_answers
-    ADD CONSTRAINT student_answers_attempt_id_foreign FOREIGN KEY (attempt_id) REFERENCES public.exam_attempts(id);
+    ADD CONSTRAINT student_answers_attempt_id_foreign FOREIGN KEY (attempt_id) REFERENCES public.exam_attempts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: student_answers student_answers_institution_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_answers
+    ADD CONSTRAINT student_answers_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
 
 
 --
@@ -1455,7 +1487,7 @@ ALTER TABLE ONLY public.student_answers
 --
 
 ALTER TABLE ONLY public.student_answers
-    ADD CONSTRAINT student_answers_question_id_foreign FOREIGN KEY (question_id) REFERENCES public.questions(id);
+    ADD CONSTRAINT student_answers_question_id_foreign FOREIGN KEY (question_id) REFERENCES public.questions(id) ON DELETE CASCADE;
 
 
 --
@@ -1463,7 +1495,7 @@ ALTER TABLE ONLY public.student_answers
 --
 
 ALTER TABLE ONLY public.student_progress
-    ADD CONSTRAINT student_progress_student_user_id_foreign FOREIGN KEY (student_user_id) REFERENCES public.users(id);
+    ADD CONSTRAINT student_progress_student_user_id_foreign FOREIGN KEY (student_user_id) REFERENCES public.students(user_id) ON DELETE CASCADE;
 
 
 --
@@ -1471,7 +1503,7 @@ ALTER TABLE ONLY public.student_progress
 --
 
 ALTER TABLE ONLY public.student_progress
-    ADD CONSTRAINT student_progress_subject_id_foreign FOREIGN KEY (subject_id) REFERENCES public.subjects(id);
+    ADD CONSTRAINT student_progress_subject_id_foreign FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE CASCADE;
 
 
 --
@@ -1511,7 +1543,7 @@ ALTER TABLE ONLY public.students
 --
 
 ALTER TABLE ONLY public.students
-    ADD CONSTRAINT students_user_id_foreign FOREIGN KEY (user_id) REFERENCES public.users(id);
+    ADD CONSTRAINT students_user_id_foreign FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
@@ -1527,7 +1559,7 @@ ALTER TABLE ONLY public.study_resources
 --
 
 ALTER TABLE ONLY public.study_resources
-    ADD CONSTRAINT study_resources_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id);
+    ADD CONSTRAINT study_resources_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
 
 
 --
@@ -1535,7 +1567,7 @@ ALTER TABLE ONLY public.study_resources
 --
 
 ALTER TABLE ONLY public.subjects
-    ADD CONSTRAINT subjects_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id);
+    ADD CONSTRAINT subjects_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
 
 
 --
@@ -1543,7 +1575,7 @@ ALTER TABLE ONLY public.subjects
 --
 
 ALTER TABLE ONLY public.users
-    ADD CONSTRAINT users_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id);
+    ADD CONSTRAINT users_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE SET NULL;
 
 
 --
@@ -1551,145 +1583,121 @@ ALTER TABLE ONLY public.users
 --
 
 ALTER TABLE public.ai_chat_sessions ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: ai_recommendations; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.ai_recommendations ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: calendar_events; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.calendar_events ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: exam_attempts; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.exam_attempts ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: exam_targets; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.exam_targets ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: exams; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.exams ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: failed_jobs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.failed_jobs ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: group_students; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.group_students ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: groups; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.groups ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: institutions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.institutions ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: jobs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: migrations; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.migrations ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: password_reset_tokens; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.password_reset_tokens ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: personal_access_tokens; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.personal_access_tokens ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: question_options; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.question_options ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: questions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.questions ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: student_answer_options; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.student_answer_options ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: student_answers; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.student_answers ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: student_progress; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.student_progress ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: student_subjects; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.student_subjects ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: students; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: study_resources; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.study_resources ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: subjects; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.subjects ENABLE ROW LEVEL SECURITY;
-
 --
 -- Name: users; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-
 --
 -- PostgreSQL database dump complete
 --

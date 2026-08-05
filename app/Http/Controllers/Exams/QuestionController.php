@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Exams;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\RevelaRespuestas;
 use App\Enums\QuestionType;
 use App\Models\Exams\Exam;
 use App\Models\Exams\Question;
@@ -13,6 +14,8 @@ use Illuminate\Validation\Rule;
 
 class QuestionController extends Controller
 {
+    use RevelaRespuestas;
+
     /**
      * Listar preguntas por examen
      */
@@ -28,11 +31,9 @@ class QuestionController extends Controller
 
         $questions = $query->limit(200)->get();
 
-        if ($request->user()->user_type->value === 'student') {
-            return response()->json([
-                'data' => $questions->map(fn (Question $question) => $this->sanitizeForStudent($question)),
-            ]);
-        }
+        // Al estudiante se le sirven las preguntas SIN `is_correct` ni
+        // `correct_answer_text` (ocultos por defecto en los modelos).
+        $this->revelarRespuestas($request->user(), $questions);
 
         return response()->json([
             'data' => $questions,
@@ -121,7 +122,7 @@ class QuestionController extends Controller
             }
         }
 
-        return DB::transaction(function () use ($exam, $data, $type) {
+        return DB::transaction(function () use ($exam, $data, $type, $request) {
             $orderIndex = $data['order_index'] ?? ($exam->questions()->max('order_index') + 1);
 
             $question = Question::create([
@@ -145,8 +146,12 @@ class QuestionController extends Controller
                 }
             }
 
+            // Ruta admin/teacher: aquí sí procede devolver las respuestas.
+            $question->load('options');
+            $this->revelarRespuestasDe($request->user(), $question);
+
             return response()->json([
-                'data' => $question->load('options'),
+                'data' => $question,
             ], 201);
         });
     }
@@ -212,7 +217,7 @@ class QuestionController extends Controller
             }
         }
 
-        return DB::transaction(function () use ($question, $data) {
+        return DB::transaction(function () use ($question, $data, $request) {
             $question->fill($data);
             $question->save();
 
@@ -230,8 +235,11 @@ class QuestionController extends Controller
                 }
             }
 
+            $question->load('options');
+            $this->revelarRespuestasDe($request->user(), $question);
+
             return response()->json([
-                'data' => $question->load('options'),
+                'data' => $question,
             ]);
         });
     }

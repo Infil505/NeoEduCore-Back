@@ -12,6 +12,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Los rate limiters con nombre (p. ej. 'ai-global') se registran en
+        // AppServiceProvider::boot(): aquí el facade root aún no está fijado.
         $middleware->alias([
             'tenant' => \App\Http\Middleware\SetTenantFromAuth::class,
             'role'   => \App\Http\Middleware\RequireRole::class,

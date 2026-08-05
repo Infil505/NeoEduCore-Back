@@ -26,13 +26,28 @@ tests/
 │   │   ├── InstitutionsTest.php          (Institution endpoints)
 │   │   ├── AiRecommendationsTest.php     (AI recommendation endpoints)
 │   │   └── ReportsTest.php               (Report endpoints)
+│   ├── Academic/
+│   │   ├── BulkReassignmentTest.php      (Reasignación masiva: grupo y materias)
+│   │   ├── ResetProgressTest.php         (Reseteo de progreso para repitentes)
+│   │   └── GroupStudentsTest.php         (Alta/baja de estudiantes en un grupo)
+│   ├── Exams/
+│   │   └── AnswerLeakTest.php            (El alumno no ve la respuesta antes de entregar)
+│   ├── Db/
+│   │   ├── SchemaLoadedTest.php          (El schema de tests carga)
+│   │   ├── SchemaIntegrityTest.php       (Invariantes: tipos uuid, unique de materia)
+│   │   └── CascadeIntegrityTest.php      (Cascadas de borrado y FK del modelo TFG)
 │   ├── Integration/
 │   │   ├── Level1_ExamFullFlowTest.php   (Flujo completo: start→submit→grade→AI)
 │   │   ├── Level2_RbacIdorTest.php       (RBAC, IDOR, cross-tenant)
 │   │   ├── Level3_StudentLifecycleTest.php (Grupos, materias, exámenes disponibles)
 │   │   ├── Level4_AiTutorFlowTest.php    (Tutor IA: chat, sesiones, modos, diagnóstico)
 │   │   ├── Level5_AnalyticsReportsTest.php (Analíticas y reportes)
-│   │   └── Level6_SystemConfigTest.php   (Configuración del sistema)
+│   │   ├── Level6_SystemConfigTest.php   (Configuración del sistema)
+│   │   └── Level7_AcademicCycleTest.php  (Ciclo de fin de año end-to-end)
+│   ├── AI/
+│   │   └── AiTutorEfficiencyTest.php     (Caché de contexto, JSONB incremental, límite global)
+│   ├── Perf/
+│   │   └── QueryBudgetTest.php           (Presupuesto de queries / guardia anti-N+1)
 │   └── Routes/
 │       ├── ProtectedRoutesRequireAuthTest.php
 │       └── PublicRoutesTest.php
@@ -42,7 +57,7 @@ tests/
 └── TestCase.php                          (Base test class)
 ```
 
-**Total: 142 tests, 423 assertions**
+**Total: 243 tests, 849 assertions**
 
 ## Ejecución
 
@@ -102,12 +117,49 @@ php artisan test --verbose
 - ✅ PUT /groups/{id}
 - ✅ DELETE /groups/{id}
 
-### Asignaturas (5 tests)
-- ✅ GET /subjects
-- ✅ POST /subjects
+### Membresía de grupo — `GroupStudentsTest` (7 tests)
+- ✅ POST /groups/{group}/students — alta por lista, setea `institution_id`, recuenta `student_count`
+- ✅ Alta idempotente (repetir no duplica)
+- ✅ DELETE /groups/{group}/students — baja **lógica** (`left_at`), conserva historial, recuenta
+- ✅ Re-alta de un estudiante dado de baja reabre la membresía
+- ✅ Estudiantes de otra institución se ignoran
+- ✅ `student` no puede gestionar membresías (403)
+- ✅ `student_user_ids` requerido (422)
+
+### Asignaturas — `SubjectsTest` (15 tests)
+- ✅ GET /subjects (+ filtro `search`)
 - ✅ GET /subjects/{id}
-- ✅ PUT /subjects/{id}
-- ✅ DELETE /subjects/{id}
+- ✅ POST/PUT/DELETE /subjects — **solo admin**
+- ✅ `teacher` y `student` no pueden crear, renombrar ni eliminar (403)
+- ✅ Nombre único por institución: duplicado exacto, por mayúsculas y por espacios (422)
+- ✅ "Matemática 1er grado" y "Matemática 2do grado" coexisten
+- ✅ Mismo nombre permitido en otra institución
+- ✅ Renombrar sobre un nombre existente falla; renombrar a su propio nombre no
+
+### Reasignación masiva — `BulkReassignmentTest` (18 tests)
+- ✅ POST /bulk/reassign-group — por lista y por `from_group_id`; cierra membresía anterior
+- ✅ Recuenta `student_count` de origen **y** destino
+- ✅ Sincroniza `students.grade/section/group_code` (y se puede desactivar)
+- ✅ Los ya activos en el destino no cuentan como movidos
+- ✅ Ids desconocidos vuelven en `skipped` sin abortar el lote
+- ✅ Grupo de otra institución → 404; lista y `from_group_id` mutuamente excluyentes → 422
+- ✅ POST /bulk/reassign-subjects — modos `replace` / `add` / `remove`
+- ✅ `add` idempotente; materia de otra institución y modo inválido → 422
+- ✅ `teacher` no puede hacer reasignaciones masivas (403)
+
+### Reseteo de progreso (repitentes) — `ResetProgressTest` (11 tests)
+- ✅ POST /bulk/reset-progress — por lista y por `from_group_id`
+- ✅ Sin `subject_ids` resetea todas las materias; con `subject_ids` solo las indicadas
+- ✅ **El reseteo sobrevive a un `recalcFromAttempts`** (marca `reset_at`) — el test que de verdad importa
+- ✅ Un intento **posterior** al corte sí vuelve a computar (50, no el promedio con el viejo)
+- ✅ El historial de intentos NO se borra
+- ✅ `overall_average` se recomputa
+- ✅ `teacher` no puede resetear (403); materia de otra institución y lista+grupo juntos → 422
+- ✅ Ids desconocidos vuelven en `skipped`
+
+### Integridad del esquema — `SchemaIntegrityTest` (2 tests)
+- ✅ `personal_access_tokens.tokenable_id`, `users.id` e `institutions.id` siguen siendo `uuid`
+- ✅ Existe el índice único funcional de nombre de materia (`lower` + `btrim`)
 
 ### Exámenes (5 tests)
 - ✅ GET /exams
@@ -184,7 +236,7 @@ php artisan test --verbose
 - ✅ Level 5 — Analíticas y reportes (9 tests): institution/subjects/student analytics, CSV, historial, tutor usage
 - ✅ Level 6 — Configuración del sistema (8 tests): lectura/escritura config, validaciones, roles
 
-**Total: 142 tests, 423 assertions**
+**Total: 243 tests, 849 assertions**
 
 ## Helpers de Autenticación
 

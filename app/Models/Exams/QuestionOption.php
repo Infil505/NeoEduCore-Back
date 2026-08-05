@@ -8,6 +8,18 @@ use App\Models\Concerns\TenantScoped;
 
 class QuestionOption extends Model
 {
+    /**
+     * `is_correct` NO se serializa por defecto: un estudiante que lo viera
+     * conocería la respuesta antes de entregar. Se revela explícitamente a
+     * admin y docente con `RevelaRespuestas::revelarRespuestas()`.
+     *
+     * Ocultarlo aquí y no en cada controlador hace que la protección sea por
+     * defecto: un endpoint nuevo que cargue opciones nace seguro.
+     * Ojo: `$hidden` solo afecta a la serialización, no al acceso al atributo,
+     * así que la corrección de exámenes sigue funcionando igual.
+     */
+    protected $hidden = ['is_correct'];
+
     use HasFactory, TenantScoped;
 
     protected $table = 'question_options';

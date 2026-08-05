@@ -24,3 +24,13 @@ Artisan::command('inspire', function () {
 Schedule::command('queue:work --stop-when-empty --max-time=55')
     ->everyMinute()
     ->withoutOverlapping();
+
+/*
+|--------------------------------------------------------------------------
+| Limpieza de tokens Sanctum expirados
+|--------------------------------------------------------------------------
+| Ahora los tokens caducan (SANCTUM_TOKEN_EXPIRATION_MINUTES). Este comando
+| borra de la tabla los que ya expiraron para que no se acumulen.
+*/
+Schedule::command('sanctum:prune-expired --hours=24')
+    ->daily();

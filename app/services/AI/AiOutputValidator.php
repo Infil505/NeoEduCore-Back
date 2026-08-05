@@ -7,11 +7,19 @@ class AiOutputValidator
     private const MAX_LENGTH = 4000;
     private const MIN_LENGTH = 5;
 
-    // Patrones que indican posible dato personal
+    // Patrones que indican posible dato personal.
+    // Nota: se afinan para NO marcar números "normales" de un tutor (resultados
+    // de matemáticas, rangos de años, fechas de una explicación). Solo se bloquea
+    // lo que realmente parece un contacto: email o teléfono/identificador.
     private const PATTERNS_PII = [
-        '/\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b/i',  // email
-        '/\b(?:\+?[0-9]{7,15})\b/',                           // teléfono
-        '/\b\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}\b/',             // fecha numérica (posible DNI/fecha)
+        // Email
+        '/\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b/i',
+        // Teléfono internacional con prefijo + (ej: +57 3101234567)
+        '/\+\d{1,3}[\s.\-]?\d{6,14}/',
+        // Teléfono con separadores en 3 grupos (ej: 310-123-4567, 601 234 5678)
+        '/\b\d{2,4}[\s.\-]\d{3,4}[\s.\-]\d{2,4}\b/',
+        // Secuencia larga de dígitos sin formato (posible teléfono/DNI/documento)
+        '/\b\d{10,}\b/',
     ];
 
     public function validate(string $text): ?string
