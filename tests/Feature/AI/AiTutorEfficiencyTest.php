@@ -19,7 +19,7 @@ use Tests\Traits\ApiAuth;
  * worker de Octane 1-15 s y, antes de estas optimizaciones, además releía el
  * perfil del estudiante y reescribía la conversación entera en cada turno.
  *
- * Ver ANALISIS_CONCURRENCIA.md §5.3.
+ * Ver docs/ANALISIS_CONCURRENCIA.md §5.3.
  */
 class AiTutorEfficiencyTest extends TestCase
 {

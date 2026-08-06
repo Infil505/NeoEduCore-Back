@@ -41,6 +41,12 @@ class Institution extends Model
         'max_exam_duration'  => 180,
         'allow_registration' => true,
         'contact_email'      => null,
+
+        // Nota mínima de aprobación (%) usada por los reportes para separar
+        // aprobados de no aprobados y para los niveles de desempeño. 65 es el
+        // mínimo de promoción del MEP en I y II ciclo; cada centro puede
+        // cambiarlo desde PUT /api/system/config.
+        'passing_percentage' => 65,
     ];
 
     /* =========================

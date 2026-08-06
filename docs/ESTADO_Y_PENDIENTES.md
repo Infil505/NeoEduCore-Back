@@ -12,6 +12,7 @@
 4. [Bugs activos](#4-bugs-activos)
 5. [TODO priorizado](#5-todo-priorizado)
 6. [Referencia de endpoints existentes](#6-referencia-de-endpoints-existentes)
+7. [Entregables del TFG fuera del código](#7-entregables-del-tfg-fuera-del-código)
 
 ---
 
@@ -203,10 +204,74 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 ---
 
 ### ✅ Reportes
-- Resultados de examen `GET /api/reports/exams/{exam}/results`
+Grupal (por examen):
+- Resultados paginados `GET /api/reports/exams/{exam}/results`
 - Exportar CSV `GET /api/reports/exams/{exam}/results.csv`
-- Historial de estudiante `GET /api/reports/students/{id}/history`
+- Resumen para gráficos `GET /api/reports/exams/{exam}/summary`
+
+Individual (por estudiante):
+- Historial paginado `GET /api/reports/students/{id}/history`
+- Exportar CSV `GET /api/reports/students/{id}/history.csv`
+- Resumen para gráficos `GET /api/reports/students/{id}/summary?points=`
+
 - IDOR protegido: teacher solo accede a sus propios exámenes
+
+**Reparto backend/frontend.** El backend expone datos; el PDF con gráficos lo
+arma el frontend a partir de los `summary`. Los endpoints devuelven las series
+ya agregadas y listas para pintar:
+
+| Serie | Endpoint | Gráfico |
+|---|---|---|
+| `score_distribution` | examen | barras (histograma por rango de nota) |
+| `performance_levels` | examen | pastel (4 niveles, categorías **ordenadas**) |
+| `score_trend` | estudiante | líneas (del intento más antiguo al más reciente) |
+| `subject_mastery` | estudiante | barras (dominio por materia) |
+
+Los agregados se resuelven en **un solo SELECT** con `COUNT(*) FILTER`, no
+recorriendo intentos en PHP; `QueryBudgetTest::test_exam_summary_cost_is_flat_per_attempt_count`
+lo vigila.
+
+`passing_percentage` (nota mínima de aprobación, 65 por defecto) vive en
+`institutions.settings` y se edita con `PUT /api/system/config`. Separa aprobados
+de reprobados y fija los cortes de los niveles de desempeño.
+
+Estrategias del tutor (requisito [740] del informe):
+- Estudiante `GET /api/reports/students/me/strategies`
+- Docente/admin `GET /api/reports/students/{id}/strategies`
+- Filtros `?subject_id=` y `?limit=` (por sección, 20 por defecto, máx. 100)
+
+Devuelve las `ai_recommendations` agrupadas en las cuatro categorías del enum,
+en orden narrativo: **Fortalezas → Aspectos por reforzar → Acciones sugeridas →
+Recursos de apoyo**.
+
+**Frontera de privacidad, fijada por [175] del informe.** El historial de chat
+con el tutor (`ai_chat_sessions`) **no sale por ningún reporte**, ni siquiera en
+el del propio alumno; solo salen las recomendaciones estructuradas. El docente
+ve únicamente las nacidas de exámenes que él creó; el admin, las de su
+institución. Está cubierto por
+`TutorStrategiesTest::test_chat_history_never_appears_in_the_strategies_report`.
+
+⚠️ **Cambio de comportamiento (05/08/2026) — `GET /api/exams`.** Al estudiante
+se le aplica ahora `Exam::scopeVisibleTo`: solo exámenes **activos, dentro de su
+ventana de disponibilidad y asignados a sus grupos**. `GET /api/exams/{id}` y
+`GET /api/exams/{id}/questions` devuelven **404** si no lo superan (404 y no 403:
+un 403 confirmaría que la prueba existe). Antes el alumno listaba el catálogo
+completo, borradores incluidos, y con esos ids leía los enunciados de cualquier
+examen antes de presentarlo. Además, al estudiante se le oculta el correo del
+docente y la configuración del examen (`max_attempts`, `randomize_questions`,
+`allow_review_after_submission`, `show_results_immediately`). Docente y admin no
+cambian. Cubierto por `ExamVisibilityTest`.
+
+> Si el frontend usaba `GET /api/exams` para la vista del alumno, ahora recibirá
+> menos. El endpoint pensado para eso es `GET /api/students/me/available-exams`,
+> que además indica los intentos ya entregados.
+
+⚠️ **Cambio de comportamiento (05/08/2026).** `GET /api/ai-recommendations`
+(docente) **se restringió**: antes listaba el `recommendation_text` de cualquier
+alumno de la institución, incluidos exámenes ajenos; ahora aplica la misma regla
+que `show()` y se limita a los exámenes propios del docente. Ninguna prueba
+existente cubría el hueco. Si el frontend dependía del listado completo, hay que
+usar una cuenta admin.
 
 ---
 
@@ -280,14 +345,14 @@ Las imágenes del documento `CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx` 
 | Asignar Grupos | Profesor/Admin | ✅ |
 | Ver Analíticas | Profesor/Admin | ✅ |
 | Generar Reportes | Profesor/Admin | ✅ |
-| Configurar Sistema | Admin | ❌ No existe endpoint |
+| Configurar Sistema | Admin | ✅ `GET/PUT /api/system/config` (añadido 26/06/2026) |
 | Revisar Resultados | Profesor/Admin | ✅ |
 
 ---
 
 ### 3.4 Modelo de datos (image3)
 
-El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripción explícita estudiante-materia) que no existe en el schema actual. Lo más cercano es `student_progress` (progreso por materia) pero no cubre el caso de "inscripción" formal a una materia.
+El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripción explícita estudiante-materia). **Se implementó el 09/05/2026** (`student_subjects`, con `enrolled_at` y unicidad `(student_user_id, subject_id)`), pero el informe **no la documenta** como entidad. Ver `ANALISIS_MODELO_DATOS_TFG.md` §9.3, que la lista junto a `AiChatSession` entre las entidades ausentes del diagrama de clases.
 
 ---
 
@@ -596,7 +661,11 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | GET | `/api/ai-recommendations/{id}` | Ver recomendación |
 | GET | `/api/reports/exams/{exam}/results` | Reporte de examen |
 | GET | `/api/reports/exams/{exam}/results.csv` | CSV de resultados |
+| GET | `/api/reports/exams/{exam}/summary` | Agregados del examen para gráficos |
 | GET | `/api/reports/students/{id}/history` | Historial estudiante |
+| GET | `/api/reports/students/{id}/history.csv` | CSV del historial |
+| GET | `/api/reports/students/{id}/summary` | Agregados del estudiante para gráficos |
+| GET | `/api/reports/students/{id}/strategies` | Estrategias del tutor (acotado a exámenes propios) |
 | GET | `/api/analytics/institution` | Estadísticas institucionales |
 | GET | `/api/analytics/subjects` | Rendimiento por materia |
 | GET | `/api/analytics/students/{id}` | Detalle analítico de estudiante |
@@ -606,6 +675,7 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 |--------|------|-------------|
 | GET | `/api/students/me/subjects` | Mis materias inscritas |
 | GET | `/api/ai/tutor/diagnosis` | Diagnóstico IA de mi progreso |
+| GET | `/api/reports/students/me/strategies` | Mis estrategias del tutor (sin el chat) |
 
 ### Autenticados — Admin y Profesor (materias del estudiante)
 | Método | Ruta | Descripción |
@@ -720,3 +790,59 @@ Notas del paso 5 y sus efectos sobre repitentes:
 ---
 
 *Documento actualizado el 31/07/2026.*
+
+---
+
+## 7. Entregables del TFG fuera del código
+
+> Rescatado de `ANALISIS_BRECHAS_TFG.md` (17/04–09/05/2026) al eliminarlo el 05/08/2026: el
+> resto de aquel documento había quedado obsoleto —hablaba de 142 tests, de «JWT» y de que el
+> proyecto «carece completamente de frontend»— y su función de comparar sistema contra informe
+> la cubre hoy `ANALISIS_MODELO_DATOS_TFG.md` §9. Esto es lo único que no estaba recogido en
+> ningún otro sitio. **Cada punto se reverificó contra el código el 05/08/2026**; los que ya
+> estaban resueltos (validación MIME del bulk-upload, política de contraseñas en `resetPassword`,
+> RBAC, whitelist de recursos IA, headers de seguridad, N+1, índices) no se han traído.
+
+### 7.1 Entregables no-código exigidos por el TFG
+
+| Entregable | Prioridad | Nota |
+|---|---|---|
+| Mockups / prototipo visual (Figma) — Sprint 1 | ALTA | Sin prototipo entregado |
+| **Banco de ítems**: mínimo 60 preguntas reales con metadatos (tema, indicador, dificultad) | ALTA | Los seeders traen muy pocas |
+| Acta del taller de co-diseño con docentes | ALTA | Entregable de Fase 1 |
+| Piloto con usuarios reales (docentes y estudiantes) | ALTA | Fase de validación; condiciona los cap. 7 y 8 del informe |
+| Rúbricas para preguntas abiertas | MEDIA | Fase 2 |
+| Mini-guía para creación de nuevos ítems | MEDIA | Fase 2 |
+| Manual de usuario básico en línea | MEDIA | Requisito no funcional de usabilidad |
+| Cronograma / bitácora del proyecto | MEDIA | Capítulo 11 del informe |
+| Anexo 1: encuestas a docentes y estudiantes | — | Diseñar y aplicar |
+| Anexo 2: guía de entrevistas semi-estructuradas | — | Diseñar y aplicar |
+
+### 7.2 Capítulos del informe pendientes
+
+Además de las 10 correcciones de `ANALISIS_MODELO_DATOS_TFG.md` §9, que son sobre lo ya escrito:
+
+| Capítulo | Estado | Acción |
+|---|---|---|
+| 3 · Metodología | ❌ | Describir Scrum e instrumentos de recolección |
+| 5 · Conclusiones y recomendaciones | ❌ | Al cerrar la implementación |
+| 7 · Validación y resultados del piloto | ❌ | Requiere el piloto |
+| 8 · Discusión de resultados | ❌ | Post-piloto |
+| 9 · Aspectos éticos, legales y de privacidad | ❌ | **Datos de menores**: relevante para el tutor IA y las recomendaciones |
+| 10 · Trabajo futuro y escalabilidad | ❌ | Roadmap post-TFG |
+| 11 · Gestión del proyecto | ❌ | Sprints, hitos, riesgos |
+| 1 · Introducción · 2 · Marco teórico · 4 · Resultados · 6 · Implementación | ⚠️ Parcial | Completar y actualizar diagramas |
+
+### 7.3 Brechas técnicas todavía abiertas
+
+Reverificadas contra el código el 05/08/2026:
+
+| Brecha | Gravedad | Evidencia |
+|---|---|---|
+| **Expiración de sesión: el informe exige 60 min, el sistema tiene 12 h** | ALTA | `config/sanctum.php`: `'expiration' => env('SANCTUM_TOKEN_EXPIRATION_MINUTES', 60 * 12)`. Es una discrepancia con el requisito no funcional de seguridad del informe: o se ajusta la variable, o se corrige el informe |
+| **Log de incidentes del tutor IA** | ALTA | No existe tabla ni servicio. El informe [175] promete que «registrará incidencias» y fija como criterio de éxito «cero incidentes de PII» — sin registro no hay forma de demostrarlo |
+| **Backups cifrados de la BD** | ALTA | Sin script ni documentación. Requisito no funcional de seguridad |
+| **Documentación OpenAPI** | ~~ALTA~~ ✅ | Resuelto el 05/08/2026: `php artisan openapi:generate` produce los **103 endpoints** desde las rutas reales. Antes había 6 anotados a mano. No se edita a mano y no se desincroniza |
+| **Medición de cobertura ≥70%** | ALTA | El TFG la exige; no hay reporte generado. `php artisan test --coverage --min=70` (requiere Xdebug o PCOV) |
+| **HTTPS/TLS documentado** | MEDIA | Lo resuelve Coolify, pero debe quedar escrito en `DEPLOY_COOLIFY.md` |
+| **Monitoreo y alertas de caída** | MEDIA | Requisito no funcional de disponibilidad; sin Sentry ni equivalente |

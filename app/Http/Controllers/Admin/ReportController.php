@@ -8,6 +8,9 @@ use App\Models\AI\AiRecommendation;
 use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
+use App\Services\Admin\ReportExportService;
+use App\Services\Admin\ReportMetricsService;
+use App\Services\Admin\ReportStrategyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -15,6 +18,13 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class ReportController extends Controller
 {
     private const RESULTS_PER_PAGE = 50;
+
+    public function __construct(
+        private ReportExportService $exports,
+        private ReportMetricsService $metrics,
+        private ReportStrategyService $strategies,
+    ) {
+    }
 
     /**
      * Reporte paginado: resultados de un examen (JSON)
@@ -60,8 +70,7 @@ class ReportController extends Controller
     }
 
     /**
-     * Export CSV: resultados de un examen.
-     * Usa cursor() para procesar fila a fila sin cargar todo en memoria.
+     * Export CSV: resultados de un examen (dataset completo, fila a fila).
      */
     public function exportExamResultsCsv(Exam $exam, Request $request): StreamedResponse
     {
@@ -69,40 +78,48 @@ class ReportController extends Controller
             abort(403, 'No autorizado');
         }
 
-        $filename = 'exam_results_' . $exam->id . '.csv';
-        $headers  = ['student_user_id', 'student_name', 'score', 'max_score', 'percentage', 'submitted_at'];
+        return $this->exports->examResultsCsv($exam);
+    }
 
-        return response()->streamDownload(function () use ($exam, $headers) {
-            $output = fopen('php://output', 'w');
-            fputs($output, "\xEF\xBB\xBF");
-            fputcsv($output, $headers);
+    /**
+     * Resumen grupal de un examen, listo para graficar y para el PDF que arma el
+     * frontend: totales, histograma por rango de nota (barras) y reparto por
+     * nivel de desempeño (pastel).
+     */
+    public function examSummary(Exam $exam, Request $request)
+    {
+        if (!$this->assertCanAccessExam($exam, $request)) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
 
-            // lazy() y NO cursor(): `cursor()` ignora el eager loading (necesita
-            // conocer todos los ids de antemano y por diseño va fila a fila), así
-            // que `with(['student.user'])` no se aplicaba y cada fila disparaba 2
-            // queries — ~2000 extra en un examen de 1000 alumnos. `lazy()` mantiene
-            // la memoria acotada igual, pero por lotes, y sí respeta el eager load.
-            ExamAttempt::query()
-                ->where('exam_id', $exam->id)
-                ->whereNotNull('submitted_at')
-                ->with(['student.user'])
-                ->orderByDesc('score')
-                ->lazy()
-                ->each(function ($a) use ($output) {
-                    fputcsv($output, [
-                        $a->student_user_id,
-                        $a->student?->user?->full_name,
-                        (float) $a->score,
-                        (float) $a->max_score,
-                        $a->percentage,
-                        $a->submitted_at,
-                    ]);
-                });
+        return response()->json(['data' => $this->metrics->examSummary($exam)]);
+    }
 
-            fclose($output);
-        }, $filename, [
-            'Content-Type'        => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+    /**
+     * Export CSV: historial completo de un estudiante.
+     */
+    public function exportStudentHistoryCsv(string $student_user_id): StreamedResponse
+    {
+        return $this->exports->studentHistoryCsv($this->findStudent($student_user_id));
+    }
+
+    /**
+     * Resumen individual de un estudiante: totales, evolución de la nota en el
+     * tiempo (líneas) y dominio por materia (barras).
+     *
+     * `?points=` ajusta cuántos intentos trae la serie de evolución.
+     */
+    public function studentSummary(string $student_user_id, Request $request)
+    {
+        $validated = $request->validate([
+            'points' => ['sometimes', 'integer', 'between:1,' . ReportMetricsService::MAX_TREND_POINTS],
+        ]);
+
+        return response()->json([
+            'data' => $this->metrics->studentSummary(
+                $this->findStudent($student_user_id),
+                (int) ($validated['points'] ?? ReportMetricsService::DEFAULT_TREND_POINTS),
+            ),
         ]);
     }
 
@@ -111,7 +128,7 @@ class ReportController extends Controller
      */
     public function studentHistory(string $student_user_id, Request $request)
     {
-        $student = Student::with('user')->where('user_id', $student_user_id)->firstOrFail();
+        $student = $this->findStudent($student_user_id);
 
         $paginator = ExamAttempt::query()
             ->where('student_user_id', $student_user_id)
@@ -137,6 +154,65 @@ class ReportController extends Controller
                 'attempts' => $paginator,
             ],
         ]);
+    }
+
+    /**
+     * Estrategias del tutor del estudiante autenticado (requisito [740]).
+     *
+     * Solo recomendaciones estructuradas: el historial de chat con el tutor no
+     * sale por ningún reporte, ni siquiera en el del propio alumno.
+     */
+    public function myStrategies(Request $request)
+    {
+        $student = Student::with('user')->where('user_id', $request->user()->id)->first();
+
+        if ($student === null) {
+            return response()->json(['message' => 'Este usuario no tiene perfil de estudiante'], 404);
+        }
+
+        return response()->json([
+            'data' => $this->strategies->studentStrategies(
+                $student,
+                $request->user(),
+                $this->strategyFilters($request),
+            ),
+        ]);
+    }
+
+    /**
+     * Estrategias del tutor de un estudiante, para el docente.
+     *
+     * El alcance lo aplica `ReportStrategyService`: un docente solo ve las
+     * recomendaciones nacidas de exámenes que él creó.
+     */
+    public function studentStrategies(string $student_user_id, Request $request)
+    {
+        return response()->json([
+            'data' => $this->strategies->studentStrategies(
+                $this->findStudent($student_user_id),
+                $request->user(),
+                $this->strategyFilters($request),
+            ),
+        ]);
+    }
+
+    /** @return array{subject_id?:string,limit?:int} */
+    private function strategyFilters(Request $request): array
+    {
+        return $request->validate([
+            'subject_id' => ['sometimes', 'uuid'],
+            'limit'      => ['sometimes', 'integer', 'between:1,' . ReportStrategyService::MAX_LIMIT],
+        ]);
+    }
+
+    /**
+     * El scope de institución (`TenantScoped`) ya impide leer el historial de un
+     * estudiante de otro centro: fuera de la institución del usuario, el
+     * `firstOrFail()` devuelve 404.
+     */
+    private function findStudent(string $student_user_id): Student
+    {
+        return Student::with('user')->where('user_id', $student_user_id)->firstOrFail();
     }
 
     /**

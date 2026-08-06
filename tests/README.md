@@ -57,7 +57,7 @@ tests/
 └── TestCase.php                          (Base test class)
 ```
 
-**Total: 243 tests, 849 assertions**
+**Total: 265 tests, 944 assertions**
 
 ## Ejecución
 
@@ -223,10 +223,37 @@ php artisan test --verbose
 - ✅ PUT /institutions/{id}
 - ✅ PATCH /institutions/{id}/toggle
 
-### Reportes (3 tests)
+### Reportes (9 tests)
 - ✅ GET /reports/exams/{exam}/results
 - ✅ GET /reports/exams/{exam}/results.csv
+- ✅ GET /reports/exams/{exam}/summary — series de los gráficos, recuentos exactos
+- ✅ GET /reports/exams/{exam}/summary — respeta `passing_percentage` de la institución
+- ✅ GET /reports/exams/{exam}/summary — 403 sobre el examen de otro docente
 - ✅ GET /reports/students/{student}/history
+- ✅ GET /reports/students/{student}/history.csv
+- ✅ GET /reports/students/{student}/summary — tendencia en orden cronológico
+- ✅ GET /reports/students/{student}/summary — parámetro `points` y su validación
+
+### Estrategias del tutor (7 tests)
+- ✅ `SECTIONS` cubre todo el enum `AiRecommendationType`
+- ✅ GET /reports/students/me/strategies — agrupadas y en orden narrativo
+- ✅ **El historial de chat nunca aparece en el reporte** — frontera de [175]
+- ✅ GET /reports/students/{student}/strategies — docente acotado a sus exámenes
+- ✅ GET /reports/students/{student}/strategies — admin ve toda la institución
+- ✅ 403 si un estudiante pide las estrategias de otro
+- ✅ `limit` acota cada sección y se valida
+
+### Visibilidad de exámenes por rol (8 tests)
+Regresión de las brechas de seguridad del 05/08/2026. **Verificados fallando sin
+el arreglo** (neutralizando `Exam::scopeVisibleTo`).
+- ✅ El estudiante no ve borradores en `GET /exams`
+- ✅ 404 al leer un examen no asignado a sus grupos (`show` y `questions`)
+- ✅ 404 al leer un borrador aunque esté asignado a su grupo
+- ✅ Sí lee el examen activo asignado a su grupo
+- ✅ 404 fuera de la ventana de disponibilidad
+- ✅ No ve el correo del docente (sí el nombre)
+- ✅ No ve `max_attempts`, `randomize_questions`, `allow_review_after_submission`, `show_results_immediately`
+- ✅ El docente sigue viendo borradores y el registro completo
 
 ### Tests de Integración (60 tests)
 - ✅ Level 1 — Flujo completo examen (11 tests): start, submit, auto-grade, pausa/resume, expiración, adecuación curricular, IA
@@ -236,7 +263,7 @@ php artisan test --verbose
 - ✅ Level 5 — Analíticas y reportes (9 tests): institution/subjects/student analytics, CSV, historial, tutor usage
 - ✅ Level 6 — Configuración del sistema (8 tests): lectura/escritura config, validaciones, roles
 
-**Total: 243 tests, 849 assertions**
+**Total: 265 tests, 944 assertions**
 
 ## Helpers de Autenticación
 

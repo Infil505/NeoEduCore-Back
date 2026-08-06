@@ -93,6 +93,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/ai-recommendations/me', [AiRecommendationController::class, 'myRecommendations']);
         Route::get('/students/me/available-exams', [StudentController::class, 'availableExams']);
 
+        // Estrategias del tutor, en el grupo de alumno y ANTES de la ruta con
+        // comodín del grupo docente: si se registrara después, `me` entraría por
+        // `{student_user_id}` y el alumno acabaría en una ruta que no le toca.
+        Route::get('/reports/students/me/strategies', [ReportController::class, 'myStrategies']);
+
         // Tutor IA conversacional
         // Doble throttle: el primero acota al usuario, el segundo (de institución)
         // reserva workers para el flujo de examen. Ver bootstrap/app.php.
@@ -191,6 +196,17 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/reports/exams/{exam}/results', [ReportController::class, 'examResults']);
         Route::get('/reports/exams/{exam}/results.csv', [ReportController::class, 'exportExamResultsCsv']);
         Route::get('/reports/students/{student_user_id}/history', [ReportController::class, 'studentHistory']);
+        Route::get('/reports/students/{student_user_id}/history.csv', [ReportController::class, 'exportStudentHistoryCsv']);
+
+        // Resúmenes agregados para los gráficos y el PDF que arma el frontend.
+        // Van aparte de los listados paginados: quien solo quiere la tabla no
+        // paga los agregados, y quien solo quiere los gráficos no pagina.
+        Route::get('/reports/exams/{exam}/summary', [ReportController::class, 'examSummary']);
+        Route::get('/reports/students/{student_user_id}/summary', [ReportController::class, 'studentSummary']);
+
+        // Estrategias del tutor de un alumno. El docente solo ve las nacidas de
+        // exámenes suyos; el chat con el tutor no sale por aquí nunca ([175]).
+        Route::get('/reports/students/{student_user_id}/strategies', [ReportController::class, 'studentStrategies']);
         Route::get('/reports/ai/tutor-usage', [ReportController::class, 'tutorUsage']);
 
         // Analíticas agregadas

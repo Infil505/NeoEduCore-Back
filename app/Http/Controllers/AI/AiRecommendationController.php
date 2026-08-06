@@ -35,6 +35,17 @@ class AiRecommendationController extends Controller
             $query->where('student_user_id', $user->id);
         }
 
+        // 👨‍🏫 Docente: solo las nacidas de exámenes que él creó.
+        //
+        // `show()` ya aplicaba esta regla, pero `index()` no: un docente podía
+        // listar el `recommendation_text` de CUALQUIER alumno de la institución,
+        // incluidos exámenes ajenos. Las dos vías tienen que decir lo mismo, y
+        // la restrictiva es la correcta — son textos generados por IA sobre el
+        // desempeño de menores.
+        if ($user->user_type->value === 'teacher') {
+            $query->whereHas('exam', fn ($q) => $q->where('created_by_teacher_id', $user->id));
+        }
+
         // 👨‍🏫 Admin / Teacher
         if (!empty($data['student_user_id'])) {
             $query->where('student_user_id', $data['student_user_id']);

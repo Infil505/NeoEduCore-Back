@@ -1,6 +1,6 @@
 # Sistema vs. informe del TFG — análisis y correcciones pendientes
 
-**Fecha:** 3 de agosto de 2026
+**Fecha:** 3 de agosto de 2026 · revisado el 5 de agosto de 2026 (§9.8 a §9.8.3, §9.9)
 **Estado:** modelo de datos alineado en código y producción; **el informe requiere correcciones (§9)**
 
 > Documento de trabajo para redactar después el capítulo de modelo de datos del informe final y corregir lo que el informe afirma y no se corresponde con el sistema entregado. Recoge el método, la evidencia y las decisiones tomadas, con el detalle que no cabe en `ESTADO_Y_PENDIENTES.md`.
@@ -208,6 +208,7 @@ Material aprovechable directamente:
 - §2 → apartado de metodología de verificación (comparación automatizada + validación empírica).
 - §5 → hallazgo defendible: un análisis que destapó cuatro operaciones rotas en producción que las pruebas existentes no cubrían, con la explicación de por qué se les escapaban.
 - §6 → estrategia de migración con salvaguardas y reversibilidad.
+- §9.8.1 → decisión de arquitectura sobre dónde se genera el PDF, con las dos alternativas comparadas y el criterio que decidió. Es de las pocas decisiones del proyecto en las que se **implementaron ambas** antes de elegir, así que se defiende con evidencia y no con preferencia.
 
 ---
 
@@ -222,7 +223,7 @@ Estas afirmaciones son **falsas respecto al sistema entregado**. En una defensa 
 | # | Dónde | Dice el informe | Realidad verificada | Evidencia |
 |---|---|---|---|---|
 | 1 | **[398]** «Node.js y PostgreSQL (Gestión de Base de Datos)» | *«La conexión y la manipulación de los datos se realizó con node.js, que actúa como un intermediario entre la base de datos y el backend»* | **No existe tal intermediario.** Laravel accede a PostgreSQL directamente por PDO/Eloquent | `composer.json` (`laravel/framework`, driver `pgsql`); `package.json` del backend **sin `dependencies`** |
-| 2 | **[210]** Procesos auxiliares y asincronía | *«Para tareas en segundo plano… se ha integrado Node.js»* | Las colas son de Laravel (`QUEUE_CONNECTION=database` + `php artisan queue:work`). Los reportes los genera `ReportExportService` en PHP con PhpSpreadsheet | `routes/console.php`, `app/services/Admin/ReportExportService.php` |
+| 2 | **[210]** Procesos auxiliares y asincronía | *«Para tareas en segundo plano… se ha integrado Node.js»* | Las colas son de Laravel (`QUEUE_CONNECTION=database` + `php artisan queue:work`). Los reportes no son tarea en segundo plano: el CSV se transmite en la misma petición desde `ReportExportService` y los agregados de los gráficos salen de `ReportMetricsService` en un solo SELECT. PhpSpreadsheet está en el proyecto para **leer** los XLSX de la carga masiva, no para generar reportes | `routes/console.php`, `app/services/Admin/ReportExportService.php`, `app/services/Admin/ReportMetricsService.php` |
 | 3 | **[399-400]** «Next.js (Integración de servicios web)» | *«Next.js se incorporó… renderizado del lado del servidor»* | **No se usa Next.js.** El frontend es **React 19 + Vite 8 + TypeScript 6 + Tailwind 4**, SPA sin SSR | `NeoEduCoreFront/NeoEduCore2/package.json`: `next` **no está presente** |
 | 4 | **[684]** Módulo de Seguridad | *«Implementar autenticación con JWT»* | Es **Laravel Sanctum**: tokens opacos en la tabla `personal_access_tokens`, no JWT. Sin ningún paquete JWT instalado | `composer.json` contiene `laravel/sanctum`; no hay `tymon/jwt-auth` ni `firebase/php-jwt` |
 | 5 | **[555]** Sprint 3 | *«Generar y devolver token JWT»* | Ídem: `AuthController::login` emite un token Sanctum | `app/Http/Controllers/AuthController.php` |
@@ -299,19 +300,123 @@ Para no tocar lo que está bien:
 - **Bcrypt para contraseñas** [685] — correcto (`Hash::make`, `BCRYPT_ROUNDS`).
 - **Contenedores Docker** [690] — correcto.
 
-### 9.8 🔴 Funcionalidad afirmada que no existe: exportación a PDF
+### 9.8 🟢 Resuelto — reportes en PDF y CSV con gráficos
 
-[215] afirma: *«La plataforma genera informes descargables en **PDF** y CSV»*.
+[215] afirma: *«La plataforma genera informes descargables en **PDF** y CSV»*, y [734-735] pide *«Exportar reportes en formatos PDF y CSV»* y *«Mostrar gráficos interactivos (barras, líneas, pastel)»*.
 
-**Verificado: la exportación a PDF no está implementada.**
+**Estado anterior (03/08/2026):** solo existía `/reports/exams/{exam}/results.csv`. No había PDF, no había exportación individual y no había ninguna serie agregada para graficar.
 
-- `composer.json` no incluye **ningún** paquete de generación de PDF (ni `dompdf`, ni `mpdf`, ni `snappy`, ni `tcpdf`).
-- `ReportExportService` expone un único método: `streamCsv()`.
-- De las cuatro rutas de reportes, solo `/reports/exams/{exam}/results.csv` exporta a fichero; las otras tres devuelven JSON.
+**Decisión de arquitectura (05/08/2026): el reparto es backend↔frontend.** El backend expone datos agregados; **el PDF con gráficos lo compone el frontend**. El detalle de la decisión, con las dos alternativas y el porqué, va en §9.8.1 — es material directamente aprovechable para el capítulo de arquitectura del informe.
 
-A diferencia del resto de §9, esto **no se arregla solo reescribiendo el informe**: o se implementa la exportación a PDF, o se corrige la afirmación. Es una decisión de alcance, no de redacción.
+Lo que se añadió en el backend:
+
+| Endpoint | Qué entrega |
+|---|---|
+| `GET /reports/exams/{exam}/summary` | Totales del grupo (media, mediana, mejor/peor, aprobados, tasa), `score_distribution` (**barras**) y `performance_levels` (**pastel**) |
+| `GET /reports/students/{id}/summary?points=` | Totales del estudiante, `score_trend` (**líneas**, del intento más antiguo al más reciente) y `subject_mastery` (**barras**) |
+| `GET /reports/students/{id}/history.csv` | Exportación individual, que faltaba: antes solo se podía exportar el reporte grupal |
+
+Dos detalles que conviene llevar al informe porque son decisiones, no accidentes:
+
+- **`passing_percentage`** (nota mínima de aprobación, 65 por defecto — el mínimo de promoción del MEP en I y II ciclo) pasó a vivir en `institutions.settings`, editable con `PUT /api/system/config`. Antes el sistema no tenía ningún concepto de «aprobado»: sin él no se puede hablar de tasa de aprobación ni de niveles de desempeño. Los cortes de los cuatro niveles cuelgan de ese valor con `max()` para que no se crucen si un centro fija una nota mínima alta.
+- **Los cuatro niveles de desempeño son categorías ordenadas**, no identidades. El frontend debe pintarlos con una rampa de un solo tono (claro→oscuro), no con colores categóricos sueltos, y nunca con el par verde/rojo: es justo el que se confunde bajo daltonismo deuteranope.
+
+**Rendimiento.** Los agregados se resuelven en **un solo SELECT** con `COUNT(*) FILTER`, no recorriendo intentos en PHP. `QueryBudgetTest::test_exam_summary_cost_is_flat_per_attempt_count` falla si alguien lo reescribe en PHP, que es lo que rompería el requisito de los 1.000 estudiantes en menos de 5 s (§9.5).
+
+**Lo que queda pendiente y no es del backend:** que el frontend efectivamente genere el PDF. Hasta que eso exista, la afirmación [215] sigue siendo parcialmente falsa a nivel de sistema — descargable en CSV sí, en PDF todavía no.
 
 Lo demás de ese párrafo sí es correcto: las métricas se presentan por estudiante, grupo e indicador (`/analytics/institution`, `/analytics/subjects`, `/analytics/students/{id}`).
+
+#### 9.8.2 Estrategias del tutor — requisito [740]
+
+*«Permitir descargar estrategias del tutor en PDF»* [740] quedó resuelto del lado del backend el 05/08/2026, con el mismo reparto de §9.8.1: el endpoint entrega los datos agrupados y el frontend compone el documento.
+
+| Endpoint | Quién | Alcance |
+|---|---|---|
+| `GET /reports/students/me/strategies` | Estudiante | Sus propias recomendaciones |
+| `GET /reports/students/{id}/strategies` | Docente | **Solo** recomendaciones nacidas de exámenes que él creó |
+| ídem | Admin | Toda su institución |
+
+**La decisión de fondo fue de audiencia, y el informe se contradice a sí mismo en este punto.** [175] dice que el tutor conversa *«directamente al estudiantado»* y que *«el personal docente no verá mensajes individuales: recibirá solo métricas agregadas»*; pero [738] pide *«recomendaciones pedagógicas personalizadas por estudiante»* y [741] *«registrar interacciones del tutor para seguimiento pedagógico»*, que sin acceso al contenido no sirven de nada.
+
+La lectura adoptada —y que conviene dejar explícita en el informe, porque resuelve la contradicción en vez de esconderla— es que **la frontera no es alumno/docente, sino conversación/recomendación**:
+
+| Artefacto | Tabla | Estudiante | Docente |
+|---|---|---|---|
+| Conversación con el tutor | `ai_chat_sessions` | Sí | **Nunca**, en ningún reporte |
+| Recomendaciones estructuradas | `ai_recommendations` | Sí | Sí, acotado a sus exámenes |
+| Métricas de uso agregadas | — | — | Sí (`/reports/ai/tutor-usage`) |
+
+Así [175] se cumple al pie de la letra —el docente no ve un solo mensaje del chat— y [738]/[741] también, porque el seguimiento pedagógico se apoya en las recomendaciones, que es el artefacto que el propio informe describe como *pedagógico*. `TutorStrategiesTest::test_chat_history_never_appears_in_the_strategies_report` fija esa frontera como prueba automatizada.
+
+**Hallazgo de seguridad corregido en el camino.** `AiRecommendationController::show()` ya acotaba al docente a sus propios exámenes, pero **`index()` no**: un docente podía listar el `recommendation_text` de cualquier alumno de la institución, incluidos exámenes ajenos. Las dos vías decían cosas distintas sobre los mismos datos —textos generados por IA sobre el desempeño de menores— y se alineó `index()` con la regla restrictiva. **Ninguna prueba existente lo detectó**, lo que refuerza el punto de la revisión de seguridad por rol que sigue pendiente.
+
+**Pendiente y no es del backend:** que el frontend genere el PDF, igual que en §9.8.
+
+#### 9.8.1 Por qué el PDF no se genera en el backend
+
+**Conviene dejar claro de entrada que no es una limitación técnica.** La alternativa de servidor se implementó y **funcionaba**: `barryvdh/laravel-dompdf` componiendo el documento desde plantillas Blade, con los gráficos dibujados en PHP con GD e incrustados como PNG en base64 (`data:` URI, de modo que dompdf no necesitaba `isRemoteEnabled` y no quedaba expuesto a SSRF desde la plantilla). La fuente con cobertura de acentos —DejaVuSans— venía dentro del propio dompdf, y la extensión GD ya estaba en el `Dockerfile`. Se generaron los dos reportes completos, con sus indicadores, sus tres gráficos y sus tablas. Se descartó **después** de verlo funcionar, y se revirtió por completo (el prototipo nunca llegó a commitearse).
+
+Es, por tanto, una decisión de diseño argumentada, no un requisito que no se pudo cumplir. Comparación de las dos opciones:
+
+| Criterio | PDF en el backend (dompdf) | PDF en el frontend (elegida) |
+|---|---|---|
+| **Coste por reporte** | Segundos de CPU y memoria **en los workers de Octane que atienden la API** | Lo paga la máquina del usuario; el servidor solo sirve JSON |
+| **Efecto en la concurrencia** | Cada PDF en curso es un worker que no responde peticiones — impacto directo sobre el techo del modelo de `ANALISIS_CONCURRENCIA.md` | Ninguno |
+| **Definición del gráfico** | **Duplicada**: una vez en GD para el PDF y otra en React para la pantalla | **Única**, en React |
+| **Riesgo de divergencia** | Alto: al cambiar un rango de notas o un color hay que tocar ambos motores, o el PDF y la pantalla acaban diciendo cosas distintas | Nulo por construcción: el PDF sale de lo que el usuario ya está viendo |
+| **Capa de presentación en la API** | Sí — maquetación, tipografía y paleta dentro del backend | No |
+| **Fidelidad del documento** | Idéntico para todos, independiente del navegador | Depende del motor del cliente |
+| **Generación desatendida** (envío programado por correo, lotes) | Posible | **No posible**: exige un navegador abierto |
+
+**Criterio que decidió: agilidad y capacidad del servidor.** Componer el documento en la máquina del docente libera al servidor de una tarea cara y elástica, y el número de PDF generados a la vez deja de competir con la capacidad de atender exámenes —que es el pico real del sistema, porque todos los alumnos entregan a la vez—. Se acepta a cambio la dependencia del navegador del cliente, un costo menor aquí: el documento se genera bajo demanda y a la vista del usuario, así que un fallo de composición es visible y reintentable en el acto, no silencioso.
+
+**Hay una tensión aparente con el informe que conviene abordar de frente**, porque en una defensa se puede señalar. [137] y [154] prometen *«una interfaz que no exige grandes recursos tecnológicos»* y operar *«en centros con recursos limitados»*; mover trabajo al cliente parece ir en contra. No lo es, por dos motivos concretos:
+
+1. **La carga en el cliente está acotada.** El documento tiene cuatro gráficos y una tabla de detalle con tope de filas; el resto de la información son agregados ya calculados. Es trabajo de fracciones de segundo en cualquier navegador de la última década, no comparable con lo que cuesta en el servidor multiplicado por usuarios concurrentes.
+2. **En conectividad limitada el reparto elegido es el que gana**, y esto sí es medible. Los PDF del prototipo de servidor pesaban **~910 KB cada uno**, casi todo PNG de los gráficos; la respuesta JSON equivalente son unos pocos KB. Con la conexión pobre que el propio informe da por supuesta [NFR de rendimiento], descargar 910 KB por cada reporte es peor experiencia que recibir los datos y dibujar en local. El requisito de recursos limitados apunta, en realidad, en la misma dirección que la decisión.
+
+A esto se suma que NeoEduCore está planteado como **API pura**: el frontend es una SPA en React y el backend no sirve HTML en ninguna ruta. Meter plantillas de documento rompía esa separación por una sola funcionalidad.
+
+**Las dos opciones no son excluyentes, y conviene decirlo así en el informe.** El reparto habitual es que el frontend genere el PDF que el usuario pide en pantalla, y que el servidor lo genere solo para lo desatendido. Si en algún momento aparece el requisito de **enviar los reportes por correo o generarlos en lote**, la generación en servidor deja de ser opcional: ahí no hay navegador. Es la vía de crecimiento natural, y lo construido no la cierra —los mismos endpoints `summary` alimentarían un generador de servidor sin cambios.
+
+
+### 9.8.3 🔴 Hallazgos de seguridad encontrados al implementar los reportes
+
+Cuatro hallazgos, todos **verificados ejecutando peticiones reales**, no leyendo código. Los cuatro estaban corregidos al cierre del 05/08/2026. Lo relevante para el informe no es la lista sino el patrón, y que **ninguna de las 257 pruebas existentes detectaba ninguno**.
+
+| # | Dónde | Qué pasaba | Severidad |
+|---|---|---|---|
+| 1 | `GET /exams`, `GET /exams/{id}`, `GET /exams/{id}/questions` | Un estudiante listaba el catálogo completo de su institución —**incluidos borradores**— y, con los ids que ese mismo listado le daba, leía **los enunciados de cualquier examen antes de presentarlo** | **Alta** |
+| 2 | ídem | La relación `teacher` se serializaba entera: el **correo del docente** llegaba al alumnado | Media |
+| 3 | ídem | `max_attempts`, `randomize_questions`, `allow_review_after_submission` y `show_results_immediately` visibles para el estudiante | Baja |
+| 4 | `GET /ai-recommendations` | `index()` no aplicaba la restricción de examen propio que sí aplicaba `show()`: un docente leía el `recommendation_text` de cualquier alumno de la institución | Media |
+
+**Sobre el nº 1.** Las respuestas correctas **nunca** se filtraron: `is_correct` y `correct_answer_text` van ocultos en los modelos y `RevelaRespuestas` solo los expone a admin y docente —el arreglo de G12 aguantó—. Lo que se filtraba era el **enunciado**, que en un sistema de exámenes diagnósticos invalida igual la medición: basta con leer las preguntas por anticipado o compartirlas. Lo llamativo es que **la regla correcta ya estaba escrita** en `StudentController::availableExams()` (activo + dentro de la ventana + asignado a sus grupos); simplemente no se aplicaba en `/exams`.
+
+**El patrón, que es lo defendible en el informe.** Los cuatro salen del mismo sitio: el grupo de rutas de *lectura compartida* aplica un único middleware de rol (`role:admin,teacher,student`) y deja el estrechamiento posterior **a criterio de cada controlador**. Algunos lo hacían (`QuestionController` con `RevelaRespuestas`, `ExamAttemptController::show` con el guard de `allow_review_after_submission`) y otros no lo hacían en absoluto. No era un descuido puntual: no existía ningún mecanismo que lo obligara, y por eso el mismo error reaparece en controladores distintos.
+
+**Corrección aplicada.** Se centralizó la definición de «examen visible» en `Exam::scopeVisibleTo()` —una sola fuente, reutilizada por `/exams`, `/exams/{id}`, `/exams/{id}/questions` y `availableExams()`, que antes la duplicaba— y el recorte de campos en el trait `AcotaExamenAlEstudiante`, hermano de `RevelaRespuestas`. Se devuelve **404 y no 403** en los exámenes no visibles: un 403 confirmaría al alumno que la prueba existe.
+
+**Cobertura añadida:** `ExamVisibilityTest` (8 casos). Se comprobó que **fallan sin el arreglo** neutralizando el scope, para que sean pruebas de regresión de verdad y no aserciones que pasan por casualidad.
+
+**Lo que esto dice del resto del sistema.** Es el segundo hallazgo de la misma familia tras G12, y otra vez apareció de casualidad —implementando reportes, no auditando—. Refuerza que la revisión de seguridad por rol pendiente debe hacerse de forma sistemática y endpoint por endpoint, preguntando **qué campos ve cada rol**, no solo si el rol tiene acceso a la ruta.
+
+### 9.8.4 🟢 Documentación de la API — RNF de mantenibilidad
+
+El informe exige *«La API debe documentarse con OpenAPI»* (RNF de mantenibilidad, [~700]). Dice además **«OpenAPI 5.0»**, versión que **no existe**: la especificación va por 3.x. Conviene corregirlo en el informe.
+
+**Estado anterior:** `storage/api-docs/api-docs.json` documentaba **6 de 103 endpoints** (5,8 %) y llevaba sin regenerarse desde el 18/04/2026. No era un fichero incompleto: las anotaciones `#[OA\...]` solo existían en 2 controladores.
+
+**Resuelto el 05/08/2026 invirtiendo el flujo.** En vez de anotar 97 endpoints a mano —más de 2.000 líneas de atributos dentro de los controladores, que además se desincronizan en cuanto alguien toca una ruta—, el documento se **deriva de las rutas reales** con `php artisan openapi:generate`, el mismo patrón que ya usaba la colección de Postman. De cada ruta se deducen método, path, parámetros, si exige token, **qué roles la pueden usar** (leyendo el middleware) y los códigos de respuesta que se siguen de eso.
+
+Cobertura resultante: **103/103 endpoints, 74 paths, 16 módulos.** Los metadatos que no se pueden deducir de una ruta —nombre del módulo, cuerpo de ejemplo, si es pública— viven en `App\Support\ApiSpec`, **compartidos con el generador de Postman** para que los dos no se contradigan.
+
+Limitación honesta, que conviene declarar en el informe en vez de ocultar: **no hay esquema detallado de la respuesta 200**. Se documenta la superficie de la API (qué existe, quién puede llamarlo, qué devuelve como código), no la forma exacta de cada payload. Para eso está la colección de Postman, con cuerpos de ejemplo reales.
+
+**Corregido de paso:** el `securityScheme` declaraba `bearerFormat: 'JWT'`. Sanctum emite tokens **opacos** contra `personal_access_tokens`. La documentación generada estaba respaldando el mismo error que §9.1 nº 4 señala en el informe.
+
+⚠️ **No ejecutar `php artisan l5-swagger:generate`**: sobrescribiría el fichero con los 6 endpoints anotados. L5-Swagger se conserva solo para servir la interfaz en `/api/documentation`. Avisado en `config/l5-swagger.php` y en el `README.md`.
 
 ### 9.9 Resumen accionable
 
@@ -320,11 +425,16 @@ Lo demás de ese párrafo sí es correcto: las métricas se presentan por estudi
 | 🔴 1 | Reescribir la fundamentación tecnológica: fuera Node.js como capa de datos, fuera Next.js | Redacción | [210], [397-400] |
 | 🔴 2 | Corregir JWT → Laravel Sanctum | Redacción | [555], [684] |
 | 🔴 3 | Corregir Render/Railway → DigitalOcean + Coolify + Supabase | Redacción | [689] |
-| 🔴 4 | **Exportación a PDF: implementarla o retirar la afirmación** | **Alcance** | [215] |
+| 🟢 4 | ~~Exportación a PDF~~ — **backend resuelto** el 05/08/2026: `summary` con las series de barras/líneas/pastel + CSV individual. Falta que el frontend arme el PDF | **Alcance** | [215], [734-735] |
+| 🟢 10 | ~~Descargar las estrategias del tutor en PDF~~ — **backend resuelto** el 05/08/2026: endpoints de estrategias con el chat excluido por diseño (§9.8.2). Falta que el frontend arme el PDF | **Alcance** | [740] |
 | 🟠 5 | Añadir figura de modelo de datos y diccionario de datos | Contenido nuevo | Índice de figuras + cap. IV |
 | 🟠 6 | Incorporar `AiChatSession` y `StudentSubject` al diagrama de clases | Contenido nuevo | [653] |
 | 🟡 7 | Justificar las 2 decisiones de diseño de §4 | Redacción | Capítulo IV |
 | 🟡 8 | Medir o matizar los 3 requisitos de rendimiento | **Medición** | [695-697] |
 | 🟡 9 | Documentar el rol `parent` como previsión de diseño | Redacción | [664] |
 
-**Siete de nueve se resuelven reescribiendo texto.** Las dos que no son: la exportación a PDF (decisión de alcance) y la prueba de carga (medición pendiente).
+**Siete de diez se resuelven reescribiendo texto.** Las tres que no:
+
+- **Exportación a PDF (nº 4)** — el backend ya entrega las series de los tres gráficos y el CSV individual (§9.8). Queda que el frontend componga el documento.
+- **Estrategias del tutor en PDF (nº 10)** — backend resuelto (§9.8.2); queda el documento en el frontend.
+- **Prueba de carga (nº 8)** — medición pendiente sobre el despliegue real con Octane.

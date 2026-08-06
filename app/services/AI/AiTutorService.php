@@ -239,7 +239,7 @@ class AiTutorService
     {
         // El timeout sale de OPENAI_REQUEST_TIMEOUT (config/openai.php, default
         // 30 s). Acótalo: mientras dura la llamada el worker de Octane está
-        // bloqueado y no puede atender a nadie más. Ver ANALISIS_CONCURRENCIA.md.
+        // bloqueado y no puede atender a nadie más. Ver docs/ANALISIS_CONCURRENCIA.md.
         try {
             $response = OpenAI::chat()->create([
                 'model'    => config('services.openai.model', 'gpt-4o-mini'),

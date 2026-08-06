@@ -1,6 +1,17 @@
 # NeoEduCore — Backend API
 
-Backend de la plataforma NeoEduCore, desarrollado con **Laravel 12** + **PostgreSQL**. Incluye autenticación con Laravel Sanctum y documentación de API con Swagger (L5-Swagger).
+Backend de la plataforma NeoEduCore, desarrollado con **Laravel 12** + **PostgreSQL**. API REST multi-tenant, autenticación con **Laravel Sanctum** (tokens opacos, no JWT) y documentación con Swagger (L5-Swagger). En producción corre sobre **Laravel Octane + FrankenPHP**.
+
+El frontend es un proyecto aparte (React + Vite + TypeScript): este repositorio **no sirve HTML**, solo JSON — salvo las plantillas de correo en `resources/views/emails/`.
+
+| Documento | Para qué |
+|---|---|
+| `docs/ESTADO_Y_PENDIENTES.md` | Estado por módulo, brechas, TODO priorizado y referencia de endpoints |
+| `docs/ANALISIS_MODELO_DATOS_TFG.md` | Modelo de datos y qué corregir del informe del TFG |
+| `docs/ANALISIS_CONCURRENCIA.md` | Modelo de capacidad y prueba de carga |
+| `docs/DEPLOY_COOLIFY.md` | Despliegue en DigitalOcean + Coolify |
+| `tests/README.md` | Qué cubre cada test |
+| `postman/README.md` | Colección de Postman y su generador |
 
 ---
 
@@ -38,8 +49,8 @@ php artisan migrate --seed
 # 7. Publicar assets de Swagger
 php artisan vendor:publish --provider="L5Swagger\L5SwaggerServiceProvider"
 
-# 8. Generar la documentación Swagger
-php artisan l5-swagger:generate
+# 8. Generar la documentación OpenAPI (desde las rutas reales)
+php artisan openapi:generate
 
 # 9. Levantar el servidor
 php artisan serve
@@ -63,21 +74,64 @@ La documentación Swagger estará disponible en: `http://localhost:8000/api/docu
 | `OPENAI_API_KEY` | Clave de API de OpenAI (tutor IA y recomendaciones) | `sk-...` |
 | `OPENAI_REQUEST_TIMEOUT` | Timeout en segundos para llamadas a OpenAI | `15` |
 | `L5_SWAGGER_GENERATE_ALWAYS` | Regenerar docs en cada request (solo dev) | `false` |
+| `CACHE_STORE` | **Nunca `array` fuera de tests**: los rate limiters viven en el caché y con Octane cada worker llevaría su propio contador | `file` |
+| `PG_DUMP_PATH` | Ruta a `pg_dump`, necesaria para `schema:dump-sql` | `C:\|/usr/bin/pg_dump` |
+| `SANCTUM_TOKEN_EXPIRATION_MINUTES` | Caducidad del token de API | `720` |
+
+---
+
+## Tests
+
+La suite corre contra **PostgreSQL real**, no SQLite: se usan `jsonb`, `COUNT(*) FILTER` y `PERCENTILE_CONT`, que SQLite no tiene.
+
+```bash
+php artisan test                                  # toda la suite
+php artisan test tests/Feature/Crud/ReportsTest.php
+php artisan test --filter=QueryBudget             # presupuesto de queries por endpoint
+php artisan test --coverage --min=70              # requiere Xdebug o PCOV
+```
+
+Los tests **no ejecutan las migraciones**: cargan `database/sql/01_schema.sql` (ver el trait `UsesPostgresSchema`). La base la fija `phpunit.xml` (`DB_DATABASE=neoeducore`).
+
+---
+
+## Cambiar el esquema de la base de datos
+
+`database/sql/01_schema.sql` es un **artefacto generado**, no se edita a mano. El orden importa: si se omite el tercer paso, los tests siguen en verde mientras producción falla.
+
+```bash
+php artisan make:migration descripcion_del_cambio
+php artisan migrate
+php artisan schema:dump-sql        # regenera 01_schema.sql (necesita PG_DUMP_PATH)
+# commit de la migración Y del schema, siempre juntos
+```
 
 ---
 
 ## Comandos útiles
 
 ```bash
-# Tests
-php artisan test
+# Servidor de desarrollo
+php artisan serve
+composer run dev                    # servidor + worker de cola + logs
 
-# Regenerar documentación Swagger
-php artisan l5-swagger:generate
+# Cola (correos de reset y alta masiva)
+php artisan queue:work
 
-# Limpiar caché de configuración
-php artisan config:clear && php artisan cache:clear
+# Documentación
+php artisan openapi:generate        # OpenAPI (103 endpoints) → /api/documentation
+php postman/generate_postman_collection.php   # colección de Postman desde route:list
+
+# Inspección
+php artisan route:list --path=reports
+php artisan test --filter=QueryBudget
+
+# Limpiar cachés
+php artisan config:clear && php artisan cache:clear && php artisan route:clear
 ```
+
+> `bootstrap/cache/packages.php` y `services.php` están versionados y se regeneran solos al
+> instalar dependencias; que aparezcan modificados tras un `composer install` es normal.
 
 ---
 

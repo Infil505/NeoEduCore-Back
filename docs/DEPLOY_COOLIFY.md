@@ -63,6 +63,8 @@ MAIL_ENCRYPTION=tls
 MAIL_FROM_ADDRESS=...
 
 OPENAI_API_KEY=...
+OPENAI_REQUEST_TIMEOUT=15     # sin esto rige el default de 30 s y un worker
+                              # se queda bloqueado el doble de tiempo
 
 # Para el pico de logins simultáneos: bcrypt más barato (sigue seguro)
 BCRYPT_ROUNDS=10

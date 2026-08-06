@@ -64,6 +64,47 @@ class Exam extends Model
         'available_until' => 'datetime',
     ];
 
+    /**
+     * Acota la consulta a los exámenes que un usuario tiene derecho a ver.
+     *
+     * Para **admin y docente** no cambia nada: gestionan el catálogo completo de
+     * su institución.
+     *
+     * Para un **estudiante** exige las tres condiciones que definen que un
+     * examen es suyo: publicado y activo, dentro de la ventana de disponibilidad
+     * y asignado a alguno de sus grupos. Sin esto, `GET /exams` entregaba el
+     * catálogo entero —incluidos borradores— y con los ids en la mano
+     * `GET /exams/{id}` servía los enunciados antes de presentar la prueba. Las
+     * respuestas correctas nunca se filtraron (van ocultas en los modelos, ver
+     * `RevelaRespuestas`), pero conocer las preguntas de antemano ya invalida el
+     * diagnóstico.
+     *
+     * Es la misma regla que aplicaba `StudentController::availableExams()`;
+     * vive aquí para que exista **una sola** definición de «examen visible» y no
+     * se olvide al añadir un endpoint nuevo.
+     *
+     * Nota: la pertenencia al grupo no descarta a quien lo dejó (`left_at`),
+     * porque replica el comportamiento que ya tenía `availableExams()`. Cambiarlo
+     * afectaría a quién puede presentar exámenes, no solo a quién los ve.
+     */
+    public function scopeVisibleTo($query, ?object $user)
+    {
+        if (!$user || $user->user_type !== \App\Enums\UserType::Student) {
+            return $query;
+        }
+
+        return $query
+            ->where('status', ExamStatus::Active->value)
+            ->where(fn ($q) => $q->whereNull('available_from')->orWhere('available_from', '<=', now()))
+            ->where(fn ($q) => $q->whereNull('available_until')->orWhere('available_until', '>=', now()))
+            ->whereHas('groups', fn ($q) => $q->whereIn(
+                'groups.id',
+                \Illuminate\Support\Facades\DB::table('group_students')
+                    ->select('group_id')
+                    ->where('student_user_id', $user->id)
+            ));
+    }
+
     public function institution()
     {
         return $this->belongsTo(Institution::class);

@@ -25,7 +25,7 @@ use Tests\Traits\ApiAuth;
  *    falla aunque la respuesta siga siendo correcta.
  *
  * 2. **Insumo del modelo de concurrencia.** Las queries por request son el
- *    driver del techo de concurrencia (ver ANALISIS_CONCURRENCIA.md). Correr
+ *    driver del techo de concurrencia (ver docs/ANALISIS_CONCURRENCIA.md). Correr
  *    con `--filter=QueryBudget` e inspeccionar los budgets da el perfil actual.
  *
  * Los presupuestos son deliberadamente holgados (~+3 sobre lo medido) para no
@@ -342,6 +342,56 @@ class QueryBudgetTest extends TestCase
     }
 
     /**
+     * El resumen del examen alimenta los tres gráficos del frontend. Sus totales,
+     * histograma y niveles salen de UN solo SELECT agregado: si alguien los
+     * reescribe recorriendo intentos en PHP, el coste pasa a crecer con el número
+     * de estudiantes y este test lo caza antes de que llegue al requisito de los
+     * 1.000 estudiantes en menos de 5 segundos.
+     */
+    public function test_exam_summary_cost_is_flat_per_attempt_count(): void
+    {
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
+
+        $teacher = User::factory()->teacher()->create(['institution_id' => $this->institution->id]);
+        $subject = Subject::factory()->create(['institution_id' => $this->institution->id]);
+        $exam = Exam::factory()->create([
+            'institution_id'        => $this->institution->id,
+            'subject_id'            => $subject->id,
+            'created_by_teacher_id' => $teacher->id,
+        ]);
+
+        $crearIntentos = function (int $n) use ($exam) {
+            foreach ($this->estudiantes($n) as $id) {
+                ExamAttempt::factory()->create([
+                    'institution_id'  => $this->institution->id,
+                    'exam_id'         => $exam->id,
+                    'student_user_id' => $id,
+                    'submitted_at'    => now(),
+                    'score'           => 15,
+                    'max_score'       => 20,
+                ]);
+            }
+        };
+
+        $consultar = function () use ($exam) {
+            $this->getJson("/api/reports/exams/{$exam->id}/summary")->assertOk();
+        };
+
+        $crearIntentos(3);
+        $pocos = $this->contarQueries($consultar);
+
+        $crearIntentos(40);
+        $muchos = $this->contarQueries($consultar);
+
+        $this->assertSame(
+            $pocos,
+            $muchos,
+            "El resumen del examen escala con el dataset: 3 intentos={$pocos} queries, "
+            . "43 intentos={$muchos}. Los agregados deben resolverse en SQL, no en PHP."
+        );
+    }
+
+    /**
      * El envío de examen es la operación más cara del sistema y la que marca
      * el pico de concurrencia (todos los alumnos entregan a la vez).
      */
@@ -415,7 +465,7 @@ class QueryBudgetTest extends TestCase
         // del examen todas las entregas llegan en ráfaga, y cada query es un
         // round-trip de red. Por eso `gradeAttempt` acumula las filas y hace
         // INSERT por lotes: el coste debe ser CONSTANTE respecto al nº de
-        // preguntas. (Antes era `29 + 3·N`; ver ANALISIS_CONCURRENCIA.md §5.1.)
+        // preguntas. (Antes era `29 + 3·N`; ver docs/ANALISIS_CONCURRENCIA.md §5.1.)
         $this->assertSame(
             $con3,
             $con15,

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Exams;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\AcotaExamenAlEstudiante;
 use App\Http\Controllers\Concerns\RevelaRespuestas;
 use App\Enums\ExamStatus;
 use App\Models\Exams\Exam;
@@ -12,7 +13,7 @@ use Illuminate\Validation\Rule;
 
 class ExamController extends Controller
 {
-    use RevelaRespuestas;
+    use RevelaRespuestas, AcotaExamenAlEstudiante;
 
     /**
      * Listar exámenes (filtrado por tenant vía TenantScoped)
@@ -20,6 +21,10 @@ class ExamController extends Controller
     public function index(Request $request)
     {
         $query = Exam::query()
+            // Al estudiante solo los suyos: activos, vigentes y asignados a sus
+            // grupos. Antes devolvía el catálogo entero con sus ids, que era el
+            // primer paso para leer enunciados ajenos vía `show()`.
+            ->visibleTo($request->user())
             ->with(['subject', 'teacher'])
             ->orderByDesc('created_at');
 
@@ -35,8 +40,12 @@ class ExamController extends Controller
             $query->where('grade', (int) $request->input('grade'));
         }
 
+        $paginator = $query->paginate(20);
+
+        $this->acotarExamenes($request->user(), $paginator->getCollection());
+
         return response()->json([
-            'data' => $query->paginate(20),
+            'data' => $paginator,
         ]);
     }
 
@@ -104,11 +113,19 @@ class ExamController extends Controller
      */
     public function show(Exam $exam, Request $request)
     {
+        // El binding de ruta resuelve el examen sin mirar quién pregunta, así
+        // que la visibilidad se comprueba aquí. 404 y no 403: confirmar que el
+        // examen existe ya le diría al alumno que hay una prueba preparada.
+        if (!Exam::query()->whereKey($exam->getKey())->visibleTo($request->user())->exists()) {
+            return response()->json(['message' => 'No encontrado'], 404);
+        }
+
         $exam->load(['subject', 'teacher', 'groups', 'questions.options']);
 
         // Esta ruta es de lectura compartida (admin, teacher y student): sin
         // esto, un alumno vería `is_correct` de cada opción antes de entregar.
         $this->revelarRespuestas($request->user(), $exam->questions);
+        $this->acotarExamen($request->user(), $exam);
 
         return response()->json([
             'data' => $exam,

@@ -509,26 +509,17 @@ class StudentController extends Controller
 
     public function availableExams(Request $request)
     {
-        $user    = $request->user();
-        $student = Student::with('groups')->where('user_id', $user->id)->first();
+        $user = $request->user();
 
-        if (!$student) {
-            return response()->json(['data' => []]);
-        }
-
-        $groupIds = $student->groups->pluck('id');
-
-        if ($groupIds->isEmpty()) {
-            return response()->json(['data' => []]);
-        }
-
+        // La regla de «examen visible para este alumno» (activo, vigente y
+        // asignado a sus grupos) vive en `Exam::scopeVisibleTo`, que es la que
+        // aplican también `/exams` y `/exams/{id}`. Aquí solo se añade lo propio
+        // de la disponibilidad: que le queden intentos.
+        //
         // withCount mueve el filtro de intentos a la BD: elimina la query separada
         // y el filtrado en memoria sobre colecciones potencialmente grandes.
         $exams = Exam::query()
-            ->where('status', 'active')
-            ->where(fn($q) => $q->whereNull('available_from')->orWhere('available_from', '<=', now()))
-            ->where(fn($q) => $q->whereNull('available_until')->orWhere('available_until', '>=', now()))
-            ->whereHas('groups', fn($q) => $q->whereIn('groups.id', $groupIds))
+            ->visibleTo($user)
             ->withCount(['attempts as submitted_count' => fn($q) =>
                 $q->where('student_user_id', $user->id)->whereNotNull('submitted_at')
             ])
