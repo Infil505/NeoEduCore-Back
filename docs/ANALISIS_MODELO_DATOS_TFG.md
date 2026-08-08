@@ -1,11 +1,20 @@
-# Sistema vs. informe del TFG — análisis y correcciones pendientes
+# Modelo de datos — el sistema construido y qué corregir en el informe
 
-**Fecha:** 3 de agosto de 2026 · revisado el 5 de agosto de 2026 (§9.8 a §9.8.3, §9.9)
-**Estado:** modelo de datos alineado en código y producción; **el informe requiere correcciones (§9)**
+**Fecha:** 3 de agosto de 2026 · revisado el 5 y el **8 de agosto de 2026**
+**Estado:** modelo de datos **cerrado** en código y en producción; **todo lo pendiente son correcciones al informe**
 
-> Documento de trabajo para redactar después el capítulo de modelo de datos del informe final y corregir lo que el informe afirma y no se corresponde con el sistema entregado. Recoge el método, la evidencia y las decisiones tomadas, con el detalle que no cabe en `ESTADO_Y_PENDIENTES.md`.
+> ## Criterio del documento
 >
-> **§1–§8** cubren el modelo relacional. **§9 es la lista accionable de qué cambiar en el informe**, incluidas divergencias de stack tecnológico que van más allá del modelo de datos.
+> **Manda el sistema construido. El informe se ajusta a él.**
+>
+> Este documento nació comparando la base de datos contra `schema de la base de datos.sql`, el esquema que se dibujó al principio del TFG, y tratándolo como *la referencia*. Esa lectura se cambia el 08/08/2026: aquel fichero es un **diseño preliminar**, no una autoridad sobre el entregable. El sistema que se defiende es el que corre en producción, y el informe es el que debe describirlo.
+>
+> Eso no invalida lo hecho hasta aquí. La comparación fue útil por sí misma: destapó cinco operaciones rotas en producción que ninguna prueba cubría (§5), y en esos casos el diseño preliminar tenía razón — se adoptó porque era mejor, no por ser anterior. Lo que cambia es el **criterio para lo que quedaba en duda**: ya no hay que elegir entre «coherencia del modelo» y «fidelidad al documento de referencia». Gana siempre la coherencia, y el documento se reescribe (§7).
+>
+> **Consecuencia práctica:** en este documento la palabra *divergencia* describe el hallazgo histórico, no un defecto pendiente. Nada del modelo de datos está esperando decisión (§7). Lo accionable son dos secciones, ambas sobre el documento:
+>
+> - **§9 — qué cambiar en el informe**, con la corrección concreta de cada punto.
+> - **§10 — las contradicciones, por escrito**: dónde el informe se contradice a sí mismo (§10.1) y dónde contradice al sistema (§10.2), con cita y párrafo, para que el equipo entre a modificar sin volver a buscarlas. **§10.3 avisa de que los números de párrafo de la §9 se quedaron desfasados** y da las equivalencias.
 
 ---
 
@@ -13,12 +22,32 @@
 
 | Rol | Artefacto |
 |---|---|
-| **Referencia (diseño)** | `../schema de la base de datos.sql` — modelo relacional del TFG |
-| **Implementación** | `database/sql/01_schema.sql` — artefacto generado con `pg_dump` desde las migraciones |
-| **Informe final** | `CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx` |
+| **Fuente de verdad — el sistema entregado** | `database/sql/01_schema.sql`, artefacto generado con `pg_dump` desde las migraciones, y la base de Supabase de la que sale |
+| **Diseño preliminar (histórico)** | `schema de la base de datos.sql` — el modelo relacional que se dibujó al inicio del TFG. Ya no está en el árbol de trabajo; se conserva en el historial de git |
+| **Documento a corregir** | `CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx` |
 | **Producción** | Supabase `aws-0-us-west-2`, PostgreSQL 17.6 |
 
 Se comparan **claves foráneas**: tabla origen, columna, tabla/columna destino y comportamiento `ON DELETE`. No se comparan tipos de columna, índices ni constraints CHECK (auditados por separado en E10/E11).
+
+### 1.1 Estado final del modelo (08/08/2026)
+
+Lo que hay que llevar al capítulo de modelo de datos del informe:
+
+| Magnitud | Valor |
+|---|---|
+| Claves foráneas | **47** |
+| Tablas de dominio | **19** (15 entidades + 4 pivotes) |
+| Tablas de framework | 5 (`migrations`, `jobs`, `failed_jobs`, `password_reset_tokens`, `personal_access_tokens`) |
+| Columnas `institution_id` | **18, todas con FK** — 17 en `CASCADE` y 1 en `SET NULL` (`users`, deliberado: dar de baja un centro no borra a las personas) |
+
+Pivotes: `group_students`, `exam_targets`, `student_answer_options`, `student_subjects`. De las 19 tablas de dominio, 16 tienen modelo Eloquent (las 15 entidades más `StudentSubject`).
+
+Comprobable en cualquier momento:
+
+```bash
+grep -c "ADD CONSTRAINT .* FOREIGN KEY" database/sql/01_schema.sql   # 47
+grep -c "^CREATE TABLE public\."        database/sql/01_schema.sql   # 24 (19 + 5)
+```
 
 ## 2. Método (reproducible)
 
@@ -41,20 +70,26 @@ Las conclusiones sobre comportamiento **no se dedujeron del esquema**: se verifi
 
 ---
 
-## 3. Divergencias encontradas
+## 3. Qué encontró la comparación (histórico)
+
+> Los cuatro grupos de abajo son el **hallazgo de agosto de 2026**, no una lista de
+> pendientes: los grupos A, B y C se resolvieron en la migración de §6 y el grupo D
+> es material para el informe (§9.3). Se conservan porque el método y la evidencia
+> son lo aprovechable para el capítulo de modelo de datos — «lo que el análisis
+> destapó», no «lo que falta por hacer».
 
 ### 3.1 Grupo A — La relación apunta a otra tabla (4)
 
-| Tabla.columna | TFG | Implementación |
+| Tabla.columna | Diseño preliminar | Implementación (entonces) |
 |---|---|---|
 | `exam_attempts.student_user_id` | `students(user_id)` | `users(id)` |
 | `student_progress.student_user_id` | `students(user_id)` | `users(id)` |
 | `ai_recommendations.student_user_id` | `students(user_id)` | `users(id)` |
 | `group_students.student_user_id` | `students(user_id)` | `users(id)` |
 
-**Significado.** `students.user_id` es a la vez PK de `students` y FK a `users`. Apuntar a `users(id)` admite cualquier usuario del sistema; apuntar a `students(user_id)` exige que además tenga perfil de estudiante. La versión del TFG es la correcta: son relaciones del dominio *estudiante*, no *usuario*.
+**Significado.** `students.user_id` es a la vez PK de `students` y FK a `users`. Apuntar a `users(id)` admite cualquier usuario del sistema; apuntar a `students(user_id)` exige que además tenga perfil de estudiante. Aquí **el diseño preliminar tenía razón**: son relaciones del dominio *estudiante*, no *usuario*, y se adoptó por eso, no por respetar el documento.
 
-**Consecuencia comprobada:** se pudo crear un intento de examen a nombre de un **docente**. La restricción del TFG lo habría rechazado en la base.
+**Consecuencia comprobada:** se pudo crear un intento de examen a nombre de un **docente**. La restricción más estricta lo rechaza en la base.
 
 ### 3.2 Grupo B — Mismo destino, distinto `ON DELETE` (28)
 
@@ -108,7 +143,7 @@ La columna existía pero sin restricción: era posible escribir un `institution_
 | `ai_chat_sessions.institution_id` | `institutions(id)` | Tutor IA conversacional, añadido tras el diseño original |
 | `ai_chat_sessions.student_user_id` | `students(user_id)` | ídem |
 | `ai_chat_sessions.subject_id` | `subjects(id)` | ídem |
-| `ai_chat_sessions.exam_id` | `exams(id)` | ídem |
+| `ai_chat_sessions.exam_id` | `exams(id)` | ídem. ⚠️ **Estaba muerta**: existía en tabla, modelo y relación Eloquent, pero ninguna ruta la escribía — siempre NULL. Cableada el 08/08/2026 (`POST /ai/tutor/chat` acepta `exam_id`), para no documentar en el ERD una relación que no ocurre |
 | `student_subjects.institution_id` | `institutions(id)` | Matrícula estudiante↔materia, añadida después |
 | `student_subjects.student_user_id` | `students(user_id)` | ídem |
 | `student_subjects.subject_id` | `subjects(id)` | ídem |
@@ -119,11 +154,11 @@ La columna existía pero sin restricción: era posible escribir un `institution_
 
 ---
 
-## 4. Divergencias deliberadas (se conservan)
+## 4. Decisiones de diseño que se apartan del boceto inicial
 
-Dos casos en los que la implementación se aparta del diseño original **a propósito**, con la decisión ya tomada y documentada en la migración `fix_exam_cascade_constraints` (09/05/2026):
+Dos casos en los que el sistema entregado mejora el diseño preliminar, con la decisión tomada y documentada en la migración `fix_exam_cascade_constraints` (09/05/2026). **No son desviaciones que haya que justificar ante nadie**: son las reglas del modelo entregado, y el informe debe describirlas como tales.
 
-| Relación | TFG | Implementación | Justificación |
+| Relación | Boceto inicial | Sistema entregado | Justificación |
 |---|---|---|---|
 | `exams.created_by_teacher_id` | `NOT NULL`, NO ACTION | *nullable*, **SET NULL** | Permite dar de baja a un docente sin perder los exámenes que creó. Con el diseño original, borrar un profesor sería imposible mientras tuviera exámenes |
 | `exams.subject_id` | NO ACTION | **CASCADE** | Coherencia con la regla de negocio de que eliminar una materia elimina su contenido académico |
@@ -154,6 +189,8 @@ filas que sobreviven tras DELETE /subjects: TODAS
 
 **Segunda comprobación (grupo A):** creación de un `exam_attempt` con `student_user_id` = un usuario docente → **aceptado** por la base.
 
+**Tercera, del 08/08/2026 — quedaba una quinta operación rota, y la referencia del TFG no la cubría.** `DELETE /api/users/{id}` seguía devolviendo **500** con cualquier docente que hubiera subido un recurso de estudio: `study_resources.created_by` era la última FK a `users(id)` en `NO ACTION`. No apareció en §3 porque **el esquema de referencia la declara igual de laxa**: ambas partes coincidían en el mismo hueco, así que la comparación no la marcó como divergencia. Es un matiz aprovechable para el informe — muestra el límite del método: una comparación automatizada encuentra desacuerdos, no errores compartidos. Corregida a `SET NULL`, coherente con las otras dos FK de autoría (`exams.created_by_teacher_id` y `calendar_events.created_by`), con test que se verificó que falla sin el arreglo.
+
 ---
 
 ## 6. Alineación aplicada
@@ -168,35 +205,47 @@ Salvaguardas de la migración:
 - **`down()` real.** Restaura las 30 constraints preexistentes a su forma anterior y elimina las 3 nuevas. Probada la secuencia `up → down → up` en base limpia.
 - **Generación programática.** El listado de constraints se generó desde la comparación, no transcribiendo a mano.
 
-**Cobertura nueva:** `tests/Feature/Db/CascadeIntegrityTest.php`, 8 tests que montan la cadena completa antes de borrar y comprueban tanto lo que debe desaparecer como lo que debe sobrevivir.
+**Cobertura nueva:** `tests/Feature/Db/CascadeIntegrityTest.php`, que montan la cadena completa antes de borrar y comprueban tanto lo que debe desaparecer como lo que debe sobrevivir. Empezó con 8 casos; hoy son **12**, tras los añadidos del 08/08/2026 (§5 y §7.2).
 
 **Verificación en producción tras aplicar:** 6 FK apuntando a `students(user_id)`; datos intactos (65 estudiantes, 206 materias, 73 usuarios, 3 intentos).
 
+⚠️ **Las migraciones del 08/08/2026 —`study_resources_created_by_set_null` y `complete_tenant_fk_coherence`— todavía no se han aplicado a producción.** Al hacerlo: `php artisan migrate` → `php artisan schema:dump-sql` → commit de ambos. `database/sql/01_schema.sql` se editó a mano en las líneas afectadas para que los tests las vieran, así que la regeneración real desde la base sigue pendiente, y hay que hacerla sin perder el `ENABLE ROW LEVEL SECURITY` que añade Supabase.
+
 ---
 
-## 7. Decisiones abiertas
+## 7. Lo que quedaba abierto, y cómo se cerró
 
-### 7.1 Actualizar el informe con las 9 relaciones no documentadas
+Las tres decisiones que este documento dejaba pendientes se resolvieron el 08/08/2026 al fijar el criterio de la cabecera: **manda el sistema, el informe se ajusta.** Ninguna sigue abierta del lado del modelo de datos.
 
-El capítulo de modelo de datos debe incluir `ai_chat_sessions` y `student_subjects` como entidades, y las 2 divergencias deliberadas como decisiones justificadas. **El informe es el entregable evaluable**, así que este punto no es opcional.
+### 7.1 Las 9 relaciones que el informe no documenta → **acción sobre el informe**
 
-### 7.2 Dos huecos que el TFG tampoco cubre
+El capítulo de modelo de datos debe incluir `ai_chat_sessions` y `student_subjects` como entidades, y las 2 decisiones de §4 como lo que son: reglas del modelo. **El informe es el entregable evaluable**, así que este punto no es opcional. Detalle en §9.3.
 
-`exam_attempts.institution_id` y `student_progress.institution_id` **siguen sin FK**, y el documento de referencia **tampoco las declara**. Es el mismo hueco de integridad que se cerró en las otras tres tablas (§3.3), pero se dejaron fuera para no desviarse de la referencia.
+### 7.2 Las dos últimas columnas `institution_id` sin FK → **cerrado en código (08/08/2026)**
 
-- **A favor de añadirlas:** coherencia; hoy son las dos únicas columnas `institution_id` sin restricción.
-- **En contra:** desviarse del documento en la dirección opuesta a la que se acaba de corregir.
+`exam_attempts.institution_id` y `student_progress.institution_id` eran las dos únicas columnas de tenant sin restricción, y a ellas se sumaban `students.institution_id` y `group_students.institution_id` en `NO ACTION` mientras el resto cascadeaba. Los cuatro casos venían de lo mismo: la migración de §6 se ciñó a lo que declaraba el boceto inicial, y el boceto no los cubría.
 
-Es una decisión de criterio, no técnica.
+La duda estaba planteada como **«coherencia del modelo vs. fidelidad al documento de referencia»**. Con el criterio nuevo esa tensión no existe: el boceto no es una autoridad, así que gana la coherencia sin discusión.
 
-### 7.3 Los borrados pasaron a ser realmente destructivos
+Migración `complete_tenant_fk_coherence`:
+
+- **+2 FK nuevas** (`exam_attempts`, `student_progress`) → `institutions(id) ON DELETE CASCADE`, con detección previa de huérfanos.
+- **2 FK endurecidas** (`students`, `group_students`) de `NO ACTION` a `CASCADE`.
+
+Resultado: **18 columnas `institution_id`, las 18 con FK**; 17 en `CASCADE` y solo `users` en `SET NULL`, que es deliberado — dar de baja un centro no borra a las personas.
+
+Las dos que pasan a `CASCADE` son hoy **inalcanzables**: no existe `DELETE /institutions`, solo `PATCH /institutions/{id}/toggle`. Se arreglan precisamente por eso: el día que ese endpoint exista, `NO ACTION` en `students` habría hecho fallar el borrado con un 500, que es exactamente el fallo de §5 que costó tanto descubrir. **Cobertura:** 3 tests nuevos en `CascadeIntegrityTest`, incluido el borrado completo de una institución.
+
+### 7.3 Los borrados pasaron a ser realmente destructivos → **abierto, pero en el frontend**
 
 Efecto colateral de arreglar §5: antes fallaban con 500 y eso **protegía por accidente**. Ahora `DELETE /api/subjects/{id}` elimina la materia, sus exámenes, preguntas, intentos y **todos los resultados de los alumnos**, en silencio y sin vuelta atrás.
 
-Es el comportamiento que prescribe el TFG y el que la documentación ya afirmaba. Pero conviene:
+Es el comportamiento que la documentación ya afirmaba, y es la regla de negocio correcta. Lo que falta no es del modelo de datos:
 
 - Confirmación explícita en el frontend, con el recuento de lo que se va a perder (`GET /api/subjects` ya devuelve `exams_count`).
 - Valorar borrado lógico para materias y grupos, en línea con el `left_at` que ya se usa en `group_students`.
+
+Con la §7.2 cerrada, esto se extiende a `DELETE /institutions` si algún día se expone: borrar un centro arrasa ahora con todo su contenido.
 
 ---
 
@@ -242,7 +291,9 @@ Estas afirmaciones son **falsas respecto al sistema entregado**. En una defensa 
 
 El índice de figuras [56-65] lista diez figuras: mapa conceptual, diagrama de clases, diagrama de proceso, flujo de examen, arquitectura en módulos, flujo de autenticación, arquitectura general, arquitectura del sistema, casos de uso y flujo de chatbot.
 
-**No hay diagrama entidad-relación ni modelo de datos**, pese a que el sistema tiene 17 entidades, 4 tablas pivote y 42 claves foráneas. Para un TFG de sistema de información es una ausencia llamativa, y además es justo el capítulo que este documento permite redactar con solvencia.
+**No hay diagrama entidad-relación ni modelo de datos**, pese a que el sistema tiene **15 entidades, 4 tablas pivote y 45 claves foráneas**. Para un TFG de sistema de información es una ausencia llamativa, y además es justo el capítulo que este documento permite redactar con solvencia.
+
+> ⚠️ **Cifras corregidas el 08/08/2026.** Este apartado decía «17 entidades … 42 claves foráneas»: las 42 eran el conteo **previo** a la migración de §6, que añadió 3. El recuento verificado contra `database/sql/01_schema.sql` es **19 tablas de dominio** (15 entidades + 4 pivotes: `group_students`, `exam_targets`, `student_answer_options`, `student_subjects`) más 5 de framework, y **45 FK**. Desglose en `ESTADO_Y_PENDIENTES.md` §3.5.
 
 **Acción:** añadir una figura de modelo relacional a partir de §3 y §4, y un diccionario de datos.
 
@@ -346,6 +397,9 @@ La lectura adoptada —y que conviene dejar explícita en el informe, porque res
 | Conversación con el tutor | `ai_chat_sessions` | Sí | **Nunca**, en ningún reporte |
 | Recomendaciones estructuradas | `ai_recommendations` | Sí | Sí, acotado a sus exámenes |
 | Métricas de uso agregadas | — | — | Sí (`/reports/ai/tutor-usage`) |
+| Ranking nominal de uso | — | — | **No** — solo admin |
+
+> ⚠️ **Corregido el 08/08/2026.** La última fila no existía, y era una omisión con consecuencia: `/reports/ai/tutor-usage` devolvía al docente un `top_students_by_usage` con el **nombre** de cada alumno y cuántos mensajes había escrito al tutor. La tabla lo presentaba como «métricas agregadas», pero un ranking nominal de menores por su uso del tutor no es agregado ni anónimo, que es lo que [175] promete en las dos palabras. Queda solo para admin. Ver `ESTADO_Y_PENDIENTES.md` H5.
 
 Así [175] se cumple al pie de la letra —el docente no ve un solo mensaje del chat— y [738]/[741] también, porque el seguimiento pedagógico se apoya en las recomendaciones, que es el artefacto que el propio informe describe como *pedagógico*. `TutorStrategiesTest::test_chat_history_never_appears_in_the_strategies_report` fija esa frontera como prueba automatizada.
 
@@ -438,3 +492,91 @@ Limitación honesta, que conviene declarar en el informe en vez de ocultar: **no
 - **Exportación a PDF (nº 4)** — el backend ya entrega las series de los tres gráficos y el CSV individual (§9.8). Queda que el frontend componga el documento.
 - **Estrategias del tutor en PDF (nº 10)** — backend resuelto (§9.8.2); queda el documento en el frontend.
 - **Prueba de carga (nº 8)** — medición pendiente sobre el despliegue real con Octane.
+
+⚠️ **Los números de párrafo de esta tabla y de toda la §9 están desfasados.** El `.docx` se editó después de escribirla. Equivalencias verificadas el 08/08/2026 en **§10.3**.
+
+---
+
+## 10. Contradicciones del informe
+
+> **Para qué es esta sección.** Dejar por escrito, con la cita y el número de párrafo, cada punto en el que el informe **se contradice a sí mismo** o **contradice al sistema entregado**, para que el equipo entre después a modificar el documento sin tener que volver a encontrarlas.
+>
+> No hay ninguna acción de código aquí: por el criterio de la cabecera, todas se resuelven escribiendo. Se separan las internas (§10.1) de las que enfrentan informe y sistema (§10.2) porque **las internas son las peligrosas en una defensa**: no hace falta abrir el repositorio para verlas, basta leer el propio informe.
+
+### 10.1 El informe contra sí mismo
+
+| # | Dónde | Una parte dice | La otra dice | Por qué choca |
+|---|---|---|---|---|
+| **C1** | [165] y [505] vs [173] | Objetivo específico: integrar el tutor «para generar sugerencias en tiempo real, dirigidas tanto a estudiantes **como a docentes**» | «recomendaciones … directamente al estudiantado. **El personal docente no verá mensajes individuales**: recibirá solo métricas agregadas» | Es una contradicción de **audiencia**, y pesa el doble porque una de las dos partes es un **objetivo específico del TFG**, que es lo que se evalúa como cumplido o no |
+| **C2** | [396] vs [173] | «El contenido producido por el tutor **será revisado periódicamente por el equipo docente** participante, para validar su pertinencia pedagógica» | «El personal docente **no verá mensajes individuales**» | No se puede revisar periódicamente el contenido que el propio informe prohíbe ver. Aparece en el capítulo de consideraciones éticas, que es donde más se nota |
+| **C3** | [737] y [739] vs [173] | «Generar **recomendaciones pedagógicas personalizadas por estudiante**» · «**Registrar interacciones del tutor** para seguimiento pedagógico» | ídem | Un seguimiento pedagógico sin acceso a nada individual no es accionable. **Esta es la única que el sistema ya resuelve**: ver §9.8.2 — la frontera real es *conversación vs. recomendación*, no *alumno vs. docente* |
+| **C4** | [225] y [804] vs [296-297] y [417-418] | «El entorno de usuario fue construido con React … **y Next.js**» · «arquitectura general del sistema **en Next.js**. Los Server y Client Components…» | Los apartados de comparativa y de stack presentan React + TypeScript sin SSR | El informe describe **dos frontends distintos**. Además ninguno de los dos existe tal cual: es React 19 + Vite, sin Next.js (§9.1 nº 3) |
+| **C5** | [419-420] vs [228-229] y [415-416] | «La conexión y la manipulación de los datos se realizó con **node.js, que actúa como un intermediario** entre la base de datos y el backend» | Laravel como backend principal, con PostgreSQL | Dos rutas de datos incompatibles en el mismo documento. La real es Laravel→PDO→PostgreSQL, sin intermediario (§9.1 nº 1) |
+| **C6** | [236] vs [732] | «La plataforma **genera** informes descargables en PDF y CSV» (presente, como hecho consumado) | «**Exportar** reportes en formatos PDF y CSV» (listado como requisito por implementar) | El mismo entregable aparece como terminado en un capítulo y como pendiente en otro. Hoy la afirmación en presente es **parcialmente falsa**: CSV sí, PDF lo compone el frontend y todavía no existe |
+| **C7** | [390] vs [732-733] | «Documentación y reportes: **Se generó** reportes automáticos en PDF y CSV con gráficos explicativos» | ídem | Igual que C6, en el capítulo de metodología y en pasado. Es el tiempo verbal el que afirma de más |
+| **C8** | [173] vs [396] | Criterios de éxito medibles: «cero incidentes de PII», «**más del 75 % de mensajes que superen validación**» | La validación pedagógica se describe como revisión humana periódica | Los dos mecanismos de control se solapan sin decir cuál manda. Y el criterio del 75 % **hoy no es calculable**: ver §10.2 nº 6 |
+
+### 10.2 El informe contra el sistema entregado
+
+Se listan solo las que **no** están ya recogidas en §9.1 (stack tecnológico) para no duplicar.
+
+| # | Párrafo | El informe dice | El sistema hace | Corrección sugerida |
+|---|---|---|---|---|
+| 1 | [122], [222], [255], [737] | El tutor analiza los resultados del diagnóstico y **genera recomendaciones personalizadas** | En el submit las genera un `if/elseif/else` sobre el porcentaje, **sin IA**. OpenAI solo interviene si el alumno pulsa regenerar | **Es la contradicción más expuesta del TFG**, porque el tutor es el diferenciador del proyecto. Redactar el diseño real: heurística inmediata + refinamiento IA bajo demanda, justificado por concurrencia y coste. Alternativa: diferir la generación IA a la cola (código). Comparadas en `ESTADO_Y_PENDIENTES.md` §3.6 nº 1 |
+| 2 | [171] y [222] | Banco de ítems «con metadatos de **tema, indicador y dificultad**» · sugerencias «alineadas con los **indicadores curriculares**» | `questions` tiene `question_text`, `question_type`, `points`, `correct_answer_text`, `order_index`. **Ni tema, ni indicador, ni dificultad.** La única señal es `mastery_percentage` **por materia** | Recortar la granularidad prometida en [171], [222], [263] y [276], o añadir las columnas. Bloquea además el entregable del banco de 60 ítems |
+| 3 | [263] y [276] | Personalización por área concreta: «si un estudiante tiene dificultad en **comprensión de lectura**…» | La personalización real es «Español 45 %, Ciencias 78 %» | Consecuencia directa del nº 2. Reformular con el nivel de detalle que el sistema sí da: por materia |
+| 4 | Figura 10 [816] | El tutor entrega «**recursos personalizados**» | Corregido el 08/08/2026: filtra por rango de grado y prefiere dificultad básica. **Sigue sin poder acotar por materia**: `study_resources` no tiene `subject_id` | Describir la personalización por grado y dificultad, sin prometer por materia |
+| 5 | [397] | «**Cada vez que el tutor virtual intervenga**, el sistema informa claramente que las sugerencias provienen de un modelo de lenguaje automatizado» | La respuesta de `/ai/tutor/chat` es `{session_id, reply, message_count}`. No hay campo de aviso | O el aviso viaja en la respuesta (código), o el informe lo atribuye explícitamente a la interfaz. Hoy no lo dice ninguno de los dos |
+| 6 | [173] | «registrará incidencias» · criterio de éxito «más del 75 % de mensajes que superen validación» | Los bloqueos por PII o enlace no permitido solo dejan `Log::warning`. **No se persiste ni el total validado ni el bloqueado** | El criterio **no es demostrable** tal como está escrito. O se añade el contador, o se sustituye por uno que sí se pueda medir |
+| 7 | [173] | Recomendaciones «breves (**2–4 oraciones**)» | System prompt: «máximo 4 párrafos», 600 tokens (800 en modo práctica) | Ajustar la cifra del informe, o el prompt. La cifra del informe es la que se lee en la defensa |
+| 8 | [222] | «modelos **GPT-4** (variante ligera y de menor coste del sistema GPT-4 de OpenAI)» | `gpt-4o-mini`, que es variante de **GPT-4o**, no de GPT-4 | Nombrar el modelo exacto |
+| 9 | [758] | «Los tokens de sesión deben expirar tras **60 minutos** de inactividad» | `SANCTUM_TOKEN_EXPIRATION_MINUTES` = **12 h** | Aquí conviene **no** aplicar el criterio general: son cuentas de menores, posiblemente en equipos compartidos del centro. Es más defendible bajar la variable que relajar el requisito |
+| 10 | [771] | «La API debe documentarse con **OpenAPI 5.0**» | Esa versión **no existe**: la especificación va por 3.x, y lo generado es 3.0 | Corregir la versión |
+| 11 | [720] | «Asignar roles con diferentes permisos (**admin, docente, estudiante**)» | El enum `UserType` tiene **cuatro**: se suma `parent`, reservado y sin superficie de API | Documentar `parent` como previsión de diseño (§9.6) |
+
+### 10.3 ⚠️ Los números de párrafo de la §9 están desfasados
+
+El `.docx` se editó después de escribirse la §9, y todas sus referencias se corrieron. Equivalencias verificadas el 08/08/2026 con el fichero actual (`word/document.xml`, contando párrafos con texto):
+
+| §9 dice | Ahora es | Contenido |
+|---|---|---|
+| [137] / [154] | **[152] / [247]** | «recursos limitados», «interfaz que no exige grandes recursos» |
+| [175] | **[173]** | Tutor mínimo viable y frontera de privacidad del docente |
+| [205] | **[226]** | TypeScript y Tailwind |
+| [207] | **[228-229]** | Laravel como backend |
+| [210] | **[231]** | Node.js para tareas en segundo plano |
+| [212-213] | **[420]** | PostgreSQL como motor |
+| [215] | **[236]** | «informes descargables en PDF y CSV» |
+| [393-394] | **[415-416]** | Laravel |
+| [395-396] | **[417-418]** | React |
+| [398] | **[419-420]** | «Node.js y PostgreSQL (Gestión de Base de Datos)» |
+| [399-400] | **[421-422]** | «Next.js (Integración de servicios web)» |
+| [401-402] | **[426]** | OpenAI para el tutor |
+| [555] | **[589]** | Sprint 3, «Generar y devolver token JWT» |
+| [653] | **[695]** | Figura 2, Diagrama de clases |
+| [664] | **[720]** | Roles (admin, docente, estudiante) |
+| [734-735] | **[732-733]** | Exportar PDF/CSV · gráficos interactivos |
+| [738] | **[737]** | Recomendaciones pedagógicas personalizadas |
+| [740] | **[738]** | Descargar estrategias del tutor en PDF |
+| [741] | **[739]** | Registrar interacciones del tutor |
+| [684] | **[741]** | Módulo de Seguridad, «autenticación con JWT» |
+| [685] | **[742]** | Bcrypt |
+| [689] | **[746]** | Render / Railway |
+| [690] | **[747]** | Contenedores Docker |
+| [695-697] | **[753-755]** | Los tres requisitos de rendimiento |
+| [~700] | **[771]** | «OpenAPI 5.0» |
+
+Reproducible sin abrir Word:
+
+```python
+import zipfile, re
+x = zipfile.ZipFile('CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx').read('word/document.xml').decode('utf8')
+for i, p in enumerate(re.findall(r'<w:p[ >].*?</w:p>', x, re.S)):
+    t = ''.join(re.findall(r'<w:t(?:\s[^>]*)?>(.*?)</w:t>', p, re.S))
+    if t.strip():
+        print(f'[{i}] {t}')
+```
+
+> El `<w:t` del patrón lleva `(?:\s[^>]*)?` a propósito: con `[^>]*` a secas también casa `<w:tab .../>` y la extracción sale con XML crudo mezclado en el texto.
+
+**Recomendación para el equipo:** al corregir el documento, localizar cada pasaje **por su texto** —con Buscar— y no por el número de párrafo. Los índices se vuelven a desplazar en cuanto alguien añada un párrafo.

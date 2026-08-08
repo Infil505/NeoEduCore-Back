@@ -220,6 +220,7 @@
                                 "message": "Explícame qué es una fracción.",
                                 "session_id": null,
                                 "subject_id": null,
+                                "exam_id": null,
                                 "mode": "explain",
                                 "topic": "fracciones"
                             }
@@ -453,7 +454,7 @@
                     "01 · Auth y Sesión"
                 ],
                 "summary": "Login (AuthController)",
-                "description": "Controlador: `App\\Http\\Controllers\\AuthController@login`.",
+                "description": "Controlador: `App\\Http\\Controllers\\AuthController@login`. Limitado por `throttle:login`.",
                 "operationId": "post_api_auth_login",
                 "requestBody": {
                     "required": true,

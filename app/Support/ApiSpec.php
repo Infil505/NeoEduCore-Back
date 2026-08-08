@@ -237,7 +237,7 @@ final class ApiSpec
             'type' => 'action',
             'prompt' => 'Genera una recomendación breve de estudio.',
         ],
-        'POST api/ai/tutor/chat' => ['message' => 'Explícame qué es una fracción.', 'session_id' => null, 'subject_id' => null, 'mode' => 'explain', 'topic' => 'fracciones'],
+        'POST api/ai/tutor/chat' => ['message' => 'Explícame qué es una fracción.', 'session_id' => null, 'subject_id' => null, 'exam_id' => null, 'mode' => 'explain', 'topic' => 'fracciones'],
         'PATCH api/ai/tutor/sessions/{sessionId}/end' => [],
 
         // Usuarios

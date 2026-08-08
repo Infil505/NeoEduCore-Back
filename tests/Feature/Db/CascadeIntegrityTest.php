@@ -3,6 +3,7 @@
 namespace Tests\Feature\Db;
 
 use App\Models\Academic\Group;
+use App\Models\Academic\StudyResource;
 use App\Models\Academic\Subject;
 use App\Models\Admin\Institution;
 use App\Models\Admin\User;
@@ -192,6 +193,30 @@ class CascadeIntegrityTest extends TestCase
         $this->assertNull(DB::table('exams')->where('id', $e['exam']->id)->value('created_by_teacher_id'));
     }
 
+    /**
+     * Regresión: `study_resources.created_by` era la última FK a `users(id)` en
+     * NO ACTION, así que borrar a un docente que hubiera subido **un solo**
+     * recurso devolvía 500 — `UserController::destroy()` no maneja violaciones
+     * de FK, la excepción de PostgreSQL salía tal cual.
+     *
+     * El test anterior no lo veía porque `escenarioCompleto()` monta exámenes
+     * para el docente pero no recursos de estudio; es exactamente el mismo punto
+     * ciego que dejó pasar los 500 de `/subjects`, `/groups` y `/exams`.
+     */
+    public function test_deleting_a_teacher_keeps_the_study_resources_they_uploaded(): void
+    {
+        $recurso = StudyResource::factory()->create([
+            'institution_id' => $this->inst->id,
+            'created_by'     => $this->teacher->id,
+        ]);
+
+        $this->deleteJson("/api/users/{$this->teacher->id}")->assertSuccessful();
+
+        // El material queda en el centro; solo se pierde la autoría.
+        $this->assertTrue($this->existe('study_resources', 'id', $recurso->id));
+        $this->assertNull(DB::table('study_resources')->where('id', $recurso->id)->value('created_by'));
+    }
+
     /* =========================
      |  Integridad de la relación con students
      ========================= */
@@ -243,5 +268,70 @@ class CascadeIntegrityTest extends TestCase
             'is_correct'      => false,
             'points_awarded'  => 0,
         ]);
+    }
+
+    /**
+     * Las dos últimas columnas `institution_id` sin restricción.
+     *
+     * Quedaron fuera de `align_fk_constraints_with_tfg_model` porque el esquema de
+     * diseño del TFG tampoco las declaraba, y la decisión se anotó como abierta
+     * («coherencia vs. fidelidad al documento»). Al fijarse que **manda el sistema
+     * y el informe se ajusta**, la duda desaparece: se cierran como las otras.
+     */
+    public function test_exam_attempts_require_a_real_institution(): void
+    {
+        $e = $this->escenarioCompleto();
+
+        $this->expectException(\Illuminate\Database\QueryException::class);
+
+        DB::table('exam_attempts')->insert([
+            'id'              => (string) \Illuminate\Support\Str::orderedUuid(),
+            'institution_id'  => '00000000-0000-4000-8000-0000000000ff',
+            'exam_id'         => $e['exam']->id,
+            'student_user_id' => $e['studentUser']->id,
+            'attempt_number'  => 9,
+        ]);
+    }
+
+    public function test_student_progress_requires_a_real_institution(): void
+    {
+        $e = $this->escenarioCompleto();
+
+        $this->expectException(\Illuminate\Database\QueryException::class);
+
+        DB::table('student_progress')->insert([
+            'id'                 => (string) \Illuminate\Support\Str::orderedUuid(),
+            'institution_id'     => '00000000-0000-4000-8000-0000000000ff',
+            'student_user_id'    => $e['studentUser']->id,
+            'subject_id'         => $e['subject']->id,
+            'mastery_percentage' => 10,
+            'updated_at'         => now(),
+        ]);
+    }
+
+    /**
+     * Con `students.institution_id` y `group_students.institution_id` en NO ACTION,
+     * borrar una institución con alumnos habría fallado con 500 — el mismo fallo
+     * que costó descubrir en abril con materias, grupos y exámenes. Hoy no hay
+     * endpoint que lo dispare, y por eso se arregla ahora y no cuando lo haya.
+     */
+    public function test_deleting_an_institution_cascades_its_whole_tenant(): void
+    {
+        $e = $this->escenarioCompleto();
+        $institutionId = $this->inst->id;
+
+        DB::table('institutions')->where('id', $institutionId)->delete();
+
+        foreach (['students', 'group_students', 'exam_attempts', 'student_progress', 'exams', 'subjects', 'groups'] as $tabla) {
+            $this->assertFalse(
+                DB::table($tabla)->where('institution_id', $institutionId)->exists(),
+                "Quedaron filas de {$tabla} tras borrar la institución"
+            );
+        }
+
+        // `users.institution_id` es SET NULL, no CASCADE: dar de baja un centro no
+        // borra a las personas. Es deliberado y lo pide también el modelo del TFG.
+        $this->assertTrue($this->existe('users', 'id', $e['studentUser']->id));
+        $this->assertNull(DB::table('users')->where('id', $e['studentUser']->id)->value('institution_id'));
     }
 }

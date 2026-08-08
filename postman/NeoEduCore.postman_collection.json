@@ -2832,7 +2832,7 @@
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"message\": \"Explícame qué es una fracción.\",\n    \"session_id\": null,\n    \"subject_id\": null,\n    \"mode\": \"explain\",\n    \"topic\": \"fracciones\"\n}",
+                            "raw": "{\n    \"message\": \"Explícame qué es una fracción.\",\n    \"session_id\": null,\n    \"subject_id\": null,\n    \"exam_id\": null,\n    \"mode\": \"explain\",\n    \"topic\": \"fracciones\"\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"

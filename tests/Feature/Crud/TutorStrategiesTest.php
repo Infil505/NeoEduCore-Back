@@ -261,4 +261,59 @@ class TutorStrategiesTest extends TestCase
         $this->getJson('/api/reports/students/me/strategies?limit=0')->assertStatus(422);
         $this->getJson('/api/reports/students/me/strategies?limit=999')->assertStatus(422);
     }
+
+    /**
+     * Monta un alumno con una conversación con el tutor y devuelve su nombre.
+     */
+    private function alumnoQueUsoElTutor(Institution $institution): string
+    {
+        $studentUser = User::factory()->student()->create([
+            'institution_id' => $institution->id,
+            'full_name'      => 'Kevin Araya Mora',
+        ]);
+        Student::factory()->create([
+            'user_id'        => $studentUser->id,
+            'institution_id' => $institution->id,
+        ]);
+
+        AiChatSession::create([
+            'institution_id'  => $institution->id,
+            'student_user_id' => $studentUser->id,
+            'messages'        => [['role' => 'user', 'content' => 'hola']],
+        ]);
+
+        return $studentUser->full_name;
+    }
+
+    /**
+     * [173]: el docente «recibirá solo métricas agregadas», y los entregables del
+     * tutor incluyen «reportes anónimos». Un top 10 con nombre y propio y número
+     * de mensajes identifica a menores por su uso del tutor, así que no es ni
+     * agregado ni anónimo.
+     */
+    public function test_the_teacher_gets_aggregates_without_the_named_ranking(): void
+    {
+        $institution = Institution::factory()->create();
+        $this->signInTeacher(['institution_id' => $institution->id]);
+        $nombre = $this->alumnoQueUsoElTutor($institution);
+
+        $res = $this->getJson('/api/reports/ai/tutor-usage')->assertOk();
+
+        $res->assertDontSee($nombre);
+        $this->assertNull($res->json('data.top_students_by_usage'));
+        // Los agregados sí llegan: es lo que [173] sí le promete al docente.
+        $this->assertSame(1, $res->json('data.sessions.total_sessions'));
+    }
+
+    public function test_the_admin_still_gets_the_named_ranking(): void
+    {
+        $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
+        $nombre = $this->alumnoQueUsoElTutor($institution);
+
+        $res = $this->getJson('/api/reports/ai/tutor-usage')->assertOk();
+
+        $this->assertNotNull($res->json('data.top_students_by_usage'));
+        $res->assertSee($nombre);
+    }
 }

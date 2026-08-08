@@ -1323,6 +1323,14 @@ ALTER TABLE ONLY public.exam_attempts
 
 
 --
+-- Name: exam_attempts exam_attempts_institution_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_attempts
+    ADD CONSTRAINT exam_attempts_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
+
+
+--
 -- Name: exam_attempts exam_attempts_student_user_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1391,7 +1399,7 @@ ALTER TABLE ONLY public.group_students
 --
 
 ALTER TABLE ONLY public.group_students
-    ADD CONSTRAINT group_students_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id);
+    ADD CONSTRAINT group_students_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
 
 
 --
@@ -1491,6 +1499,14 @@ ALTER TABLE ONLY public.student_answers
 
 
 --
+-- Name: student_progress student_progress_institution_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_progress
+    ADD CONSTRAINT student_progress_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
+
+
+--
 -- Name: student_progress student_progress_student_user_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1535,7 +1551,7 @@ ALTER TABLE ONLY public.student_subjects
 --
 
 ALTER TABLE ONLY public.students
-    ADD CONSTRAINT students_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id);
+    ADD CONSTRAINT students_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
 
 
 --
@@ -1551,7 +1567,7 @@ ALTER TABLE ONLY public.students
 --
 
 ALTER TABLE ONLY public.study_resources
-    ADD CONSTRAINT study_resources_created_by_foreign FOREIGN KEY (created_by) REFERENCES public.users(id);
+    ADD CONSTRAINT study_resources_created_by_foreign FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --

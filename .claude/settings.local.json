@@ -188,7 +188,11 @@
       "Bash(grep -o \"'App\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\Services\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\Exams[^']*'\" vendor/composer/autoload_classmap.php)",
       "Bash(php -l tests/Feature/Db/Psr4ComplianceTest.php)",
       "Bash(mkdir -p app/pruebaCase)",
-      "Bash(printf '<?php\\\\n\\\\nnamespace App\\\\\\\\PruebaCase;\\\\n\\\\nclass ClaseMalUbicada {}\\\\n')"
+      "Bash(printf '<?php\\\\n\\\\nnamespace App\\\\\\\\PruebaCase;\\\\n\\\\nclass ClaseMalUbicada {}\\\\n')",
+      "Bash(python -c \"print\\('ok'\\)\")",
+      "Bash(PYTHONIOENCODING=utf8 python -c ' *)",
+      "Bash(php -l database/migrations/2026_08_08_000002_complete_tenant_fk_coherence.php)",
+      "Bash(git diff *)"
     ]
   }
 }

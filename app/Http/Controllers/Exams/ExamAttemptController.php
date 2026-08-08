@@ -337,21 +337,33 @@ class ExamAttemptController extends Controller
             return response()->json(['message' => 'El examen no tiene materia asociada'], 409);
         }
 
-        // Límite de regeneraciones (sin cambiar DB):
-        // Supongamos que por "generación" guardamos 4 recomendaciones.
-        // Permitimos 1 generación inicial + 3 regeneraciones = 4 generaciones en total.
-        $PER_GENERATION = 4;
+        // Límite: la generación automática del submit + 3 regeneraciones.
+        //
+        // `ai_recommendations` no tiene `attempt_id`, así que este intento se
+        // acota por tiempo: solo cuentan las generadas desde su entrega. Cada
+        // llamada —el submit y cada regeneración— escribe su lote con un mismo
+        // `generated_at`, de modo que contar instantes distintos cuenta
+        // generaciones y no filas.
+        //
+        // Antes era `ceil($total / 4)` sobre TODAS las del par (examen, materia),
+        // con dos errores a la vez: `generateFromAttempt` no guarda 4 filas sino
+        // 1 o 2 según el porcentaje, así que la división no contaba nada real; y
+        // sin corte temporal un segundo intento del mismo examen nacía con el
+        // cupo del primero ya gastado.
+        //
+        // `generated_at` tiene precisión de segundo: entregar y regenerar dentro
+        // del mismo segundo cuenta como una sola generación. El error va del lado
+        // permisivo y hace falta un cronometraje imposible a mano.
         $MAX_REGENS = 3;
 
-        $totalExisting = AiRecommendation::where('student_user_id', $user->id)
+        $generacionesPrevias = AiRecommendation::where('student_user_id', $user->id)
             ->where('exam_id', $attempt->exam_id)
             ->where('subject_id', $subjectId)
-            ->count();
+            ->where('generated_at', '>=', $attempt->submitted_at)
+            ->distinct()
+            ->count('generated_at');
 
-        $generationsSoFar = (int) ceil($totalExisting / $PER_GENERATION); // 1..n
-        $allowedGenerations = 1 + $MAX_REGENS;
-
-        if ($generationsSoFar >= $allowedGenerations) {
+        if ($generacionesPrevias >= 1 + $MAX_REGENS) {
             return response()->json([
                 'message' => 'Límite de regeneraciones alcanzado para este intento',
             ], 429);

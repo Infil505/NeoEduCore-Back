@@ -220,10 +220,24 @@ class ReportController extends Controller
      * - total de sesiones y mensajes
      * - sesiones activas vs cerradas
      * - top 5 tipos de recomendación más generados
-     * - distribución de uso por estudiante (top 10)
+     * - distribución de uso por estudiante (top 10) — **solo admin**
+     *
+     * **Por qué el docente no ve el ranking nominal.** [173] es explícito: el
+     * personal docente «recibirá solo métricas agregadas», y entre los
+     * entregables del tutor figuran «reportes anónimos». Un top 10 con el nombre
+     * de cada alumno y cuántos mensajes escribió al tutor no es un agregado
+     * anónimo: identifica a menores por su comportamiento de uso, que es
+     * justamente el dato que [394] se compromete a proteger.
+     *
+     * Se conserva para el admin, que es quien responde por los datos de la
+     * institución y lo necesita para detectar abuso o coste desbocado. Es la
+     * misma frontera que ya aplica `ReportStrategyService`: el docente accede al
+     * artefacto *pedagógico*, no al rastro de la conversación.
      */
     public function tutorUsage(Request $request)
     {
+        $esAdmin = $request->user()->user_type->value === 'admin';
+
         $sessions = AiChatSession::selectRaw(
             'COUNT(*) as total_sessions,
              COUNT(CASE WHEN ended_at IS NULL THEN 1 END) as active_sessions,
@@ -242,29 +256,32 @@ class ReportController extends Controller
                 'total' => (int) $r->total,
             ]);
 
-        $topStudentsByUsage = AiChatSession::select(
-                'student_user_id',
-                DB::raw('COUNT(*) as sessions'),
-                DB::raw('SUM(jsonb_array_length(messages)) as messages')
-            )
-            ->groupBy('student_user_id')
-            ->orderByDesc('messages')
-            ->limit(10)
-            ->with('student.user:id,full_name')
-            ->get()
-            ->map(fn ($s) => [
-                'student_user_id' => $s->student_user_id,
-                'full_name'       => $s->student?->user?->full_name ?? 'N/D',
-                'sessions'        => (int) $s->sessions,
-                'messages'        => (int) $s->messages,
-            ]);
+        $data = [
+            'sessions'                 => $sessions,
+            'top_recommendation_types' => $topRecommendationTypes,
+        ];
 
-        return response()->json([
-            'data' => [
-                'sessions'                => $sessions,
-                'top_recommendation_types' => $topRecommendationTypes,
-                'top_students_by_usage'   => $topStudentsByUsage,
-            ],
-        ]);
+        // La consulta ni siquiera se lanza para un docente: el dato no se
+        // calcula para luego filtrarlo, sencillamente no se pide.
+        if ($esAdmin) {
+            $data['top_students_by_usage'] = AiChatSession::select(
+                    'student_user_id',
+                    DB::raw('COUNT(*) as sessions'),
+                    DB::raw('SUM(jsonb_array_length(messages)) as messages')
+                )
+                ->groupBy('student_user_id')
+                ->orderByDesc('messages')
+                ->limit(10)
+                ->with('student.user:id,full_name')
+                ->get()
+                ->map(fn ($s) => [
+                    'student_user_id' => $s->student_user_id,
+                    'full_name'       => $s->student?->user?->full_name ?? 'N/D',
+                    'sessions'        => (int) $s->sessions,
+                    'messages'        => (int) $s->messages,
+                ]);
+        }
+
+        return response()->json(['data' => $data]);
     }
 }
