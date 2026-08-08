@@ -209,7 +209,15 @@ Salvaguardas de la migración:
 
 **Verificación en producción tras aplicar:** 6 FK apuntando a `students(user_id)`; datos intactos (65 estudiantes, 206 materias, 73 usuarios, 3 intentos).
 
-⚠️ **Las migraciones del 08/08/2026 —`study_resources_created_by_set_null` y `complete_tenant_fk_coherence`— todavía no se han aplicado a producción.** Al hacerlo: `php artisan migrate` → `php artisan schema:dump-sql` → commit de ambos. `database/sql/01_schema.sql` se editó a mano en las líneas afectadas para que los tests las vieran, así que la regeneración real desde la base sigue pendiente, y hay que hacerla sin perder el `ENABLE ROW LEVEL SECURITY` que añade Supabase.
+✅ **Las migraciones del 08/08/2026 —`study_resources_created_by_set_null` y `complete_tenant_fk_coherence`— están aplicadas en producción** (08/08/2026), y `01_schema.sql` se regeneró con `schema:dump-sql` desde la base real.
+
+Verificación posterior, consultada contra `pg_constraint`:
+
+- **47 FK**, las 5 tocadas con el `ON DELETE` esperado.
+- De las 18 columnas `institution_id`, **la única que no es `CASCADE` es `users` (`SET NULL`)**, que es lo deliberado.
+- Datos intactos: 2 instituciones, 73 usuarios, 65 estudiantes, 206 materias, 3 exámenes, 3 intentos, 6 filas de progreso, 4 recursos, 5 membresías — idénticos antes y después.
+- **`ENABLE ROW LEVEL SECURITY` conservado en las 24 tablas.** Era el riesgo real de regenerar el artefacto, y el dump sale de Supabase, así que lo trae.
+- 0 huérfanos en las dos comprobaciones previas de la migración.
 
 ---
 
