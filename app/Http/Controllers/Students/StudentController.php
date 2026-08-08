@@ -101,7 +101,15 @@ class StudentController extends Controller
         }
 
         $data = $request->validate([
-            'student_code'   => ['sometimes', 'string', 'max:40'],
+            // Único dentro de la institución, igual que la constraint
+            // `students_institucion_codigo_unique`. Sin esta regla, un código
+            // repetido no daba un 422 sino un 500 al chocar contra la base.
+            'student_code'   => [
+                'sometimes', 'string', 'max:40',
+                Rule::unique('students', 'student_code')
+                    ->where('institution_id', $request->user()->institution_id)
+                    ->ignore($student->user_id, 'user_id'),
+            ],
             'grade'          => ['sometimes', 'integer', 'between:' . self::GRADE_MIN . ',' . self::GRADE_MAX],
             'section'        => ['sometimes', 'string', Rule::in(self::VALID_SECTIONS)],
             'birth_date'     => ['nullable', 'date'],
@@ -341,17 +349,17 @@ class StudentController extends Controller
                 // huérfano —sin perfil de estudiante, capaz de autenticarse y
                 // con el email ya consumido—.
                 //
-                // `withoutGlobalScope('tenant')` a propósito: la constraint
-                // `students_student_code_unique` es GLOBAL, no por institución.
-                // Con la comprobación acotada al tenant, un código ya usado por
-                // otro centro pasaba el filtro y reventaba contra la base — y en
-                // Postgres una violación de constraint aborta la transacción
-                // entera, así que se perdía el archivo completo informando de un
-                // solo error de fila. El mensaje no dice de quién es el código:
-                // eso revelaría datos de otra institución.
+                // Acotado al tenant, que es lo que exige la constraint
+                // `students_institucion_codigo_unique (institution_id,
+                // student_code)`. Hasta el 08/08/2026 la constraint era global y
+                // esta comprobación no: un código ya usado por otro centro
+                // pasaba el filtro y reventaba contra la base, y como en
+                // PostgreSQL una violación aborta la transacción entera se
+                // perdía el archivo completo. Si se vuelven a separar, el
+                // síntoma es ese — comprobación y constraint tienen que hablar
+                // del mismo alcance.
                 if (!empty($row['student_code'])) {
-                    $duplicateQuery = Student::withoutGlobalScope('tenant')
-                        ->where('student_code', $row['student_code']);
+                    $duplicateQuery = Student::where('student_code', $row['student_code']);
                     if ($student) {
                         $duplicateQuery->where('user_id', '!=', $student->user_id);
                     }

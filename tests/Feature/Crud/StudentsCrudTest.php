@@ -103,6 +103,62 @@ class StudentsCrudTest extends TestCase
         $res->assertOk();
     }
 
+    /**
+     * `student_code` es único por institución: `PUT /students/{id}` debe dar 422
+     * y no un 500 al chocar contra la constraint. Antes no validaba nada.
+     */
+    public function test_update_rejects_a_student_code_already_used_in_the_institution(): void
+    {
+        $institution = Institution::factory()->create();
+        $teacher = $this->signInAdmin(['institution_id' => $institution->id]);
+
+        $ocupadoUser = User::factory()->student()->create(['institution_id' => $institution->id]);
+        Student::factory()->create([
+            'user_id'        => $ocupadoUser->id,
+            'institution_id' => $institution->id,
+            'student_code'   => 'EST-OCUPADO',
+        ]);
+
+        $otroUser = User::factory()->student()->create(['institution_id' => $institution->id]);
+        $otro = Student::factory()->create([
+            'user_id'        => $otroUser->id,
+            'institution_id' => $institution->id,
+            'student_code'   => 'EST-LIBRE',
+        ]);
+
+        $this->putJson("/api/students/{$otro->user_id}", ['student_code' => 'EST-OCUPADO'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('student_code');
+
+        // Conservar el propio código no es un duplicado de sí mismo.
+        $this->putJson("/api/students/{$otro->user_id}", ['student_code' => 'EST-LIBRE'])
+            ->assertOk();
+    }
+
+    /** El mismo código en otra institución no estorba. */
+    public function test_update_allows_a_student_code_used_by_another_institution(): void
+    {
+        $otra = Institution::factory()->create();
+        $ajenoUser = User::factory()->student()->create(['institution_id' => $otra->id]);
+        Student::factory()->create([
+            'user_id'        => $ajenoUser->id,
+            'institution_id' => $otra->id,
+            'student_code'   => 'EST-AJENO',
+        ]);
+
+        $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
+
+        $mioUser = User::factory()->student()->create(['institution_id' => $institution->id]);
+        $mio = Student::factory()->create([
+            'user_id'        => $mioUser->id,
+            'institution_id' => $institution->id,
+        ]);
+
+        $this->putJson("/api/students/{$mio->user_id}", ['student_code' => 'EST-AJENO'])
+            ->assertOk();
+    }
+
     public function test_set_student_status(): void
     {
         $institution = Institution::factory()->create();

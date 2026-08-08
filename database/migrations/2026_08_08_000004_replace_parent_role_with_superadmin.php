@@ -29,6 +29,14 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // `migrate:fresh` sin `--drop-types` borra las tablas pero NO los tipos,
+        // así que en un rebuild local el enum puede venir ya convertido de la
+        // corrida anterior. Si ya no tiene 'parent', no hay nada que hacer — y
+        // consultarlo daría «sintaxis de entrada no válida para el enum».
+        if (!$this->enumTieneValor('user_type', 'parent')) {
+            return;
+        }
+
         // Cinturón: si alguien creó un `parent` entre el análisis y el despliegue,
         // la migración para en vez de perder la fila en el cast.
         $parents = DB::table('users')->where('user_type', 'parent')->count();
@@ -54,6 +62,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (!$this->enumTieneValor('user_type', 'superadmin')) {
+            return;
+        }
+
         // Al revertir, un superadmin no tiene equivalente: se queda sin rol
         // válido, así que se bloquea igual que en el sentido contrario.
         $supers = DB::table('users')->where('user_type', 'superadmin')->count();
@@ -74,5 +86,17 @@ return new class extends Migration
 
         DB::statement('DROP TYPE user_type');
         DB::statement('ALTER TYPE user_type_viejo RENAME TO user_type');
+    }
+
+    /** ¿El enum nativo existe y contiene ese valor? */
+    private function enumTieneValor(string $tipo, string $valor): bool
+    {
+        return DB::selectOne(
+            'select 1 from pg_type t
+               join pg_enum e on e.enumtypid = t.oid
+              where t.typname = ? and e.enumlabel = ?
+              limit 1',
+            [$tipo, $valor]
+        ) !== null;
     }
 };

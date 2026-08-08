@@ -919,19 +919,19 @@ ALTER TABLE ONLY public.student_subjects
 
 
 --
+-- Name: students students_institucion_codigo_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT students_institucion_codigo_unique UNIQUE (institution_id, student_code);
+
+
+--
 -- Name: students students_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.students
     ADD CONSTRAINT students_pkey PRIMARY KEY (user_id);
-
-
---
--- Name: students students_student_code_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.students
-    ADD CONSTRAINT students_student_code_unique UNIQUE (student_code);
 
 
 --

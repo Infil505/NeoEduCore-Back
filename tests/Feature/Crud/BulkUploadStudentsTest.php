@@ -337,19 +337,15 @@ class BulkUploadStudentsTest extends TestCase
     }
 
     /**
-     * Regresión: `students_student_code_unique` es una constraint **global**,
-     * pero la comprobación de duplicados iba acotada al tenant. Un código ya
-     * usado por otro centro pasaba el filtro, reventaba contra la base y —en
-     * Postgres una violación aborta la transacción entera— se perdía el archivo
-     * completo, incluidas las filas correctas.
-     *
-     * Ahora la fila se rechaza limpiamente y el resto del archivo se procesa.
+     * `student_code` es único **por institución** desde el 08/08/2026. Dos
+     * centros pueden numerar «EST-0001» cada uno: es un identificador interno
+     * suyo, no de la plataforma.
      */
-    public function test_a_student_code_used_by_another_institution_is_rejected_without_losing_the_batch(): void
+    public function test_two_institutions_can_use_the_same_student_code(): void
     {
         Mail::fake();
 
-        $otra = Institution::factory()->create();
+        $otra  = Institution::factory()->create();
         $ajeno = User::factory()->student()->create(['institution_id' => $otra->id]);
         Student::factory()->create([
             'user_id'        => $ajeno->id,
@@ -362,20 +358,118 @@ class BulkUploadStudentsTest extends TestCase
         $aula = $this->aula($institution, 'DUP2026');
 
         $csv = self::HEADER . "\n"
-            . "Choca Con Otra,choca@ejemplo.com,,EST-COMPARTIDO,DUP2026,active,,,,\n"
-            . "Fila Buena,buena@ejemplo.com,,EST-BUENA,DUP2026,active,,,,\n";
+            . "Mismo Codigo Otro Centro,compartido@ejemplo.com,,EST-COMPARTIDO,DUP2026,active,,,,\n";
+
+        $res = $this->uploadCsv($csv);
+
+        $res->assertOk();
+        $res->assertJson(['created' => 1, 'skipped' => 0]);
+
+        $nuevo = User::where('email', 'compartido@ejemplo.com')->first();
+        $this->assertDatabaseHas('students', [
+            'user_id'        => $nuevo->id,
+            'institution_id' => $institution->id,
+            'student_code'   => 'EST-COMPARTIDO',
+        ]);
+
+        // El del otro centro sigue intacto.
+        $this->assertDatabaseHas('students', [
+            'user_id'      => $ajeno->id,
+            'student_code' => 'EST-COMPARTIDO',
+        ]);
+    }
+
+    /**
+     * Dentro del mismo centro sí choca, y el rechazo tiene que ser limpio: la
+     * fila se salta y el resto del archivo se guarda.
+     *
+     * Ojo con el montaje: `student_code` es también **columna identificadora**,
+     * así que una fila que solo lleve un código existente no es un duplicado
+     * sino una actualización de ese estudiante. La colisión de verdad es esta:
+     * la fila identifica al estudiante A (por su `user_id`) pero le pone el
+     * código que ya tiene B.
+     *
+     * Regresión doble. Antes (a) la comprobación no coincidía con la constraint
+     * y la violación abortaba la transacción entera de PostgreSQL, perdiendo el
+     * archivo completo; y (b) la cuenta se creaba antes de validar el código,
+     * así que una fila rechazada dejaba un usuario huérfano.
+     */
+    public function test_a_duplicate_student_code_in_the_same_institution_is_skipped_cleanly(): void
+    {
+        Mail::fake();
+
+        $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
+        $aula = $this->aula($institution, 'MISMO2026');
+
+        // B ya tiene el código que A va a intentar tomar.
+        $bUser = User::factory()->student()->create(['institution_id' => $institution->id]);
+        Student::factory()->create([
+            'user_id'        => $bUser->id,
+            'institution_id' => $institution->id,
+            'student_code'   => 'EST-DE-B',
+        ]);
+
+        // A existe y se identifica por su user_id.
+        $aUser = User::factory()->student()->create(['institution_id' => $institution->id]);
+        Student::factory()->create([
+            'user_id'        => $aUser->id,
+            'institution_id' => $institution->id,
+            'student_code'   => 'EST-DE-A',
+        ]);
+
+        $csv = self::HEADER . "\n"
+            . ",,{$aUser->id},EST-DE-B,MISMO2026,active,,,,\n"
+            . "Fila Buena,buena@ejemplo.com,,EST-BUENA,MISMO2026,active,,,,\n";
 
         $res = $this->uploadCsv($csv);
 
         $res->assertOk();
         $res->assertJson([
             'created' => 1,   // la fila correcta SÍ se guarda
+            'updated' => 0,
             'skipped' => 1,
         ]);
 
-        $this->assertDatabaseMissing('users', ['email' => 'choca@ejemplo.com']);
+        // A conserva su código: la fila se rechazó entera.
+        $this->assertDatabaseHas('students', [
+            'user_id'      => $aUser->id,
+            'student_code' => 'EST-DE-A',
+        ]);
         $this->assertDatabaseHas('users', ['email' => 'buena@ejemplo.com']);
         $this->assertSame(1, (int) $aula->fresh()->student_count);
+    }
+
+    /**
+     * Y el usuario huérfano: una fila nueva rechazada por código duplicado no
+     * debe dejar la cuenta creada, con el correo ya consumido y sin perfil.
+     */
+    public function test_a_rejected_new_row_does_not_leave_an_orphan_user(): void
+    {
+        Mail::fake();
+
+        $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
+        $this->aula($institution, 'HUERFANO2026');
+
+        $bUser = User::factory()->student()->create(['institution_id' => $institution->id]);
+        Student::factory()->create([
+            'user_id'        => $bUser->id,
+            'institution_id' => $institution->id,
+            'student_code'   => 'EST-TOMADO',
+        ]);
+
+        // Fila NUEVA (email sin usuario) que intenta tomar un código ocupado.
+        // Se resuelve como actualización de B por student_code, así que para
+        // provocar el rechazo se identifica por email nuevo Y código ajeno:
+        // el estudiante resuelto es B, pero el email no coincide con el suyo.
+        $csv = self::HEADER . "\n"
+            . "Nueva Persona,huerfano@ejemplo.com,{$bUser->id},EST-TOMADO,HUERFANO2026,active,,,,\n";
+
+        $this->uploadCsv($csv)->assertOk();
+
+        // El correo nuevo no se llegó a consumir en ningún caso.
+        $this->assertDatabaseMissing('users', ['email' => 'huerfano@ejemplo.com']);
     }
 
     /** Un aula de otra institución no es resoluble aunque se sepa su código. */
