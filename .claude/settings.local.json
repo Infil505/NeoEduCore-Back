@@ -181,7 +181,14 @@
       "Bash(php -l tests/Feature/Auth/PasswordResetTest.php)",
       "Bash(php -l app/Providers/AppServiceProvider.php)",
       "Bash(grep -n \"protected\\\\|public static function\\\\|static \\\\$\" vendor/laravel/framework/src/Illuminate/Http/Middleware/TrustProxies.php)",
-      "Bash(awk '{print $1}')"
+      "Bash(awk '{print $1}')",
+      "Bash(grep -c \"App\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\Services\" vendor/composer/autoload_classmap.php)",
+      "Bash(grep -o \"'App\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\Services[^']*'\" vendor/composer/autoload_classmap.php)",
+      "Bash(git mv *)",
+      "Bash(grep -o \"'App\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\Services\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\Exams[^']*'\" vendor/composer/autoload_classmap.php)",
+      "Bash(php -l tests/Feature/Db/Psr4ComplianceTest.php)",
+      "Bash(mkdir -p app/pruebaCase)",
+      "Bash(printf '<?php\\\\n\\\\nnamespace App\\\\\\\\PruebaCase;\\\\n\\\\nclass ClaseMalUbicada {}\\\\n')"
     ]
   }
 }

@@ -99,7 +99,7 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 
 ### ✅ Ciclo académico — reasignación masiva y repitentes
 - Rutas (**admin-only**, `throttle:10,1`): `POST /api/bulk/reassign-group`, `POST /api/bulk/reassign-subjects`, `POST /api/bulk/reset-progress`
-- Lógica en `app/services/Academic/BulkReassignmentService.php`; el controlador solo valida y traduce a HTTP
+- Lógica en `app/Services/Academic/BulkReassignmentService.php`; el controlador solo valida y traduce a HTTP
 - Cubre el ciclo completo de fin de año: promoción, repitentes, alumnos nuevos y plan de materias
 - **Repitentes:** `reset-progress` marca `student_progress.reset_at`, y `StudentProgressService::recalcFromAttempts` ignora los intentos anteriores al corte. Sin esa marca el reseteo se desharía en el siguiente examen. El historial de intentos **no** se borra
 - Todo transaccional (lote entero o nada); los ids desconocidos vuelven en `skipped` sin abortar
