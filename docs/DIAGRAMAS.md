@@ -40,8 +40,8 @@ node validar.mjs docs/DIAGRAMAS.md
 Si cambia el esquema, las cifras de la §1 se recomprueban con:
 
 ```bash
-grep -c "ADD CONSTRAINT .* FOREIGN KEY" database/sql/01_schema.sql   # 47
-grep -c "^CREATE TABLE public\."        database/sql/01_schema.sql   # 24 (19 dominio + 5 framework)
+grep -c "ADD CONSTRAINT .* FOREIGN KEY" database/sql/01_schema.sql   # 51
+grep -c "^CREATE TABLE public\."        database/sql/01_schema.sql   # 25 (20 dominio + 5 framework)
 ```
 
 ---
@@ -66,9 +66,9 @@ grep -c "^CREATE TABLE public\."        database/sql/01_schema.sql   # 24 (19 do
 quedan 5 tablas de framework (`migrations`, `jobs`, `failed_jobs`, `password_reset_tokens`,
 `personal_access_tokens`), que no son del dominio.
 
-Va en **cuatro vistas**, y no por capricho de maquetación: un ERD de 19 entidades con todos
+Va en **cuatro vistas**, y no por capricho de maquetación: un ERD de 20 entidades con todos
 sus atributos es ilegible a cualquier tamaño. La §1.1 da la forma completa del modelo; las
-§1.2 a §1.4 entran al detalle por área. Entre las tres detalladas están las 19 tablas, sin
+§1.2 a §1.4 entran al detalle por área. Entre las tres detalladas están las 20 tablas, sin
 repetir ninguna.
 
 En las cuatro **se omiten las aristas de `institution_id`**: las lleva *toda* tabla de dominio

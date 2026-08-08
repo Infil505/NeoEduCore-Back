@@ -217,8 +217,8 @@ node validar.mjs docs/DIAGRAMAS.md
 <code>Object.defineProperty</code>, no con una asignación directa.</p>
 </blockquote>
 <p>Si cambia el esquema, las cifras de la §1 se recomprueban con:</p>
-<pre><code class="language-bash">grep -c &quot;ADD CONSTRAINT .* FOREIGN KEY&quot; database/sql/01_schema.sql   # 47
-grep -c &quot;^CREATE TABLE public\.&quot;        database/sql/01_schema.sql   # 24 (19 dominio + 5 framework)
+<pre><code class="language-bash">grep -c &quot;ADD CONSTRAINT .* FOREIGN KEY&quot; database/sql/01_schema.sql   # 51
+grep -c &quot;^CREATE TABLE public\.&quot;        database/sql/01_schema.sql   # 25 (20 dominio + 5 framework)
 </code></pre>
 <hr />
 <h2>Índice</h2>
@@ -238,9 +238,9 @@ grep -c &quot;^CREATE TABLE public\.&quot;        database/sql/01_schema.sql   #
 <p><strong>20 tablas de dominio</strong> — 15 entidades y 5 pivotes — con <strong>51 claves foráneas</strong>. Aparte
 quedan 5 tablas de framework (<code>migrations</code>, <code>jobs</code>, <code>failed_jobs</code>, <code>password_reset_tokens</code>,
 <code>personal_access_tokens</code>), que no son del dominio.</p>
-<p>Va en <strong>cuatro vistas</strong>, y no por capricho de maquetación: un ERD de 19 entidades con todos
+<p>Va en <strong>cuatro vistas</strong>, y no por capricho de maquetación: un ERD de 20 entidades con todos
 sus atributos es ilegible a cualquier tamaño. La §1.1 da la forma completa del modelo; las
-§1.2 a §1.4 entran al detalle por área. Entre las tres detalladas están las 19 tablas, sin
+§1.2 a §1.4 entran al detalle por área. Entre las tres detalladas están las 20 tablas, sin
 repetir ninguna.</p>
 <p>En las cuatro <strong>se omiten las aristas de <code>institution_id</code></strong>: las lleva <em>toda</em> tabla de dominio
 y saturarían la figura. Van en la <a href="#2-aislamiento-multi-tenant">§2</a>, que es donde además
