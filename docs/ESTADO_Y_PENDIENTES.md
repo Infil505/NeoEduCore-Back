@@ -47,7 +47,11 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 
 **Multi-tenancy:** cada request autenticado inyecta `institution_id` via `SetTenantFromAuth`, activando el scope `TenantScoped` en todos los modelos. Si el scope detecta contexto HTTP sin `institution_id`, lanza `RuntimeException` (detección temprana de bugs de configuración).
 
-**RBAC:** middleware `RequireRole` valida roles por ruta. Roles: `admin`, `teacher`, `student`, `parent`.
+**RBAC:** middleware `RequireRole` valida roles por ruta. Roles: `superadmin`, `admin`, `teacher`, `student` (el rol `parent` se retiró el 08/08/2026).
+
+- **`superadmin`** es el operador de la plataforma y **no pertenece a ninguna institución**: su `institution_id` es `NULL`. Su alcance se agota en dos CRUD —instituciones y sus administradores— y el aislamiento no depende del middleware: sin `institution_id` nunca se vincula `tenant_id`, así que toda consulta a un modelo `TenantScoped` falla para él. Se crea solo por consola (`php artisan superadmin:create`); ninguna ruta de API lo permite.
+- **`admin`** gestiona su centro. Desde el 08/08/2026 **no tiene ninguna ruta hacia `/api/institutions`** (antes listaba todos los centros del SaaS); su institución la configura por `GET`/`PUT /api/system/config`.
+- **`teacher`** ve exclusivamente los grupos que el admin le haya asignado en `teacher_assignments`, y solo en las materias que imparte. Ver §2 «Asignación de docentes».
 
 ---
 
@@ -74,9 +78,32 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 
 ---
 
-### ✅ Instituciones
-- CRUD completo
-- Ruta: `/api/institutions`
+### ✅ Instituciones — **solo superadmin** (desde 08/08/2026)
+- CRUD completo: `GET`/`POST`/`GET {id}`/`PUT`/`DELETE` + `PATCH {id}/toggle`
+- Ruta: `/api/institutions` — **cerrada al admin de institución**. Antes estaba bajo `role:admin` y `index()` no filtraba por institución, de modo que el administrador de un centro listaba **todos los centros del SaaS** con su código, dirección y contacto
+- El admin de institución configura lo suyo por `GET`/`PUT /api/system/config`
+- `DELETE /api/institutions/{id}` — **irreversible**: cascada a las 18 tablas de dominio del centro (estudiantes, exámenes, intentos, resultados). Los `users` se borran **a mano y primero** en el controlador, porque `users.institution_id` es `ON DELETE SET NULL` y la cascada sola dejaría cuentas vivas sin institución —e indistinguibles del superadmin por ese campo—. Deja `Log::warning` con quién borró qué, que es la única traza que queda
+
+---
+
+### ✅ Administradores de institución — **solo superadmin** (desde 08/08/2026)
+- `POST /api/institutions/{institution}/admins` — el alta cuelga de la institución porque un admin no existe fuera de un centro. La cuenta nace **inactiva** y recibe el enlace para definir contraseña: nadie, tampoco el superadmin, llega a conocerla
+- `GET`/`PUT`/`DELETE /api/institution-admins/{id}` + `PATCH .../status` y `.../reset-password`
+- Todos los métodos filtran por `user_type = admin` y devuelven **404** fuera de eso: sin ese filtro las mismas rutas servirían para leer o modificar cuentas de estudiantes de cualquier centro
+- No se puede eliminar al **único** administrador de una institución (409): dejaría el centro sin quien lo gestione
+- El superadmin **se crea solo por consola**: `php artisan superadmin:create --email=... --name="..."`. Ninguna ruta de API lo permite, y `/register` solo acepta roles de institución para que un admin de centro no pueda fabricarse uno
+
+---
+
+### ✅ Asignación de docentes — `teacher_assignments` (desde 08/08/2026)
+- Rutas **admin-only**: `GET`/`POST /api/teacher-assignments`, `DELETE /api/teacher-assignments/{id}` y `DELETE /api/teacher-assignments/bulk`
+- `POST` crea el producto **grupo × materia** (2 grupos × 3 materias = 6 filas) y es idempotente: repetir la llamada no duplica ni reinicia `assigned_at`
+- **Es la única fuente de la relación docente↔estudiante.** Antes se derivaba de `exams.created_by_teacher_id` → `exam_targets` → `group_students`, y como `ExamController::store()` solo validaba el tenant, bastaba un examen en `draft` dirigido a cualquier grupo para concederse acceso a su alumnado. Cuatro endpoints (`reports/students/{id}/history`, `/summary`, `/strategies` y `analytics/students/{id}`) no comprobaban **nada**
+- La regla vive en **un solo sitio**, el trait `App\Http\Controllers\Concerns\AcotaAlDocente`. Cualquier endpoint nuevo que exponga datos de estudiantes debe usarlo
+- **Membresía activa** (`left_at IS NULL`): quien deja el grupo deja de ser visible para ese docente, historial incluido. Es lo contrario de `Exam::scopeVisibleTo()`, y a propósito — allí la pregunta es «¿puede presentar el examen?»
+- Alcance por **materia**: dar Matemáticas en 7-A no da acceso a los datos de Lengua del mismo alumno
+- Crear o editar un examen apuntando a un grupo sin asignación **en esa materia** devuelve **403** con `grupos_no_asignados`, y se valida antes de crear para no dejar exámenes huérfanos
+- ⚠️ **La tabla nace vacía a propósito**: al desplegar, ningún docente ve estudiantes hasta que el admin cargue las asignaciones. Se descartó derivarlas de los `exam_targets` existentes justamente para no replicar el acceso que se quería revisar
 
 ---
 
@@ -90,8 +117,9 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 
 ### ✅ Grupos
 - CRUD completo + asignación/baja de estudiantes (upsert batch)
-- Ruta: `/api/groups`
-- `POST`/`DELETE /api/groups/{group}/students` — alta y baja **lógica** (`left_at`) por lista de ids. La baja conserva la fila como historial
+- Ruta: `/api/groups` — para un **docente**, `index` devuelve solo sus grupos asignados y `show` responde **403** fuera de ellos (`show` entrega la lista nominal del aula, que es lo que más directamente expone alumnado ajeno)
+- `POST`/`DELETE /api/groups/{group}/students` — **admin-only desde el 08/08/2026**. Alta y baja **lógica** (`left_at`) por lista de ids; la baja conserva la fila como historial. Pasó a admin-only porque un docente capaz de matricular alumnos en su propio grupo ampliaría su alcance por el otro extremo de la cadena
+- `groups.group_code` es el **«aula»** que exige la carga masiva de estudiantes
 - `student_count` se recalcula en cada alta/baja (RN-STU-012)
 - `DELETE /api/groups/{id}` — cascada DB: membresías (`group_students`) y asignaciones de examen (`exam_targets`). Los estudiantes y exámenes NO se eliminan.
 
@@ -111,7 +139,16 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 - List, show, update, me, set-status, bulk-upload (CSV/XLSX hasta 5000 filas)
 - Campo `learning_style` (ENUM: `visual`/`auditivo`/`lector`) para adaptar tutor IA
 - PK = `user_id` (no `id`)
-- Ruta: `/api/students`
+- Ruta: `/api/students` — para un **docente**, acotada a los estudiantes de sus grupos asignados (403 fuera de ellos). Antes devolvía el padrón completo de la institución a cualquier docente
+- **`student_code` es único por institución** (`students_institucion_codigo_unique`), desde el 08/08/2026. Era único globalmente, lo que impedía que dos centros numeraran «EST-0001» cada uno siendo códigos internos suyos
+
+**Carga masiva — columna `aula` obligatoria (08/08/2026).** La plantilla cambió: fuera `grade`, `section` y `group_code`; dentro **`aula`**, que lleva el `group_code` de un grupo **ya existente**.
+
+- **Matricula de verdad**: crea la fila en `group_students`. Antes solo escribía `section` en la ficha, una etiqueta de texto — el alumno quedaba sin matrícula y, con el modelo de asignaciones, invisible para todo docente, sin recibir exámenes y fuera de informes
+- **El traslado solo ocurre al actualizar**: volver a subir la fila con otra aula cierra la matrícula anterior con `left_at` y abre la nueva. La respuesta informa de `matriculados`, `reasignados` y `aulas_afectadas` por separado, porque un traslado cambia qué docente ve ese expediente
+- `grade`, `section` y `group_code` de la ficha se **derivan del aula** y ya no se aceptan del archivo, para que no puedan contradecir la matrícula
+- **El archivo no crea aulas**: un typo en el código generaría un grupo fantasma con un alumno dentro, invisible para el docente que sí tiene asignada la buena. Si la institución no tiene ningún grupo con código, el archivo se rechaza entero
+- Dos detalles no obvios: `student_code` es también **columna identificadora**, así que una fila con un código existente **actualiza** a ese estudiante en vez de chocar; y la validación del código va **antes** del alta de cuenta, para que una fila rechazada no deje un usuario huérfano con el correo consumido
 
 ---
 
@@ -599,6 +636,39 @@ las columnas a `questions` (y llevarlas al ERD nuevo) o recortar la promesa en [
 
 > **Nota (resuelta 31/07/2026):** al generar la colección se detectó que `GroupController::addStudents()` y `removeStudents()` existían pero **no estaban enrutados**. Ya lo están (`POST`/`DELETE /api/groups/{group}/students`) — ver sesión 31/07/2026, G4.
 
+### Sesión 08/08/2026 (tarde) — Permisos: la relación docente↔estudiante, los roles y la matrícula
+
+> Origen: explicar al usuario cómo estaba modelada la asignación estudiante-profesor. No era
+> una auditoría — el hallazgo salió de leer el código para responder. Suite: **357/357**
+> (antes 305). Tres migraciones aplicadas a producción (lotes 17, 18 y 19).
+
+**Es el quinto hallazgo de seguridad por rol de la serie, y el más de fondo:** los anteriores
+eran *campos de más en una respuesta*; este era **una relación que el modelo nunca llegó a
+tener**, sustituida por una inferencia que resultaba ser auto-otorgable.
+
+| # | Qué se encontró | Corrección |
+|---|---|---|
+| 1 | **No existía la relación docente↔estudiante.** Se derivaba de `exams.created_by_teacher_id` → `exam_targets` → `group_students`, y nada impedía apuntar un examen a un grupo ajeno: bastaba un **borrador** —invisible para el alumnado— para acceder al progreso, informes y recomendaciones de IA de cualquier grupo del centro | Tabla `teacher_assignments` (docente + grupo + materia), creada **solo por el admin**. Regla centralizada en el trait `AcotaAlDocente` |
+| 2 | **Cuatro endpoints sin ninguna comprobación**: `reports/students/{id}/history`, `/summary`, `/strategies` y `analytics/students/{id}` resolvían el alumno acotando solo por institución. Cualquier docente leía el historial completo de cualquier alumno | Acotados en `ReportController::findStudent()`, con el usuario como parámetro **obligatorio** para que un endpoint nuevo no pueda omitirlo en silencio |
+| 3 | **`GET /api/institutions` bajo `role:admin` y sin filtrar por institución**: el administrador de un centro listaba todos los centros del SaaS | Rol **`superadmin`**, externo a las instituciones. El admin de centro pierde toda ruta a `/api/institutions` |
+| 4 | **El rol `parent` seguía sin rutas ni filas** desde el diseño original | Retirado del enum. Su hueco lo ocupa `superadmin` |
+| 5 | **La carga masiva no matriculaba**: escribía `section` como etiqueta de texto y el alumno quedaba sin fila en `group_students` — invisible para todo docente y sin recibir exámenes | Columna **`aula` obligatoria**, que matricula al crear y traslada al actualizar |
+| 6 | **`student_code` era único globalmente**: dos centros no podían numerar «EST-0001» cada uno | `UNIQUE (institution_id, student_code)` |
+| 7 | La comprobación de duplicados de `student_code` **no coincidía con la constraint**, y en PostgreSQL una violación aborta la transacción entera: se **perdía el archivo de carga masiva completo** informando de un solo error de fila | Comprobación alineada con la constraint, con test de regresión que verifica que el resto del archivo sí se guarda |
+| 8 | La cuenta se creaba **antes** de validar el `student_code`: una fila rechazada dejaba un usuario huérfano, sin perfil y con el correo consumido | Validación movida delante del alta |
+
+**Lo defendible en el informe** es el patrón, no la lista: la ausencia de una entidad en el
+modelo de datos no es solo una omisión documental. El sistema la sustituye por lo que tenga a
+mano, y lo que tenía a mano era controlable por la parte a la que había que limitar.
+
+**Nota operativa:** `migrate:fresh` necesita `--drop-types` en local. Laravel borra las tablas
+pero **no los tipos** de PostgreSQL, así que el enum `user_type` sobrevive de la corrida
+anterior y la migración del superadmin falla con «sintaxis de entrada no válida para el enum».
+La migración ya es idempotente ante eso, pero el comando correcto para regenerar el esquema es
+`php artisan --env=testing migrate:fresh --drop-types --force`.
+
+---
+
 ### Sesión 08/08/2026 — Contraste con el informe: integridad, privacidad del tutor y personalización
 
 > Origen: revisión del `.docx` contra el código, centrada en **las relaciones** y en
@@ -743,9 +813,9 @@ las columnas a `questions` (y llevarlas al ERD nuevo) o recortar la promesa en [
 ### 📌 Pendientes abiertos (anotados 23/06/2026)
 
 - [x] ~~**`AuthController::register` sin transacción**~~ → **Resuelto 26/06/2026.** `User::create` + `Student::create` envueltos en `DB::transaction()` (atómico, no quedan huérfanos). De paso `/students/me` degrada elegante (200 con `data:null` en vez de 404).
-- [x] ~~**Rol `parent` sin superficie de API**~~ → **Decidido 26/06/2026.** Queda RESERVADO para un futuro portal de acudientes, pero se quitó la auto-detección por email (un email ya no crea un `parent` accidental sin rutas). El admin puede crearlo explícito con `user_type=parent`.
+- [x] ~~**Rol `parent` sin superficie de API**~~ → **Cerrado 08/08/2026: el rol se retiró.** La decisión del 26/06/2026 fue conservarlo como reserva para un futuro portal de acudientes, sin auto-detección por email. Al revisar los roles se comprobó que seguía sin rutas, sin controladores y **sin una sola fila en producción**, así que documentarlo como «previsión de diseño» era describir una intención y no el sistema. Su hueco en el enum lo ocupa ahora `superadmin`, que sí cubre una necesidad real (ver más abajo).
 - [x] ~~**`students/bulk-upload` confía en `user_id` sin verificar tenant**~~ → **Resuelto 23/06/2026 (E6).** Todas las búsquedas de usuario en bulk-upload ahora filtran por `institution_id` del actor.
-- [x] ~~**Rutas de asignación de estudiantes a grupo sin enrutar (30/06/2026)**~~ → **Resuelto 31/07/2026 (G4).** Se optó por (a): `POST`/`DELETE /api/groups/{group}/students` enrutados para admin+teacher. Los métodos se mantienen porque cubren la asignación puntual a *un* grupo; el movimiento *entre* grupos lo cubre `/api/bulk/reassign-group`. De paso se corrigió el `institution_id` faltante en el `upsert`.
+- [x] ~~**Rutas de asignación de estudiantes a grupo sin enrutar (30/06/2026)**~~ → **Resuelto 31/07/2026 (G4).** Se optó por (a): `POST`/`DELETE /api/groups/{group}/students` enrutados para admin+teacher. Los métodos se mantienen porque cubren la asignación puntual a *un* grupo; el movimiento *entre* grupos lo cubre `/api/bulk/reassign-group`. De paso se corrigió el `institution_id` faltante en el `upsert`. **Ajustado el 08/08/2026: pasaron a admin-only** — si el docente puede meter estudiantes en el grupo que tiene asignado, amplía su propio alcance por el otro extremo de la cadena.
 
 ### 📌 Pendientes abiertos (anotados 03/08/2026)
 

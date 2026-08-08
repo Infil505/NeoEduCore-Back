@@ -208,7 +208,9 @@
       "Bash(grep -n \"^use App\\\\\\\\\\\\\\\\Models\\\\\\\\\\\\\\\\Academic\\\\\\\\\\\\\\\\Group\" tests/Feature/Crud/AiRecommendationsTest.php)",
       "Bash(grep -n \"^use App\\\\\\\\\\\\\\\\Models\\\\\\\\\\\\\\\\Academic\\\\\\\\\\\\\\\\Group\" tests/Feature/Crud/TutorStrategiesTest.php)",
       "Bash(grep -n \"use App\\\\\\\\\\\\\\\\Models\\\\\\\\\\\\\\\\Academic\\\\\\\\\\\\\\\\Group\\\\|VALID_SECTIONS\\\\|GRADE_MIN\\\\|GRADE_MAX\" app/Http/Controllers/Students/StudentController.php)",
-      "Bash(php -l app/Http/Controllers/Students/StudentController.php)"
+      "Bash(php -l app/Http/Controllers/Students/StudentController.php)",
+      "Bash(grep -c '^```mermaid' docs/DIAGRAMAS.md)",
+      "Bash(npm i *)"
     ]
   }
 }
