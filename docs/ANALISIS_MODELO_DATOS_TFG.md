@@ -299,7 +299,9 @@ Estas afirmaciones son **falsas respecto al sistema entregado**. En una defensa 
 
 El índice de figuras [56-65] lista diez figuras: mapa conceptual, diagrama de clases, diagrama de proceso, flujo de examen, arquitectura en módulos, flujo de autenticación, arquitectura general, arquitectura del sistema, casos de uso y flujo de chatbot.
 
-**No hay diagrama entidad-relación ni modelo de datos**, pese a que el sistema tiene **15 entidades, 4 tablas pivote y 45 claves foráneas**. Para un TFG de sistema de información es una ausencia llamativa, y además es justo el capítulo que este documento permite redactar con solvencia.
+✅ **Los diagramas ya están dibujados** — [`DIAGRAMAS.md`](DIAGRAMAS.md), 08/08/2026: modelo entidad-relación, aislamiento multi-tenant, clases, arquitectura, y los flujos de autenticación, examen, tutor IA, casos de uso y ciclo académico. Derivados del código y verificados contra `01_schema.sql`. Queda incorporarlos al informe.
+
+**No había diagrama entidad-relación ni modelo de datos**, pese a que el sistema tiene **15 entidades, 4 tablas pivote y 47 claves foráneas**. Para un TFG de sistema de información es una ausencia llamativa, y además es justo el capítulo que este documento permite redactar con solvencia.
 
 > ⚠️ **Cifras corregidas el 08/08/2026.** Este apartado decía «17 entidades … 42 claves foráneas»: las 42 eran el conteo **previo** a la migración de §6, que añadió 3. El recuento verificado contra `database/sql/01_schema.sql` es **19 tablas de dominio** (15 entidades + 4 pivotes: `group_students`, `exam_targets`, `student_answer_options`, `student_subjects`) más 5 de framework, y **45 FK**. Desglose en `ESTADO_Y_PENDIENTES.md` §3.5.
 

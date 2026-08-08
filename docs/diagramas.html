@@ -1,0 +1,1462 @@
+<title>NeoEduCore — Diagramas del sistema</title>
+<style>:root {
+  color-scheme: light dark;
+  /* Neutros con sesgo frío hacia el acento: un gris puro leería como no elegido. */
+  --fondo: #fbfbfd;
+  --fondo-alt: #f2f3f7;
+  --tinta: #16181f;
+  --tinta-suave: #565b6b;
+  --borde: #d9dce6;
+  --acento: #2f4f8f;
+  --acento-suave: #eaeef8;
+  --aviso: #8a5200;
+  --aviso-fondo: #fdf4e3;
+  --ancho-prosa: 74ch;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #0f1117;
+    --fondo-alt: #171a22;
+    --tinta: #e6e8ef;
+    --tinta-suave: #9aa1b4;
+    --borde: #2a2f3c;
+    --acento: #8fadea;
+    --acento-suave: #1b2540;
+    --aviso: #e0a758;
+    --aviso-fondo: #2a2113;
+  }
+}
+:root[data-theme="dark"] {
+  --fondo: #0f1117; --fondo-alt: #171a22; --tinta: #e6e8ef;
+  --tinta-suave: #9aa1b4; --borde: #2a2f3c; --acento: #8fadea;
+  --acento-suave: #1b2540; --aviso: #e0a758; --aviso-fondo: #2a2113;
+}
+:root[data-theme="light"] {
+  --fondo: #fbfbfd; --fondo-alt: #f2f3f7; --tinta: #16181f;
+  --tinta-suave: #565b6b; --borde: #d9dce6; --acento: #2f4f8f;
+  --acento-suave: #eaeef8; --aviso: #8a5200; --aviso-fondo: #fdf4e3;
+}
+
+body {
+  background: var(--fondo);
+  color: var(--tinta);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
+  margin: 0;
+  padding: 0 1.25rem 6rem;
+  -webkit-text-size-adjust: 100%;
+}
+
+.cabecera, .prosa { max-width: var(--ancho-prosa); margin-inline: auto; }
+.cabecera { padding-top: 3.5rem; }
+.eyebrow {
+  font-size: .75rem; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--tinta-suave); margin: 0 0 .75rem;
+}
+
+/* Serif para los titulares: registro académico, que es el destino del documento. */
+h1, h2, h3 {
+  font-family: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+  font-weight: 600; text-wrap: balance; line-height: 1.2;
+}
+h1 { font-size: clamp(1.9rem, 1.4rem + 2.2vw, 2.7rem); margin: 0 0 .5rem; letter-spacing: -.015em; }
+h2 {
+  font-size: 1.6rem; margin: 3.5rem 0 1rem;
+  padding-bottom: .4rem; border-bottom: 2px solid var(--borde);
+}
+h3 { font-size: 1.18rem; margin: 2.25rem 0 .6rem; }
+.cabecera__sub { color: var(--tinta-suave); margin: 0 0 1.5rem; }
+
+p, li { max-width: var(--ancho-prosa); }
+a { color: var(--acento); text-underline-offset: .2em; }
+a:focus-visible, .btn:focus-visible {
+  outline: 2px solid var(--acento); outline-offset: 2px; border-radius: 3px;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: .875em; background: var(--fondo-alt);
+  padding: .12em .38em; border-radius: 4px;
+  border: 1px solid var(--borde);
+}
+pre code { border: 0; background: none; padding: 0; }
+pre:not(.mermaid) {
+  background: var(--fondo-alt); border: 1px solid var(--borde);
+  border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: .875rem;
+}
+
+blockquote {
+  margin: 1.5rem 0; padding: .9rem 1.1rem;
+  background: var(--aviso-fondo); border-left: 3px solid var(--aviso);
+  border-radius: 0 6px 6px 0;
+}
+blockquote > :first-child { margin-top: 0; }
+blockquote > :last-child { margin-bottom: 0; }
+
+.aviso { font-size: .9rem; color: var(--tinta-suave); }
+.aviso--nota {
+  background: var(--acento-suave); border: 1px solid var(--borde);
+  border-radius: 8px; padding: .8rem 1rem;
+}
+
+/* Las tablas son datos: cifras alineadas y desplazamiento propio. */
+.tabla-scroll { overflow-x: auto; margin: 1.5rem 0; }
+table {
+  border-collapse: collapse; width: 100%; font-size: .9rem;
+  font-variant-numeric: tabular-nums;
+}
+th, td {
+  border: 1px solid var(--borde); padding: .5rem .7rem;
+  text-align: left; vertical-align: top;
+}
+th { background: var(--fondo-alt); font-weight: 600; }
+
+/* ---- Figuras: rompen la columna de texto ---- */
+.figura {
+  --z: 1;
+  margin: 2rem calc((var(--ancho-prosa) - min(96vw, 1500px)) / 2);
+  max-width: min(96vw, 1500px);
+  width: min(96vw, 1500px);
+  border: 1px solid var(--borde); border-radius: 10px;
+  background: var(--fondo-alt); overflow: hidden;
+}
+@media (max-width: 900px) {
+  .figura { margin-inline: 0; width: 100%; max-width: 100%; }
+}
+.figura__barra {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
+  padding: .5rem .75rem; border-bottom: 1px solid var(--borde);
+  background: var(--fondo);
+}
+.figura__n {
+  font-size: .72rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--tinta-suave);
+}
+.figura__acciones { display: flex; gap: .3rem; align-items: center; }
+.btn {
+  font: inherit; font-size: .8rem; line-height: 1;
+  padding: .4rem .6rem; cursor: pointer;
+  background: var(--fondo); color: var(--tinta);
+  border: 1px solid var(--borde); border-radius: 6px;
+}
+.btn:hover { background: var(--acento-suave); border-color: var(--acento); }
+.btn--valor {
+  cursor: default; min-width: 3.6em; text-align: center;
+  font-variant-numeric: tabular-nums; color: var(--tinta-suave);
+}
+.btn--valor:hover { background: var(--fondo); border-color: var(--borde); }
+.btn[aria-pressed="true"] { background: var(--acento); color: var(--fondo); border-color: var(--acento); }
+
+.figura__lienzo {
+  overflow: auto; padding: 1.25rem;
+  background: var(--fondo);
+  zoom: var(--z);
+}
+/* Sin esto Mermaid encoge el SVG al ancho del contenedor y el diagrama
+   se vuelve ilegible: es exactamente el problema que resuelve la página. */
+.figura__lienzo svg { max-width: none !important; height: auto !important; }
+.figura .mermaid { margin: 0; text-align: left; }
+
+.figura--ampliada {
+  position: fixed; inset: 0; z-index: 50;
+  width: 100%; max-width: 100%; margin: 0; border-radius: 0;
+  display: flex; flex-direction: column;
+}
+.figura--ampliada .figura__lienzo { flex: 1; }
+body.hay-ampliada { overflow: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+@media print {
+  .figura__barra { display: none; }
+  .figura { break-inside: avoid; border-color: #999; }
+  body { padding: 0; }
+}</style>
+
+<header class="cabecera">
+  <p class="eyebrow">Documentación técnica · derivada del código</p>
+  <h1>NeoEduCore — Diagramas del sistema</h1>
+  <p class="cabecera__sub">16 diagramas · rama <code>Darwin</code> · 8 de agosto de 2026</p>
+  <p class="aviso aviso--nota">
+    Generado con <code>php artisan diagramas:html</code> desde
+    <code>docs/DIAGRAMAS.md</code>. Para cambiar un diagrama se edita el Markdown,
+    no esta página.
+  </p>
+</header>
+
+<main class="prosa">
+<p><strong>Generado el 8 de agosto de 2026, desde el código de la rama <code>Darwin</code>.</strong></p>
+<blockquote>
+<p>Estos diagramas describen el <strong>sistema construido</strong>, no el diseño previsto. Se derivan de
+<code>database/sql/01_schema.sql</code> (artefacto de <code>pg_dump</code> contra producción), <code>routes/api.php</code>,
+<code>app/Models/</code>, <code>app/Services/</code> y <code>app/Http/Controllers/</code>. Cuando el informe del TFG y esto
+no coincidan, manda esto: las divergencias están inventariadas en
+<a href="ANALISIS_MODELO_DATOS_TFG.md"><code>ANALISIS_MODELO_DATOS_TFG.md</code></a> §10.</p>
+<p><strong>Para el informe.</strong> Cubren las figuras 2 a 10 del índice de figuras y añaden el modelo
+entidad-relación, que el documento no tiene (§9.2 de aquel análisis).</p>
+</blockquote>
+<h2>Cómo se trabaja con este documento</h2>
+<p><strong>Este <code>.md</code> es la fuente.</strong> Los diagramas se escriben aquí una sola vez, en Mermaid.</p>
+<p><strong>Para verlos en grande hay una versión HTML</strong>, con cada figura a ancho completo, zoom y
+pantalla completa:</p>
+<pre><code class="language-bash">php artisan diagramas:html      # genera docs/diagramas.html
+</code></pre>
+<p><code>docs/diagramas.html</code> es un <strong>artefacto derivado</strong>, igual que <code>api-docs.json</code> o la colección
+de Postman: si se edita a mano, se pierde en la siguiente ejecución. Existe porque en la
+columna de texto Mermaid encoge el SVG para que quepa, y un ERD o un diagrama de clases se
+vuelve ilegible; la página los saca del flujo y les da desplazamiento y zoom.</p>
+<p><strong>Validación.</strong> Los diagramas se comprueban con el parser real de Mermaid, sin navegador:</p>
+<pre><code class="language-bash">npm i mermaid jsdom
+node validar.mjs docs/DIAGRAMAS.md
+</code></pre>
+<blockquote>
+<p>En Node 24 <code>globalThis.navigator</code> solo tiene <em>getter</em>, así que el JSDOM se inyecta con
+<code>Object.defineProperty</code>, no con una asignación directa.</p>
+</blockquote>
+<p>Si cambia el esquema, las cifras de la §1 se recomprueban con:</p>
+<pre><code class="language-bash">grep -c &quot;ADD CONSTRAINT .* FOREIGN KEY&quot; database/sql/01_schema.sql   # 47
+grep -c &quot;^CREATE TABLE public\.&quot;        database/sql/01_schema.sql   # 24 (19 dominio + 5 framework)
+</code></pre>
+<hr />
+<h2>Índice</h2>
+<ol>
+<li><a href="#1-modelo-entidad-relaci%C3%B3n">Modelo entidad-relación</a> — <a href="#11-mapa-de-relaciones">mapa</a> · <a href="#12-personas-y-estructura-acad%C3%A9mica">personas</a> · <a href="#13-evaluaci%C3%B3n">evaluación</a> · <a href="#14-seguimiento-tutor-ia-y-apoyo">seguimiento</a></li>
+<li><a href="#2-aislamiento-multi-tenant">Aislamiento multi-tenant</a></li>
+<li><a href="#3-diagrama-de-clases">Diagrama de clases</a> — <a href="#31-personas-estructura-y-los-traits-de-seguridad">personas y traits</a> · <a href="#32-evaluaci%C3%B3n">evaluación</a> · <a href="#33-seguimiento-ia-y-apoyo">seguimiento e IA</a></li>
+<li><a href="#4-arquitectura-del-backend">Arquitectura del backend</a></li>
+<li><a href="#5-flujo-de-autenticaci%C3%B3n">Flujo de autenticación</a></li>
+<li><a href="#6-flujo-de-examen">Flujo de examen</a></li>
+<li><a href="#7-flujo-del-tutor-ia">Flujo del tutor IA</a></li>
+<li><a href="#8-diagrama-de-casos-de-uso">Diagrama de casos de uso</a></li>
+<li><a href="#9-diagrama-de-proceso-el-ciclo-acad%C3%A9mico">Diagrama de proceso: el ciclo académico</a></li>
+</ol>
+<hr />
+<h2>1. Modelo entidad-relación</h2>
+<p><strong>19 tablas de dominio</strong> — 15 entidades y 4 pivotes — con <strong>47 claves foráneas</strong>. Aparte
+quedan 5 tablas de framework (<code>migrations</code>, <code>jobs</code>, <code>failed_jobs</code>, <code>password_reset_tokens</code>,
+<code>personal_access_tokens</code>), que no son del dominio.</p>
+<p>Va en <strong>cuatro vistas</strong>, y no por capricho de maquetación: un ERD de 19 entidades con todos
+sus atributos es ilegible a cualquier tamaño. La §1.1 da la forma completa del modelo; las
+§1.2 a §1.4 entran al detalle por área. Entre las tres detalladas están las 19 tablas, sin
+repetir ninguna.</p>
+<p>En las cuatro <strong>se omiten las aristas de <code>institution_id</code></strong>: las lleva <em>toda</em> tabla de dominio
+y saturarían la figura. Van en la <a href="#2-aislamiento-multi-tenant">§2</a>, que es donde además
+significan algo.</p>
+<h3>1.1 Mapa de relaciones</h3>
+<p>La forma completa del modelo, sin atributos. Es la figura para el informe cuando hace falta
+enseñar el conjunto de un vistazo.</p>
+<figure class="figura" id="figura-1">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 1</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 1">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 1">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">erDiagram
+    institutions ||--o{ users : &quot;&quot;
+    users ||--o| students : &quot;perfil académico&quot;
+    users ||--o{ exams : &quot;crea, SET NULL&quot;
+    users ||--o{ study_resources : &quot;publica, SET NULL&quot;
+    users ||--o{ calendar_events : &quot;SET NULL&quot;
+
+    students ||--o{ group_students : &quot;&quot;
+    groups ||--o{ group_students : &quot;&quot;
+    students ||--o{ student_subjects : &quot;&quot;
+    subjects ||--o{ student_subjects : &quot;&quot;
+
+    subjects ||--o{ exams : &quot;CASCADE&quot;
+    exams ||--o{ questions : &quot;CASCADE&quot;
+    questions ||--o{ question_options : &quot;CASCADE&quot;
+    exams ||--o{ exam_targets : &quot;CASCADE&quot;
+    groups ||--o{ exam_targets : &quot;CASCADE&quot;
+
+    students ||--o{ exam_attempts : &quot;presenta&quot;
+    exams ||--o{ exam_attempts : &quot;CASCADE&quot;
+    exam_attempts ||--o{ student_answers : &quot;CASCADE&quot;
+    questions ||--o{ student_answers : &quot;&quot;
+    student_answers ||--o{ student_answer_options : &quot;CASCADE&quot;
+    question_options ||--o{ student_answer_options : &quot;&quot;
+
+    students ||--o{ student_progress : &quot;domina&quot;
+    subjects ||--o{ student_progress : &quot;&quot;
+    students ||--o{ ai_recommendations : &quot;recibe&quot;
+    students ||--o{ ai_chat_sessions : &quot;conversa&quot;
+    exams ||--o{ ai_recommendations : &quot;SET NULL&quot;
+    exams ||--o{ ai_chat_sessions : &quot;SET NULL&quot;
+    exams ||--o{ calendar_events : &quot;SET NULL&quot;
+    groups ||--o{ calendar_events : &quot;SET NULL&quot;</pre>
+  </div>
+</figure>
+<h3>1.2 Personas y estructura académica</h3>
+<p>Quién es quién y cómo se agrupa. Las dos tablas pivote de aquí sostienen el ciclo académico:
+la pertenencia a un grupo y la matrícula en materias.</p>
+<figure class="figura" id="figura-2">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 2</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 2">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 2">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">erDiagram
+    institutions ||--o{ users : &quot;pertenece&quot;
+    users ||--o| students : &quot;perfil académico&quot;
+    students ||--o{ group_students : &quot;pertenece&quot;
+    groups ||--o{ group_students : &quot;agrupa&quot;
+    students ||--o{ student_subjects : &quot;matriculado&quot;
+    subjects ||--o{ student_subjects : &quot;ofertada&quot;
+
+    institutions {
+        uuid id PK
+        string name
+        string code UK
+        jsonb settings &quot;incl. passing_percentage&quot;
+        bool is_active
+    }
+    users {
+        uuid id PK
+        uuid institution_id FK &quot;SET NULL&quot;
+        string full_name
+        string email UK
+        string password_hash &quot;bcrypt&quot;
+        enum user_type &quot;admin teacher student parent&quot;
+        enum status &quot;active inactive suspended&quot;
+    }
+    students {
+        uuid user_id PK, FK &quot;PK y FK a users a la vez&quot;
+        string student_code UK
+        int grade
+        string section
+        int year
+        enum status &quot;active inactive suspended&quot;
+        enum learning_style &quot;visual auditivo lector&quot;
+        enum adecuacion_type &quot;acceso contenido evaluacion&quot;
+        numeric overall_average
+        int exams_completed_count
+        timestamp last_activity_at
+    }
+    groups {
+        uuid id PK
+        string name
+        int grade
+        int year &quot;7A-2026 y 7A-2027 son filas distintas&quot;
+        int student_count &quot;recalculado en cada alta y baja&quot;
+    }
+    subjects {
+        uuid id PK
+        string name &quot;único por institución, ignora mayúsculas&quot;
+    }
+    group_students {
+        uuid id PK
+        uuid group_id FK
+        uuid student_user_id FK
+        timestamp joined_at
+        timestamp left_at &quot;baja lógica, conserva historial&quot;
+    }
+    student_subjects {
+        uuid id PK
+        uuid student_user_id FK
+        uuid subject_id FK
+        timestamp enrolled_at
+    }</pre>
+  </div>
+</figure>
+<h3>1.3 Evaluación</h3>
+<p>Del examen a la opción marcada. Es la cadena que cascadea entera al borrar una materia.</p>
+<figure class="figura" id="figura-3">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 3</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 3">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 3">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">erDiagram
+    subjects ||--o{ exams : &quot;CASCADE&quot;
+    users ||--o{ exams : &quot;created_by_teacher_id, SET NULL&quot;
+    exams ||--o{ questions : &quot;CASCADE&quot;
+    questions ||--o{ question_options : &quot;CASCADE&quot;
+    exams ||--o{ exam_targets : &quot;CASCADE&quot;
+    groups ||--o{ exam_targets : &quot;CASCADE&quot;
+    exams ||--o{ exam_attempts : &quot;CASCADE&quot;
+    students ||--o{ exam_attempts : &quot;presenta&quot;
+    exam_attempts ||--o{ student_answers : &quot;CASCADE&quot;
+    questions ||--o{ student_answers : &quot;respondida en&quot;
+    student_answers ||--o{ student_answer_options : &quot;CASCADE&quot;
+    question_options ||--o{ student_answer_options : &quot;marcada&quot;
+
+    exams {
+        uuid id PK
+        uuid subject_id FK &quot;CASCADE&quot;
+        uuid created_by_teacher_id FK &quot;nullable, SET NULL&quot;
+        string title
+        int grade
+        enum status &quot;draft published active completed&quot;
+        int duration_minutes
+        int max_attempts
+        bool randomize_questions
+        bool show_results_immediately
+        bool allow_review_after_submission
+        timestamp available_from
+        timestamp available_until
+    }
+    questions {
+        uuid id PK
+        uuid exam_id FK
+        text question_text
+        enum question_type &quot;multiple_choice true_false short_answer essay&quot;
+        int points
+        text correct_answer_text &quot;oculto al estudiante&quot;
+        int order_index
+    }
+    question_options {
+        uuid id PK
+        uuid question_id FK
+        int option_index
+        text option_text
+        bool is_correct &quot;oculto al estudiante&quot;
+    }
+    exam_targets {
+        uuid id PK
+        uuid exam_id FK
+        uuid group_id FK
+    }
+    exam_attempts {
+        uuid id PK
+        uuid exam_id FK
+        uuid student_user_id FK
+        int attempt_number
+        timestamp started_at
+        timestamp submitted_at
+        timestamp paused_at
+        int total_paused_seconds &quot;descontado del deadline&quot;
+        numeric score
+        numeric max_score
+        enum grade_status &quot;pending graded completed&quot;
+    }
+    student_answers {
+        uuid id PK
+        uuid attempt_id FK
+        uuid question_id FK
+        text answer_text
+        bool is_correct
+        numeric points_awarded
+        enum review_status &quot;auto_graded needs_review reviewed&quot;
+        json correct_answer_snapshot
+    }
+    student_answer_options {
+        uuid id PK
+        uuid student_answer_id FK
+        uuid option_id FK
+    }</pre>
+  </div>
+</figure>
+<h3>1.4 Seguimiento, tutor IA y apoyo</h3>
+<p>Lo que se deriva de la evaluación —el dominio por materia y las recomendaciones— más el
+material de estudio y el calendario.</p>
+<figure class="figura" id="figura-4">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 4</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 4">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 4">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">erDiagram
+    students ||--o{ student_progress : &quot;domina&quot;
+    subjects ||--o{ student_progress : &quot;medido en&quot;
+    students ||--o{ ai_recommendations : &quot;recibe&quot;
+    subjects ||--o{ ai_recommendations : &quot;sobre&quot;
+    exams ||--o{ ai_recommendations : &quot;SET NULL&quot;
+    students ||--o{ ai_chat_sessions : &quot;conversa&quot;
+    subjects ||--o{ ai_chat_sessions : &quot;SET NULL&quot;
+    exams ||--o{ ai_chat_sessions : &quot;SET NULL&quot;
+    users ||--o{ study_resources : &quot;publica, SET NULL&quot;
+    exams ||--o{ calendar_events : &quot;SET NULL&quot;
+    groups ||--o{ calendar_events : &quot;SET NULL&quot;
+
+    student_progress {
+        uuid id PK
+        uuid student_user_id FK
+        uuid subject_id FK
+        numeric mastery_percentage &quot;AVG en SQL, no en PHP&quot;
+        timestamp reset_at &quot;corte para repitentes&quot;
+    }
+    ai_recommendations {
+        uuid id PK
+        uuid student_user_id FK
+        uuid subject_id FK
+        uuid exam_id FK &quot;nullable, SET NULL&quot;
+        enum recommendation_type &quot;strength weakness resource action&quot;
+        text recommendation_text
+        json resource &quot;URL de la lista blanca&quot;
+        timestamp generated_at &quot;agrupa cada generación&quot;
+    }
+    ai_chat_sessions {
+        uuid id PK
+        uuid student_user_id FK
+        uuid subject_id FK &quot;nullable&quot;
+        uuid exam_id FK &quot;nullable&quot;
+        jsonb messages &quot;recortado a los últimos 60&quot;
+        timestamp ended_at
+    }
+    study_resources {
+        uuid id PK
+        string title
+        enum resource_type &quot;video article exercise book pdf link other&quot;
+        string url &quot;validado contra lista blanca&quot;
+        string difficulty &quot;basic intermediate advanced&quot;
+        int grade_min
+        int grade_max
+        int estimated_duration
+        string language
+    }
+    calendar_events {
+        uuid id PK
+        string title
+        enum event_type &quot;exam activity reminder meeting&quot;
+        timestamp start_at
+        timestamp end_at
+    }</pre>
+  </div>
+</figure>
+<h3>Cuatro decisiones del modelo que conviene saber leer</h3>
+<table>
+<thead>
+<tr>
+<th>Decisión</th>
+<th>Dónde se ve</th>
+<th>Por qué</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>students.user_id</code> es PK y FK a la vez</strong></td>
+<td><code>students</code></td>
+<td>Un estudiante <em>es</em> un usuario con perfil académico, no una entidad paralela. Las 6 relaciones del dominio estudiante apuntan a <code>students(user_id)</code>, no a <code>users(id)</code>: así la base rechaza un intento de examen a nombre de un docente</td>
+</tr>
+<tr>
+<td><strong><code>exams.created_by_teacher_id</code> es <em>nullable</em> con <code>SET NULL</code></strong></td>
+<td><code>users → exams</code></td>
+<td>Permite dar de baja a un docente sin perder los exámenes que dejó al centro. Con <code>NOT NULL</code> habría sido imposible borrarlo</td>
+</tr>
+<tr>
+<td><strong><code>exams.subject_id</code> es <code>CASCADE</code></strong></td>
+<td><code>subjects → exams</code></td>
+<td>Eliminar una materia elimina su contenido académico. Es destructivo a propósito y en cadena: materia → exámenes → preguntas → intentos → respuestas</td>
+</tr>
+<tr>
+<td><strong><code>group_students.left_at</code></strong></td>
+<td><code>group_students</code></td>
+<td>La baja de un grupo es <strong>lógica</strong>: la fila se conserva como historial académico. Es el patrón que conviene extender a materias y grupos</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>2. Aislamiento multi-tenant</h2>
+<p>Cada fila del dominio lleva <code>institution_id</code>. <strong>Las 18 columnas tienen clave foránea</strong>, y
+todas cascadean menos una.</p>
+<figure class="figura" id="figura-5">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 5</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 5">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 5">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">flowchart TB
+    INST[&quot;institutions&lt;br/&gt;&lt;i&gt;raíz del tenant&lt;/i&gt;&quot;]
+
+    subgraph CASCADE[&quot;17 tablas · ON DELETE CASCADE&quot;]
+        direction LR
+        A[&quot;students · groups · subjects&lt;br/&gt;exams · questions · question_options&quot;]
+        B[&quot;exam_attempts · student_answers&lt;br/&gt;student_answer_options · student_progress&quot;]
+        C[&quot;ai_recommendations · ai_chat_sessions&lt;br/&gt;student_subjects · group_students · exam_targets&quot;]
+        D[&quot;study_resources · calendar_events&quot;]
+    end
+
+    SETNULL[&quot;users&lt;br/&gt;&lt;b&gt;ON DELETE SET NULL&lt;/b&gt;&quot;]
+
+    INST --&gt;|&quot;borrar centro = borrar su contenido&quot;| CASCADE
+    INST --&gt;|&quot;dar de baja un centro&lt;br/&gt;NO borra a las personas&quot;| SETNULL
+
+    SCOPE[&quot;TenantScoped&lt;br/&gt;&lt;i&gt;global scope de Eloquent&lt;/i&gt;&quot;]
+    MW[&quot;SetTenantFromAuth&lt;br/&gt;&lt;i&gt;middleware&lt;/i&gt;&quot;]
+
+    MW --&gt;|&quot;inyecta institution_id&lt;br/&gt;del usuario autenticado&quot;| SCOPE
+    SCOPE --&gt;|&quot;filtra toda consulta&lt;br/&gt;y rellena la columna al crear&quot;| CASCADE
+
+    style SETNULL stroke-width:3px
+    style INST stroke-width:3px</pre>
+  </div>
+</figure>
+<p><strong>El aislamiento vive en dos capas, y esa redundancia es deliberada.</strong> <code>TenantScoped</code> filtra
+en la aplicación — si detecta contexto HTTP sin <code>institution_id</code>, lanza <code>RuntimeException</code> en
+vez de devolver datos de más. Las claves foráneas lo respaldan en la base: sin ellas era
+posible escribir un <code>institution_id</code> de una institución inexistente y romper el aislamiento
+por debajo del ORM.</p>
+<hr />
+<h2>3. Diagrama de clases</h2>
+<p>16 modelos Eloquent: las 15 entidades más <code>StudentSubject</code>. Los 3 pivotes restantes
+(<code>group_students</code>, <code>exam_targets</code>, <code>student_answer_options</code>) se manipulan por <em>query builder</em>
+y no tienen modelo.</p>
+<p>Va en tres vistas por la misma razón que el ERD. La §3.1 incluye los <em>traits</em>, que son lo que
+no se ve en el esquema y sostiene la seguridad por rol.</p>
+<h3>3.1 Personas, estructura y los traits de seguridad</h3>
+<figure class="figura" id="figura-6">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 6</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 6">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 6">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">classDiagram
+    direction LR
+
+    class TenantScoped {
+        &lt;&lt;trait&gt;&gt;
+        +bootTenantScoped()
+        +filtra toda consulta por institution_id
+        +rellena la columna al crear
+    }
+    class RevelaRespuestas {
+        &lt;&lt;trait&gt;&gt;
+        +expone is_correct a admin y docente
+    }
+    class AcotaExamenAlEstudiante {
+        &lt;&lt;trait&gt;&gt;
+        +recorta la configuracion del examen al alumno
+    }
+
+    class Institution {
+        +uuid id
+        +jsonb settings
+        +users()
+        +subjects()
+        +groups()
+        +studyResources()
+    }
+    class User {
+        +uuid id
+        +UserType user_type
+        +UserStatus status
+        +institution()
+        +student()
+        +studyResources()
+    }
+    class Student {
+        +uuid user_id
+        +LearningStyle learning_style
+        +AdecuacionType adecuacion_type
+        +numeric overall_average
+        +user()
+        +groups()
+        +subjects()
+        +attempts()
+        +progress()
+    }
+    class Group {
+        +uuid id
+        +int year
+        +int student_count
+        +students()
+        +exams()
+    }
+    class Subject {
+        +uuid id
+        +string name
+        +institution()
+        +exams()
+    }
+    class StudentSubject {
+        +timestamp enrolled_at
+        +student()
+        +subject()
+    }
+
+    TenantScoped &lt;|.. Student
+    TenantScoped &lt;|.. Subject
+    TenantScoped &lt;|.. Group
+
+    Institution &quot;1&quot; --&gt; &quot;0..*&quot; User
+    User &quot;1&quot; --&gt; &quot;0..1&quot; Student
+    Student &quot;0..*&quot; --&gt; &quot;0..*&quot; Group : group_students
+    Student &quot;0..*&quot; --&gt; &quot;0..*&quot; Subject : student_subjects
+    StudentSubject ..&gt; Student
+    StudentSubject ..&gt; Subject</pre>
+  </div>
+</figure>
+<h3>3.2 Evaluación</h3>
+<figure class="figura" id="figura-7">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 7</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 7">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 7">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">classDiagram
+    direction LR
+
+    class Exam {
+        +ExamStatus status
+        +int max_attempts
+        +bool allow_review_after_submission
+        +scopeVisibleTo(user)
+        +syncGroups()
+        +subject()
+        +teacher()
+        +questions()
+        +attempts()
+        +groups()
+    }
+    class Question {
+        +QuestionType question_type
+        +int points
+        +hidden is_correct
+        +hidden correct_answer_text
+        +exam()
+        +options()
+        +answers()
+    }
+    class QuestionOption {
+        +int option_index
+        +bool is_correct
+        +question()
+    }
+    class ExamAttempt {
+        +int attempt_number
+        +GradeStatus grade_status
+        +int total_paused_seconds
+        +percentage()
+        +display_score()
+        +exam()
+        +student()
+        +answers()
+    }
+    class StudentAnswer {
+        +ReviewStatus review_status
+        +numeric points_awarded
+        +json correct_answer_snapshot
+        +attempt()
+        +question()
+        +selectedOptions()
+    }
+    class TenantScoped {
+        &lt;&lt;trait&gt;&gt;
+    }
+    class RevelaRespuestas {
+        &lt;&lt;trait&gt;&gt;
+    }
+    class AcotaExamenAlEstudiante {
+        &lt;&lt;trait&gt;&gt;
+    }
+
+    TenantScoped &lt;|.. Exam
+    RevelaRespuestas &lt;|.. Question
+    AcotaExamenAlEstudiante &lt;|.. Exam
+
+    Exam &quot;1&quot; --&gt; &quot;0..*&quot; Question
+    Question &quot;1&quot; --&gt; &quot;0..*&quot; QuestionOption
+    Exam &quot;1&quot; --&gt; &quot;0..*&quot; ExamAttempt
+    ExamAttempt &quot;1&quot; --&gt; &quot;0..*&quot; StudentAnswer
+    StudentAnswer &quot;0..*&quot; --&gt; &quot;0..*&quot; QuestionOption : seleccionadas</pre>
+  </div>
+</figure>
+<h3>3.3 Seguimiento, IA y apoyo</h3>
+<figure class="figura" id="figura-8">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 8</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 8">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 8">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">classDiagram
+    direction LR
+
+    class StudentProgress {
+        +numeric mastery_percentage
+        +timestamp reset_at
+        +student()
+        +subject()
+    }
+    class AiRecommendation {
+        +AiRecommendationType recommendation_type
+        +text recommendation_text
+        +json resource
+        +timestamp generated_at
+        +student()
+        +subject()
+        +exam()
+    }
+    class AiChatSession {
+        +jsonb messages
+        +timestamp ended_at
+        +student()
+        +subject()
+        +exam()
+    }
+    class StudyResource {
+        +ResourceType resource_type
+        +string url
+        +string difficulty
+        +int grade_min
+        +int grade_max
+        +institution()
+        +creator()
+    }
+    class CalendarEvent {
+        +CalendarEventType event_type
+        +timestamp start_at
+        +exam()
+        +group()
+    }
+    class TenantScoped {
+        &lt;&lt;trait&gt;&gt;
+    }
+
+    TenantScoped &lt;|.. StudentProgress
+    TenantScoped &lt;|.. AiRecommendation
+    TenantScoped &lt;|.. AiChatSession
+    TenantScoped &lt;|.. StudyResource
+    TenantScoped &lt;|.. CalendarEvent</pre>
+  </div>
+</figure>
+<p>Los tres <em>traits</em> son lo que no se ve en el esquema y sostiene la seguridad por rol:
+<code>RevelaRespuestas</code> y <code>AcotaExamenAlEstudiante</code> deciden <strong>qué campos ve cada rol</strong> sobre las
+mismas filas, y <code>Exam::scopeVisibleTo()</code> centraliza qué exámenes puede ver un alumno —
+activo, dentro de ventana y asignado a sus grupos.</p>
+<hr />
+<h2>4. Arquitectura del backend</h2>
+<p>API REST pura: <strong>el backend no sirve HTML en ninguna ruta de la API</strong>. La única capa de
+presentación son las vistas Blade del correo y del formulario de contraseña.</p>
+<figure class="figura" id="figura-9">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 9</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 9">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 9">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">flowchart TB
+    CLIENT[&quot;SPA · React 19 + Vite + TypeScript&quot;]
+
+    subgraph EDGE[&quot;Borde&quot;]
+        TRAEFIK[&quot;Traefik&lt;br/&gt;&lt;i&gt;TLS, proxy inverso&lt;/i&gt;&quot;]
+    end
+
+    subgraph APP[&quot;Contenedor Docker · DigitalOcean + Coolify&quot;]
+        OCTANE[&quot;FrankenPHP + Laravel Octane&lt;br/&gt;&lt;i&gt;app en memoria, --max-requests=500&lt;/i&gt;&quot;]
+
+        subgraph PIPE[&quot;Cadena de middleware, en orden&quot;]
+            direction TB
+            M1[&quot;throttle:api&lt;br/&gt;&lt;i&gt;120/min · rechaza antes de gastar&lt;/i&gt;&quot;]
+            M2[&quot;SetTenantFromAuth&lt;br/&gt;&lt;i&gt;fija institution_id&lt;/i&gt;&quot;]
+            M3[&quot;SubstituteBindings&lt;br/&gt;&lt;i&gt;route model binding ya con scope&lt;/i&gt;&quot;]
+            M4[&quot;auth:sanctum&lt;br/&gt;&lt;i&gt;token opaco, expira&lt;/i&gt;&quot;]
+            M5[&quot;RequireRole&lt;br/&gt;&lt;i&gt;admin · teacher · student&lt;/i&gt;&quot;]
+            M1 --&gt; M2 --&gt; M3 --&gt; M4 --&gt; M5
+        end
+
+        CTRL[&quot;Controladores&lt;br/&gt;&lt;i&gt;validan y traducen a HTTP&lt;/i&gt;&quot;]
+        SVC[&quot;Servicios de dominio&lt;br/&gt;&lt;i&gt;Grading · Progress · Reports · AI · BulkReassignment&lt;/i&gt;&quot;]
+        ELO[&quot;Eloquent + TenantScoped&quot;]
+        SEC[&quot;SecurityHeaders&lt;br/&gt;&lt;i&gt;en la respuesta&lt;/i&gt;&quot;]
+    end
+
+    WORKER[&quot;Worker de cola&lt;br/&gt;&lt;i&gt;queue:work&lt;/i&gt;&quot;]
+    SCHED[&quot;Scheduler&lt;br/&gt;&lt;i&gt;schedule:run cada minuto&lt;/i&gt;&quot;]
+
+    PG[(&quot;Supabase · PostgreSQL 17.6&lt;br/&gt;&lt;i&gt;pooler en modo session, 5432&lt;/i&gt;&quot;)]
+    OPENAI[&quot;OpenAI · gpt-4o-mini&quot;]
+    SMTP[&quot;SMTP&quot;]
+
+    CLIENT --&gt;|&quot;JSON + Bearer token&quot;| TRAEFIK
+    TRAEFIK --&gt; OCTANE
+    OCTANE --&gt; PIPE
+    M5 --&gt; CTRL --&gt; SVC --&gt; ELO --&gt; PG
+    CTRL --&gt; SEC --&gt; CLIENT
+
+    SVC --&gt;|&quot;tutor y regeneración&lt;br/&gt;timeout 15 s&quot;| OPENAI
+    SVC --&gt;|&quot;encola correos&quot;| PG
+    WORKER --&gt;|&quot;lee jobs&quot;| PG
+    WORKER --&gt; SMTP
+    SCHED --&gt;|&quot;drena cola · purga tokens&quot;| WORKER
+
+    style M1 stroke-width:3px
+    style PG stroke-width:3px</pre>
+  </div>
+</figure>
+<p><strong>Por qué el orden del middleware importa.</strong> <code>throttle:api</code> va el primero a propósito: rechaza
+el exceso <em>antes</em> de resolver tenant, autenticación o modelos, que es donde está el coste. Y
+<code>SetTenantFromAuth</code> va antes de <code>SubstituteBindings</code> para que el <em>route model binding</em> ya
+resuelva con el scope de institución activo — si no, un <code>{exam}</code> de otro centro se resolvería
+y solo fallaría después.</p>
+<p><strong>El cuello de botella real es el worker bloqueado.</strong> Cada llamada a OpenAI retiene un worker
+de Octane mientras dura, por eso el timeout está acotado a 15 s y hay un limitador global por
+institución (<code>ai-global</code>, 120/min) además del límite por usuario. Análisis completo en
+<a href="ANALISIS_CONCURRENCIA.md"><code>ANALISIS_CONCURRENCIA.md</code></a>.</p>
+<hr />
+<h2>5. Flujo de autenticación</h2>
+<p>Hay <strong>dos vías de alta</strong>, y la diferencia no es cosmética: quién define la contraseña decide
+si la cuenta nace utilizable.</p>
+<figure class="figura" id="figura-10">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 10</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 10">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 10">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">sequenceDiagram
+    autonumber
+    actor Admin
+    actor Alumno
+    participant API as API
+    participant Cola as Cola + worker
+    participant DB as PostgreSQL
+
+    rect rgb(240, 240, 240)
+    note over Admin,DB: Alta masiva · la cuenta nace inactiva
+    Admin-&gt;&gt;API: POST /students/bulk-upload (CSV/XLSX)
+    API-&gt;&gt;DB: User(status=inactive, contraseña aleatoria) + Student
+    API-&gt;&gt;DB: token hasheado en password_reset_tokens
+    API-&gt;&gt;Cola: PasswordSetupMail (fuera de la transacción)
+    Cola--&gt;&gt;Alumno: correo &quot;activá tu cuenta&quot;
+    end
+
+    Alumno-&gt;&gt;API: GET /password/reset/{token} (formulario Blade)
+    Alumno-&gt;&gt;API: POST /api/password/reset
+    API-&gt;&gt;DB: guarda hash · status = active · consume token · revoca sesiones
+
+    rect rgb(240, 240, 240)
+    note over Admin,DB: Alta individual · el admin entrega la contraseña en mano
+    Admin-&gt;&gt;API: POST /register (solo admin)
+    API-&gt;&gt;DB: User(status=active) — no se envía correo
+    end
+
+    Alumno-&gt;&gt;API: POST /auth/login
+    API-&gt;&gt;DB: Hash::check contra password_hash
+    alt credenciales inválidas
+        API--&gt;&gt;Alumno: 401
+    else status != active
+        API--&gt;&gt;Alumno: 403 &quot;Usuario inactivo o suspendido&quot;
+    else
+        API-&gt;&gt;DB: crea token en personal_access_tokens
+        API--&gt;&gt;Alumno: 200 + token opaco (Sanctum, expira)
+    end</pre>
+  </div>
+</figure>
+<p><strong>Tres reglas que sostienen el flujo:</strong></p>
+<ul>
+<li><code>/password/forgot</code> responde a cuentas <code>active</code> <strong>e</strong> <code>inactive</code>, nunca a <code>suspended</code>. Sin
+eso, quien perdiera el correo de alta quedaba bloqueado para siempre; y una cuenta suspendida
+la bloqueó un administrador a propósito.</li>
+<li>El correo se elige según el estado: a quien nunca tuvo contraseña no se le habla de
+<em>recuperarla</em>.</li>
+<li><strong>Solo se activa desde <code>inactive</code>.</strong> Un reset sobre una cuenta <code>suspended</code> cambia la
+contraseña pero no la reactiva.</li>
+</ul>
+<blockquote>
+<p>⚠️ Los tokens son <strong>opacos</strong> contra <code>personal_access_tokens</code>, no JWT. El informe dice JWT en
+dos sitios; es una de las correcciones de <code>ANALISIS_MODELO_DATOS_TFG.md</code> §9.1.</p>
+</blockquote>
+<hr />
+<h2>6. Flujo de examen</h2>
+<h3>6.1 Estados del examen</h3>
+<figure class="figura" id="figura-11">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 11</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 11">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 11">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">stateDiagram-v2
+    [*] --&gt; draft : POST /exams
+    draft --&gt; published : PATCH status
+    published --&gt; active : PATCH status, rechaza si available_until ya pasó
+    active --&gt; completed : PATCH status
+    draft --&gt; [*] : DELETE, solo permitido en draft
+
+    note right of draft
+        Editable en draft y published.
+        En active o completed devuelve 409.
+    end note
+    note right of active
+        Único estado en el que el alumno
+        lo ve y puede presentarlo.
+    end note</pre>
+  </div>
+</figure>
+<h3>6.2 Ciclo de vida del intento</h3>
+<figure class="figura" id="figura-12">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 12</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 12">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 12">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">sequenceDiagram
+    autonumber
+    actor Alumno
+    participant API as ExamAttemptController
+    participant Reglas as ExamAttemptRulesService
+    participant Cal as ExamGradingService
+    participant Prog as StudentProgressService
+    participant IA as AiRecommendationService
+    participant DB as PostgreSQL
+
+    Alumno-&gt;&gt;API: POST /exams/{exam}/attempts/start
+    API-&gt;&gt;Reglas: assertExamIsStartable — activo y en ventana
+    API-&gt;&gt;DB: BEGIN · SELECT students FOR UPDATE
+    note right of DB: el lock serializa dobles clics&lt;br/&gt;del mismo alumno
+    API-&gt;&gt;Reglas: assertAttemptsAvailable — max_attempts
+    API-&gt;&gt;DB: INSERT exam_attempt (attempt_number, max_score) · COMMIT
+    API--&gt;&gt;Alumno: 201
+
+    opt Pausa
+        Alumno-&gt;&gt;API: PATCH .../pause
+        API-&gt;&gt;DB: paused_at = now — bloquea el submit
+        Alumno-&gt;&gt;API: PATCH .../resume
+        API-&gt;&gt;DB: total_paused_seconds += pausa
+    end
+
+    Alumno-&gt;&gt;API: POST .../submit (answers[])
+    API-&gt;&gt;Reglas: assertAttemptIsSubmittable
+    note right of Reglas: deadline = duration_minutes&lt;br/&gt;− tiempo pausado + 30 s de gracia&lt;br/&gt;× adecuación: acceso 1,25 · evaluación 1,50
+    API-&gt;&gt;API: valida forma por tipo de pregunta
+
+    rect rgb(240, 240, 240)
+    note over API,DB: Todo dentro de una transacción
+    API-&gt;&gt;Cal: gradeAttempt
+    Cal-&gt;&gt;DB: 2 INSERT por lotes — coste plano, 22 queries
+    note right of Cal: MC y TF se autocalifican&lt;br/&gt;SA y Essay quedan needs_review
+    API-&gt;&gt;Prog: recalcFromAttempts — AVG en SQL, respeta reset_at
+    API-&gt;&gt;IA: generateFromAttempt
+    note right of IA: plantillas por porcentaje,&lt;br/&gt;SIN llamada a OpenAI
+    end
+
+    API--&gt;&gt;Alumno: score, percentage, progreso y recomendaciones
+
+    opt El alumno quiere análisis con IA
+        Alumno-&gt;&gt;API: POST /exam-attempts/{id}/recommendations/regenerate
+        API-&gt;&gt;IA: regenerateForAttempt — aquí sí llama a OpenAI
+        note right of IA: cupo: la del submit + 3,&lt;br/&gt;por intento
+    end</pre>
+  </div>
+</figure>
+<blockquote>
+<p>⚠️ <strong>La recomendación del submit no la escribe la IA.</strong> <code>generateFromAttempt</code> es un
+<code>if/elseif/else</code> sobre el porcentaje con textos fijos; OpenAI solo interviene si el alumno
+pide regenerar. Es deliberado —una llamada de segundos dentro de la transacción ataría un
+worker justo en el pico de concurrencia, cuando todos entregan a la vez—, pero <strong>el informe
+lo describe al revés</strong>: ver <code>ESTADO_Y_PENDIENTES.md</code> §3.6 nº 1.</p>
+</blockquote>
+<hr />
+<h2>7. Flujo del tutor IA</h2>
+<figure class="figura" id="figura-13">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 13</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 13">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 13">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">sequenceDiagram
+    autonumber
+    actor Alumno
+    participant Ctrl as AiTutorController
+    participant Svc as AiTutorService
+    participant Cache as Caché · TTL 5 min
+    participant OA as OpenAI · gpt-4o-mini
+    participant Val as AiOutputValidator
+    participant DB as PostgreSQL
+
+    Alumno-&gt;&gt;Ctrl: POST /ai/tutor/chat&lt;br/&gt;{message, session_id?, subject_id?, exam_id?, mode}
+    Ctrl-&gt;&gt;Ctrl: role:student + perfil Student existe
+    Ctrl-&gt;&gt;DB: valida subject_id y exam_id dentro de su tenant
+    note right of Ctrl: el examen vale si lo rindió&lt;br/&gt;o si hoy lo tiene disponible
+
+    Ctrl-&gt;&gt;Svc: chat(...)
+    Svc-&gt;&gt;Cache: system prompt del estudiante
+    alt caché fría
+        Svc-&gt;&gt;DB: perfil + progreso por materia
+        Svc-&gt;&gt;Cache: guarda 5 min
+    end
+    note right of Svc: viajan grado, estilo de aprendizaje&lt;br/&gt;y % de dominio.&lt;br/&gt;&lt;b&gt;NUNCA el nombre&lt;/b&gt;
+
+    Svc-&gt;&gt;DB: resuelve o crea ai_chat_session
+    Svc-&gt;&gt;Svc: últimos 20 mensajes + prefijo de modo
+    Svc-&gt;&gt;OA: chat completion (600 tokens, timeout 15 s)
+
+    OA--&gt;&gt;Svc: respuesta
+    Svc-&gt;&gt;Val: validate + sanitize
+    alt PII detectada o longitud fuera de rango
+        Val--&gt;&gt;Svc: bloqueado → mensaje de reserva
+    else enlace fuera de la lista blanca
+        Val--&gt;&gt;Svc: el enlace se sustituye por un aviso
+    end
+
+    Svc-&gt;&gt;DB: append incremental al JSONB&lt;br/&gt;&lt;i&gt;solo el delta, recorta a 60&lt;/i&gt;
+    Svc--&gt;&gt;Alumno: {session_id, reply, message_count}</pre>
+  </div>
+</figure>
+<h3>La frontera de privacidad, que es lo que más se pregunta</h3>
+<figure class="figura" id="figura-14">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 14</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 14">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 14">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">flowchart LR
+    CHAT[&quot;ai_chat_sessions&lt;br/&gt;&lt;i&gt;la conversación&lt;/i&gt;&quot;]
+    RECS[&quot;ai_recommendations&lt;br/&gt;&lt;i&gt;recomendaciones estructuradas&lt;/i&gt;&quot;]
+    METRICS[&quot;Métricas de uso&lt;br/&gt;&lt;i&gt;agregadas&lt;/i&gt;&quot;]
+    RANK[&quot;Ranking nominal&lt;br/&gt;&lt;i&gt;quién usa más el tutor&lt;/i&gt;&quot;]
+
+    ALUMNO([&quot;Estudiante&quot;])
+    DOCENTE([&quot;Docente&quot;])
+    ADMIN([&quot;Admin&quot;])
+
+    CHAT --&gt; ALUMNO
+    CHAT -.-&gt;|&quot;NUNCA, en ningún reporte&quot;| DOCENTE
+    RECS --&gt; ALUMNO
+    RECS --&gt;|&quot;solo las de exámenes que él creó&quot;| DOCENTE
+    RECS --&gt;|&quot;toda su institución&quot;| ADMIN
+    METRICS --&gt; DOCENTE
+    RANK -.-&gt;|&quot;no: identifica menores por su uso&quot;| DOCENTE
+    RANK --&gt; ADMIN
+
+    style CHAT stroke-width:3px</pre>
+  </div>
+</figure>
+<p><strong>La frontera no es alumno/docente, sino conversación/recomendación.</strong> El informe se
+contradice en este punto —promete que el docente no verá mensajes individuales y a la vez le
+pide seguimiento pedagógico—, y esta lectura resuelve las dos cosas: el docente nunca ve un
+mensaje del chat, y el seguimiento se apoya en las recomendaciones, que es el artefacto que
+el propio informe llama <em>pedagógico</em>. Fijado como prueba en
+<code>TutorStrategiesTest::test_chat_history_never_appears_in_the_strategies_report</code>.</p>
+<hr />
+<h2>8. Diagrama de casos de uso</h2>
+<figure class="figura" id="figura-15">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 15</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 15">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 15">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">flowchart LR
+    ADMIN([&quot;Admin&quot;])
+    DOCENTE([&quot;Docente&quot;])
+    ALUMNO([&quot;Estudiante&quot;])
+    PARENT([&quot;Acudiente&lt;br/&gt;&lt;i&gt;reservado&lt;/i&gt;&quot;])
+
+    subgraph GESTION[&quot;Gestión institucional · solo admin&quot;]
+        U1[&quot;Gestionar instituciones&quot;]
+        U2[&quot;Dar de alta usuarios&lt;br/&gt;individual y masiva&quot;]
+        U3[&quot;Administrar catálogo de materias&quot;]
+        U4[&quot;Configurar el sistema&lt;br/&gt;&lt;i&gt;incl. nota de aprobación&lt;/i&gt;&quot;]
+        U5[&quot;Promoción de fin de año&lt;br/&gt;&lt;i&gt;reasignación masiva&lt;/i&gt;&quot;]
+    end
+
+    subgraph DOCENCIA[&quot;Docencia · admin y docente&quot;]
+        U6[&quot;Crear y publicar exámenes&quot;]
+        U7[&quot;Gestionar preguntas&quot;]
+        U8[&quot;Asignar exámenes a grupos&quot;]
+        U9[&quot;Gestionar grupos y matrículas&quot;]
+        U10[&quot;Calificar preguntas abiertas&quot;]
+        U11[&quot;Ver analíticas y reportes&quot;]
+        U12[&quot;Descargar estrategias del tutor&quot;]
+        U13[&quot;Publicar recursos de estudio&quot;]
+    end
+
+    subgraph ESTUDIO[&quot;Estudio · solo estudiante&quot;]
+        U14[&quot;Ver exámenes disponibles&quot;]
+        U15[&quot;Presentar examen&quot;]
+        U16[&quot;Consultar sus resultados&quot;]
+        U17[&quot;Conversar con el tutor IA&quot;]
+        U18[&quot;Ver su diagnóstico&quot;]
+        U19[&quot;Ver sus recomendaciones&quot;]
+        U20[&quot;Consultar su progreso&quot;]
+    end
+
+    COMUN[&quot;Iniciar sesión · recuperar contraseña · ver calendario&quot;]
+
+    ADMIN --&gt; GESTION
+    ADMIN --&gt; DOCENCIA
+    DOCENTE --&gt; DOCENCIA
+    ALUMNO --&gt; ESTUDIO
+    ADMIN --&gt; COMUN
+    DOCENTE --&gt; COMUN
+    ALUMNO --&gt; COMUN
+    PARENT -.-&gt;|&quot;sin superficie de API&quot;| COMUN
+
+    U11 -.-&gt;|&quot;acotado a sus exámenes&quot;| DOCENTE
+    U12 -.-&gt;|&quot;sin el historial de chat&quot;| DOCENTE
+
+    style PARENT stroke-dasharray: 5 5</pre>
+  </div>
+</figure>
+<p><strong>Dos precisiones que el informe no recoge:</strong></p>
+<ul>
+<li>El enum <code>UserType</code> tiene <strong>cuatro</strong> roles, no tres. <code>parent</code> está reservado para un futuro
+portal de acudientes y hoy <strong>no tiene ninguna ruta</strong>: conviene documentarlo como previsión
+de diseño, no dejarlo sin mencionar.</li>
+<li>El docente no es un admin recortado. Sobre sus propios exámenes puede todo; sobre los
+ajenos, nada — ni resultados, ni recomendaciones, ni estrategias.</li>
+</ul>
+<hr />
+<h2>9. Diagrama de proceso: el ciclo académico</h2>
+<p>El proceso completo de un curso, desde la matrícula hasta la promoción del año siguiente.</p>
+<figure class="figura" id="figura-16">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 16</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 16">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 16">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">flowchart TB
+    START([&quot;Inicio de curso&quot;])
+
+    A[&quot;Admin crea grupos del año&lt;br/&gt;&lt;i&gt;llevan year: 7A-2026 ≠ 7A-2027&lt;/i&gt;&quot;]
+    B[&quot;Alta de estudiantes&lt;br/&gt;&lt;i&gt;carga masiva o individual&lt;/i&gt;&quot;]
+    C[&quot;Alumno activa su cuenta&lt;br/&gt;&lt;i&gt;define contraseña&lt;/i&gt;&quot;]
+    D[&quot;Matrícula en materias&lt;br/&gt;&lt;i&gt;student_subjects&lt;/i&gt;&quot;]
+
+    E[&quot;Docente crea examen diagnóstico&lt;br/&gt;&lt;i&gt;draft&lt;/i&gt;&quot;]
+    F[&quot;Añade preguntas y opciones&quot;]
+    G[&quot;Asigna a grupos&lt;br/&gt;&lt;i&gt;exam_targets&lt;/i&gt;&quot;]
+    H[&quot;Publica y activa&quot;]
+
+    I[&quot;Alumno presenta el examen&quot;]
+    J[&quot;Corrección automática&lt;br/&gt;&lt;i&gt;MC y TF&lt;/i&gt;&quot;]
+    K{&quot;¿Hay preguntas&lt;br/&gt;abiertas?&quot;}
+    L[&quot;Docente califica a mano&lt;br/&gt;&lt;i&gt;needs_review → reviewed&lt;/i&gt;&quot;]
+    M[&quot;Recalcular dominio por materia&lt;br/&gt;&lt;i&gt;student_progress&lt;/i&gt;&quot;]
+    N[&quot;Recomendaciones del tutor&quot;]
+
+    O[&quot;Reportes y analíticas&lt;br/&gt;&lt;i&gt;agregados en un solo SELECT&lt;/i&gt;&quot;]
+    P[&quot;Alumno consulta al tutor IA&quot;]
+
+    Q{&quot;Fin de curso:&lt;br/&gt;¿promovido?&quot;}
+    R[&quot;Reasignar al grupo&lt;br/&gt;del grado siguiente&quot;]
+    S[&quot;Reasignar al mismo grado&lt;br/&gt;del año nuevo&quot;]
+    T[&quot;Resetear progreso&lt;br/&gt;&lt;i&gt;marca reset_at&lt;/i&gt;&quot;]
+    END([&quot;Curso siguiente&quot;])
+
+    START --&gt; A --&gt; B --&gt; C --&gt; D
+    D --&gt; E --&gt; F --&gt; G --&gt; H
+    H --&gt; I --&gt; J --&gt; K
+    K --&gt;|sí| L --&gt; M
+    K --&gt;|no| M
+    M --&gt; N --&gt; O
+    N --&gt; P
+    P --&gt; O
+    O --&gt; Q
+    Q --&gt;|promovido| R --&gt; END
+    Q --&gt;|repitente| S --&gt; T --&gt; END
+
+    style Q stroke-width:3px
+    style T stroke-width:3px</pre>
+  </div>
+</figure>
+<p><strong>El paso que menos se ve y más importa es el reseteo.</strong> <code>recalcFromAttempts</code> promedia <em>todos</em>
+los intentos enviados y se dispara en cada entrega y en cada revisión de respuesta, así que
+poner el progreso a cero sin más se desharía solo en el siguiente examen. Por eso
+<code>student_progress.reset_at</code> marca un <strong>corte temporal</strong> que el recálculo respeta: los intentos
+anteriores dejan de contar para el dominio actual, pero <strong>no se borran</strong> — el historial
+académico queda íntegro.</p>
+<p>El orden de la promoción también importa: primero se mueve a los repitentes por lista
+explícita, y después al resto con <code>from_group_id</code>, que a esas alturas ya solo devuelve a los
+promovidos. Así no hace falta ningún parámetro de exclusión.</p>
+<hr />
+<h2>Qué figuras del informe cubre cada diagrama</h2>
+<table>
+<thead>
+<tr>
+<th>Figura del informe</th>
+<th>Aquí</th>
+<th>Estado</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>— <em>(no existe)</em></td>
+<td>§1 Modelo entidad-relación</td>
+<td><strong>Nueva.</strong> El informe no tiene ERD pese a tener 19 tablas y 47 FK</td>
+</tr>
+<tr>
+<td>— <em>(no existe)</em></td>
+<td>§2 Aislamiento multi-tenant</td>
+<td><strong>Nueva.</strong> Es la decisión de arquitectura más transversal del sistema</td>
+</tr>
+<tr>
+<td>Figura 2 · Diagrama de clases</td>
+<td>§3</td>
+<td>Rehacer: faltan <code>AiChatSession</code> y <code>StudentSubject</code></td>
+</tr>
+<tr>
+<td>Figura 7 y 8 · Arquitectura</td>
+<td>§4</td>
+<td>Rehacer: el informe describe Node.js y Next.js, que no existen</td>
+</tr>
+<tr>
+<td>Figura 6 · Flujo de autenticación</td>
+<td>§5</td>
+<td>Rehacer: es Sanctum con tokens opacos, no JWT</td>
+</tr>
+<tr>
+<td>Figura 4 · Flujo de examen</td>
+<td>§6</td>
+<td>Rehacer: añadir pausa/reanudación y adecuación curricular</td>
+</tr>
+<tr>
+<td>Figura 10 · Flujo de ChatBot</td>
+<td>§7</td>
+<td>Rehacer: añadir modos, validación de salida y frontera de privacidad</td>
+</tr>
+<tr>
+<td>Figura 9 · Casos de uso</td>
+<td>§8</td>
+<td>Rehacer: son cuatro roles, no tres</td>
+</tr>
+<tr>
+<td>Figura 3 · Diagrama de proceso</td>
+<td>§9</td>
+<td>Rehacer: añadir el ciclo completo con repitentes</td>
+</tr>
+</tbody>
+</table>
+</main>
+
+<script>(function () {
+  var PASOS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 2, 2.5, 3];
+
+  function fijar(figura, indice) {
+    indice = Math.max(0, Math.min(PASOS.length - 1, indice));
+    figura.dataset.paso = String(indice);
+    figura.style.setProperty('--z', String(PASOS[indice]));
+    var salida = figura.querySelector('[data-zoom-valor]');
+    if (salida) salida.textContent = Math.round(PASOS[indice] * 100) + '%';
+  }
+
+  function pasoDe(figura) {
+    var n = parseInt(figura.dataset.paso, 10);
+    return isNaN(n) ? PASOS.indexOf(1) : n;
+  }
+
+  document.addEventListener('click', function (ev) {
+    var boton = ev.target.closest('button');
+    if (!boton) return;
+    var figura = boton.closest('.figura');
+    if (!figura) return;
+
+    if (boton.hasAttribute('data-zoom')) {
+      var delta = parseInt(boton.getAttribute('data-zoom'), 10);
+      fijar(figura, delta === 0 ? PASOS.indexOf(1) : pasoDe(figura) + delta);
+      return;
+    }
+
+    if (boton.hasAttribute('data-ampliar')) {
+      var ampliada = figura.classList.toggle('figura--ampliada');
+      document.body.classList.toggle('hay-ampliada', ampliada);
+      boton.setAttribute('aria-pressed', ampliada ? 'true' : 'false');
+      boton.textContent = ampliada ? 'Cerrar' : 'Pantalla completa';
+    }
+  });
+
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return;
+    var abierta = document.querySelector('.figura--ampliada');
+    if (!abierta) return;
+    var boton = abierta.querySelector('[data-ampliar]');
+    if (boton) boton.click();
+  });
+
+  // Las tablas anchas se desplazan dentro de su caja, nunca la página.
+  document.querySelectorAll('table').forEach(function (tabla) {
+    if (tabla.parentElement && tabla.parentElement.classList.contains('tabla-scroll')) return;
+    var caja = document.createElement('div');
+    caja.className = 'tabla-scroll';
+    tabla.parentNode.insertBefore(caja, tabla);
+    caja.appendChild(tabla);
+  });
+
+  document.querySelectorAll('.figura').forEach(function (f) { fijar(f, PASOS.indexOf(1)); });
+})();</script>

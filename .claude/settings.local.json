@@ -192,7 +192,14 @@
       "Bash(python -c \"print\\('ok'\\)\")",
       "Bash(PYTHONIOENCODING=utf8 python -c ' *)",
       "Bash(php -l database/migrations/2026_08_08_000002_complete_tenant_fk_coherence.php)",
-      "Bash(git diff *)"
+      "Bash(git diff *)",
+      "Bash(PYTHONIOENCODING=utf8 python -)",
+      "Bash(npm --version)",
+      "Bash(npm install *)",
+      "Bash(node validar.mjs \"C:/Users/dsilv/DEV/TFG/Proyecto backend/NeoEduCore/docs/DIAGRAMAS.md\")",
+      "Artifact",
+      "Bash(grep -c '```mermaid' docs/DIAGRAMAS.md)",
+      "Bash(php -l app/Console/Commands/DiagramasHtml.php)"
     ]
   }
 }
