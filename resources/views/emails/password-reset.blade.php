@@ -1,8 +1,12 @@
+{{--
+    Correo de RECUPERACIÓN de contraseña (el usuario lo pidió).
+    El de alta de cuenta es `emails/password-setup.blade.php`.
+--}}
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Establecer contraseña | {{ $appName }}</title>
+    <title>Recuperar tu contraseña | {{ $appName }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body {
@@ -33,32 +37,31 @@
             font-weight: 600;
             text-decoration: none;
         }
-        .fallback {
+        .fallback { font-size: 13px; color: #6b7280; word-break: break-all; }
+        .aviso {
             font-size: 13px;
-            color: #6b7280;
-            word-break: break-all;
+            color: #52514e;
+            background: #f9f9f7;
+            border-left: 3px solid #c3c2b7;
+            padding: 12px 14px;
+            margin: 0 0 16px;
         }
-        .footer {
-            margin-top: 24px;
-            text-align: center;
-            font-size: 12px;
-            color: #9ca3af;
-        }
+        .footer { margin-top: 24px; text-align: center; font-size: 12px; color: #9ca3af; }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>Establecé tu contraseña</h1>
+    <h1>Recuperar tu contraseña</h1>
 
     <p>Hola <strong>{{ $user->full_name ?? 'Usuario' }}</strong>,</p>
 
     <p>
-        Se creó tu cuenta en <strong>{{ $appName }}</strong>. Para activarla y definir
-        tu contraseña, hacé clic en el siguiente botón:
+        Recibimos una solicitud para restablecer la contraseña de tu cuenta en
+        <strong>{{ $appName }}</strong>. Para elegir una nueva, hacé clic en el botón:
     </p>
 
     <div class="btn-wrap">
-        <a class="btn" href="{{ $resetUrl }}">Establecer contraseña</a>
+        <a class="btn" href="{{ $resetUrl }}">Restablecer contraseña</a>
     </div>
 
     <p class="fallback">
@@ -66,9 +69,14 @@
         <a href="{{ $resetUrl }}">{{ $resetUrl }}</a>
     </p>
 
+    <p class="aviso">
+        <strong>¿No fuiste vos?</strong> Ignorá este correo: tu contraseña
+        seguirá siendo la misma y nadie podrá entrar con este enlace sin
+        acceso a tu buzón.
+    </p>
+
     <p style="font-size:13px;color:#6b7280;">
-        Por seguridad, este enlace caduca en 24 horas. Si no esperabas este correo,
-        podés ignorarlo.
+        Por seguridad, este enlace caduca en {{ $horas }} horas y solo se puede usar una vez.
     </p>
 
     <div class="footer">

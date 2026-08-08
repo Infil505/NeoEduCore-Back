@@ -2,136 +2,83 @@
     "openapi": "3.0.0",
     "info": {
         "title": "NeoEduCore API",
-        "description": "API REST del backend NeoEduCore para la plataforma educativa.",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "description": "API REST del backend NeoEduCore.\n\n**Este documento se genera con `php artisan openapi:generate`**, leyendo las rutas reales de la aplicación, así que no se desincroniza al añadir o quitar endpoints. No se edita a mano.\n\nAutenticación: token opaco de Laravel Sanctum (no JWT). Multi-tenant: cada petición queda acotada a la institución del usuario autenticado.\n\nLos cuerpos de ejemplo salen de `App\\Support\\ApiSpec`, compartidos con la colección de Postman."
     },
     "servers": [
         {
-            "url": "http://my-default-host.com",
-            "description": "Servidor local"
+            "url": "http://localhost",
+            "description": "Servidor"
+        }
+    ],
+    "tags": [
+        {
+            "name": "00 · Health"
+        },
+        {
+            "name": "01 · Auth y Sesión"
+        },
+        {
+            "name": "02 · Usuarios (admin)"
+        },
+        {
+            "name": "03 · Instituciones (admin)"
+        },
+        {
+            "name": "04 · Estudiantes"
+        },
+        {
+            "name": "05 · Grupos"
+        },
+        {
+            "name": "06 · Materias"
+        },
+        {
+            "name": "07 · Exámenes, Preguntas e Intentos"
+        },
+        {
+            "name": "08 · Progreso"
+        },
+        {
+            "name": "09 · Recursos de estudio"
+        },
+        {
+            "name": "10 · Calendario"
+        },
+        {
+            "name": "11 · IA (Tutor y Generación)"
+        },
+        {
+            "name": "12 · Reportes"
+        },
+        {
+            "name": "13 · Analíticas"
+        },
+        {
+            "name": "14 · Configuración del sistema"
+        },
+        {
+            "name": "99 · Bulk"
         }
     ],
     "paths": {
-        "/api/register": {
-            "post": {
-                "tags": [
-                    "Auth"
-                ],
-                "summary": "Registro de usuario",
-                "operationId": "8a56853624e025573120a09a4c75d468",
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "required": [
-                                    "full_name",
-                                    "email",
-                                    "password",
-                                    "password_confirmation"
-                                ],
-                                "properties": {
-                                    "full_name": {
-                                        "type": "string"
-                                    },
-                                    "email": {
-                                        "type": "string",
-                                        "format": "email"
-                                    },
-                                    "password": {
-                                        "type": "string",
-                                        "format": "password"
-                                    },
-                                    "password_confirmation": {
-                                        "type": "string",
-                                        "format": "password"
-                                    },
-                                    "institution_id": {
-                                        "type": "string",
-                                        "format": "uuid",
-                                        "nullable": true
-                                    },
-                                    "institution_code": {
-                                        "type": "string",
-                                        "nullable": true
-                                    },
-                                    "institution_name": {
-                                        "type": "string",
-                                        "nullable": true
-                                    }
-                                },
-                                "type": "object"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "201": {
-                        "description": "Usuario creado con token"
-                    },
-                    "422": {
-                        "description": "Validación fallida"
-                    }
-                }
-            }
-        },
-        "/api/auth/login": {
-            "post": {
-                "tags": [
-                    "Auth"
-                ],
-                "summary": "Iniciar sesión",
-                "operationId": "8dcb70df1020986038d098cc08d05dae",
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "required": [
-                                    "email",
-                                    "password"
-                                ],
-                                "properties": {
-                                    "email": {
-                                        "type": "string",
-                                        "format": "email"
-                                    },
-                                    "password": {
-                                        "type": "string",
-                                        "format": "password"
-                                    }
-                                },
-                                "type": "object"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Token Sanctum"
-                    },
-                    "401": {
-                        "description": "Credenciales inválidas"
-                    },
-                    "403": {
-                        "description": "Usuario inactivo"
-                    }
-                }
-            }
-        },
-        "/api/auth/me": {
+        "/api/ai-recommendations": {
             "get": {
                 "tags": [
-                    "Auth"
+                    "11 · IA (Tutor y Generación)"
                 ],
-                "summary": "Usuario autenticado",
-                "operationId": "b9abb1a7a74670a19c215c2c133f14d8",
+                "summary": "Index (AiRecommendationController)",
+                "description": "Controlador: `App\\Http\\Controllers\\AI\\AiRecommendationController@index`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_ai_recommendations",
                 "responses": {
                     "200": {
-                        "description": "Datos del usuario autenticado"
+                        "description": "Operación correcta"
                     },
                     "401": {
-                        "description": "No autenticado"
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
                     }
                 },
                 "security": [
@@ -141,16 +88,2931 @@
                 ]
             }
         },
+        "/api/ai-recommendations/me": {
+            "get": {
+                "tags": [
+                    "11 · IA (Tutor y Generación)"
+                ],
+                "summary": "My recommendations (AiRecommendationController)",
+                "description": "Controlador: `App\\Http\\Controllers\\AI\\AiRecommendationController@myRecommendations`. **Roles permitidos:** student.",
+                "operationId": "get_api_ai_recommendations_me",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/ai-recommendations/{aiRecommendation}": {
+            "get": {
+                "tags": [
+                    "11 · IA (Tutor y Generación)"
+                ],
+                "summary": "Show (AiRecommendationController)",
+                "description": "Controlador: `App\\Http\\Controllers\\AI\\AiRecommendationController@show`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_ai_recommendations_aiRecommendation_",
+                "parameters": [
+                    {
+                        "name": "aiRecommendation",
+                        "in": "path",
+                        "required": true,
+                        "description": "ai_recommendation_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/ai/generate": {
+            "post": {
+                "tags": [
+                    "11 · IA (Tutor y Generación)"
+                ],
+                "summary": "Generate (AiController)",
+                "description": "Controlador: `App\\Http\\Controllers\\AI\\AiController@generate`. **Roles permitidos:** admin, teacher. Limitado por `throttle:20,1`. Limitado por `throttle:ai-global`.",
+                "operationId": "post_api_ai_generate",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "student_user_id": "<student_user_id>",
+                                "subject_id": "<subject_id>",
+                                "exam_id": null,
+                                "type": "action",
+                                "prompt": "Genera una recomendación breve de estudio."
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/ai/tutor/chat": {
+            "post": {
+                "tags": [
+                    "11 · IA (Tutor y Generación)"
+                ],
+                "summary": "Chat (AiTutorController)",
+                "description": "Controlador: `App\\Http\\Controllers\\AI\\AiTutorController@chat`. **Roles permitidos:** student. Limitado por `throttle:30,1`. Limitado por `throttle:ai-global`.",
+                "operationId": "post_api_ai_tutor_chat",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "message": "Explícame qué es una fracción.",
+                                "session_id": null,
+                                "subject_id": null,
+                                "exam_id": null,
+                                "mode": "explain",
+                                "topic": "fracciones"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/ai/tutor/diagnosis": {
+            "get": {
+                "tags": [
+                    "11 · IA (Tutor y Generación)"
+                ],
+                "summary": "Diagnosis (AiTutorController)",
+                "description": "Controlador: `App\\Http\\Controllers\\AI\\AiTutorController@diagnosis`. **Roles permitidos:** student. Limitado por `throttle:10,1`. Limitado por `throttle:ai-global`.",
+                "operationId": "get_api_ai_tutor_diagnosis",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/ai/tutor/sessions": {
+            "get": {
+                "tags": [
+                    "11 · IA (Tutor y Generación)"
+                ],
+                "summary": "Sessions (AiTutorController)",
+                "description": "Controlador: `App\\Http\\Controllers\\AI\\AiTutorController@sessions`. **Roles permitidos:** student.",
+                "operationId": "get_api_ai_tutor_sessions",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/ai/tutor/sessions/{sessionId}/end": {
+            "patch": {
+                "tags": [
+                    "11 · IA (Tutor y Generación)"
+                ],
+                "summary": "End session (AiTutorController)",
+                "description": "Controlador: `App\\Http\\Controllers\\AI\\AiTutorController@endSession`. **Roles permitidos:** student.",
+                "operationId": "patch_api_ai_tutor_sessions_sessionId_end",
+                "parameters": [
+                    {
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true,
+                        "description": "session_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": []
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/analytics/institution": {
+            "get": {
+                "tags": [
+                    "13 · Analíticas"
+                ],
+                "summary": "Institution (AnalyticsController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\AnalyticsController@institution`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_analytics_institution",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/analytics/students/{student_user_id}": {
+            "get": {
+                "tags": [
+                    "13 · Analíticas"
+                ],
+                "summary": "Student (AnalyticsController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\AnalyticsController@student`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_analytics_students_student_user_id_",
+                "parameters": [
+                    {
+                        "name": "student_user_id",
+                        "in": "path",
+                        "required": true,
+                        "description": "student_user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/analytics/subjects": {
+            "get": {
+                "tags": [
+                    "13 · Analíticas"
+                ],
+                "summary": "Subjects (AnalyticsController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\AnalyticsController@subjects`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_analytics_subjects",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/auth/login": {
+            "post": {
+                "tags": [
+                    "01 · Auth y Sesión"
+                ],
+                "summary": "Login (AuthController)",
+                "description": "Controlador: `App\\Http\\Controllers\\AuthController@login`. Limitado por `throttle:login`.",
+                "operationId": "post_api_auth_login",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "email": "admin@neoeducore.edu.co",
+                                "password": "password123"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                }
+            }
+        },
         "/api/auth/logout": {
             "post": {
                 "tags": [
-                    "Auth"
+                    "01 · Auth y Sesión"
                 ],
-                "summary": "Cerrar sesión",
-                "operationId": "69281b12abb272c76871f19cb17ca563",
+                "summary": "Logout (AuthController)",
+                "description": "Controlador: `App\\Http\\Controllers\\AuthController@logout`.",
+                "operationId": "post_api_auth_logout",
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/auth/me": {
+            "get": {
+                "tags": [
+                    "01 · Auth y Sesión"
+                ],
+                "summary": "Me (AuthController)",
+                "description": "Controlador: `App\\Http\\Controllers\\AuthController@me`.",
+                "operationId": "get_api_auth_me",
                 "responses": {
                     "200": {
-                        "description": "Sesión cerrada"
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/bulk/reassign-group": {
+            "post": {
+                "tags": [
+                    "99 · Bulk"
+                ],
+                "summary": "Reassign group (BulkReassignmentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\BulkReassignmentController@reassignGroup`. **Roles permitidos:** admin. Limitado por `throttle:10,1`.",
+                "operationId": "post_api_bulk_reassign_group",
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/bulk/reassign-subjects": {
+            "post": {
+                "tags": [
+                    "99 · Bulk"
+                ],
+                "summary": "Reassign subjects (BulkReassignmentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\BulkReassignmentController@reassignSubjects`. **Roles permitidos:** admin. Limitado por `throttle:10,1`.",
+                "operationId": "post_api_bulk_reassign_subjects",
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/bulk/reset-progress": {
+            "post": {
+                "tags": [
+                    "99 · Bulk"
+                ],
+                "summary": "Reset progress (BulkReassignmentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\BulkReassignmentController@resetProgress`. **Roles permitidos:** admin. Limitado por `throttle:10,1`.",
+                "operationId": "post_api_bulk_reset_progress",
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/calendar-events": {
+            "get": {
+                "tags": [
+                    "10 · Calendario"
+                ],
+                "summary": "Index (CalendarEventController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\CalendarEventController@index`. **Roles permitidos:** admin, teacher, student.",
+                "operationId": "get_api_calendar_events",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "10 · Calendario"
+                ],
+                "summary": "Store (CalendarEventController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\CalendarEventController@store`. **Roles permitidos:** admin, teacher.",
+                "operationId": "post_api_calendar_events",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "title": "Repaso general",
+                                "description": "Sesión de refuerzo",
+                                "start_at": "2026-07-15T08:00:00Z",
+                                "end_at": "2026-07-15T10:00:00Z",
+                                "event_type": "activity",
+                                "group_id": "<group_id>"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/calendar-events/{calendar_event}": {
+            "get": {
+                "tags": [
+                    "10 · Calendario"
+                ],
+                "summary": "Show (CalendarEventController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\CalendarEventController@show`. **Roles permitidos:** admin, teacher, student.",
+                "operationId": "get_api_calendar_events_calendar_event_",
+                "parameters": [
+                    {
+                        "name": "calendar_event",
+                        "in": "path",
+                        "required": true,
+                        "description": "calendar_event_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "10 · Calendario"
+                ],
+                "summary": "Update (CalendarEventController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\CalendarEventController@update`. **Roles permitidos:** admin, teacher.",
+                "operationId": "put_api_calendar_events_calendar_event_",
+                "parameters": [
+                    {
+                        "name": "calendar_event",
+                        "in": "path",
+                        "required": true,
+                        "description": "calendar_event_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "title": "Repaso general (editado)"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "patch": {
+                "tags": [
+                    "10 · Calendario"
+                ],
+                "summary": "Update (CalendarEventController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\CalendarEventController@update`. **Roles permitidos:** admin, teacher.",
+                "operationId": "patch_api_calendar_events_calendar_event_",
+                "parameters": [
+                    {
+                        "name": "calendar_event",
+                        "in": "path",
+                        "required": true,
+                        "description": "calendar_event_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "title": "Repaso general (editado)"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "10 · Calendario"
+                ],
+                "summary": "Destroy (CalendarEventController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\CalendarEventController@destroy`. **Roles permitidos:** admin, teacher.",
+                "operationId": "delete_api_calendar_events_calendar_event_",
+                "parameters": [
+                    {
+                        "name": "calendar_event",
+                        "in": "path",
+                        "required": true,
+                        "description": "calendar_event_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/exam-attempts/{attempt}/answers": {
+            "get": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Index (StudentAnswerController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentAnswerController@index`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_exam_attempts_attempt_answers",
+                "parameters": [
+                    {
+                        "name": "attempt",
+                        "in": "path",
+                        "required": true,
+                        "description": "attempt_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/exam-attempts/{attempt}/recommendations/regenerate": {
+            "post": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Regenerate recommendations (ExamAttemptController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamAttemptController@regenerateRecommendations`. **Roles permitidos:** student. Limitado por `throttle:5,1`.",
+                "operationId": "post_api_exam_attempts_attempt_recommendations_regenerate",
+                "parameters": [
+                    {
+                        "name": "attempt",
+                        "in": "path",
+                        "required": true,
+                        "description": "attempt_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": []
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/exams": {
+            "get": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Index (ExamController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamController@index`. **Roles permitidos:** admin, teacher, student.",
+                "operationId": "get_api_exams",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Store (ExamController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamController@store`. **Roles permitidos:** admin, teacher.",
+                "operationId": "post_api_exams",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "title": "Parcial 2 - Matemáticas",
+                                "subject_id": "<subject_id>",
+                                "grade": 10,
+                                "instructions": "Responder todas las preguntas.",
+                                "duration_minutes": 60,
+                                "max_attempts": 2,
+                                "show_results_immediately": true,
+                                "allow_review_after_submission": true,
+                                "randomize_questions": false,
+                                "group_ids": [
+                                    "<group_id>"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/exams/{exam}": {
+            "get": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Show (ExamController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamController@show`. **Roles permitidos:** admin, teacher, student.",
+                "operationId": "get_api_exams_exam_",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Update (ExamController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamController@update`. **Roles permitidos:** admin, teacher.",
+                "operationId": "put_api_exams_exam_",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "title": "Parcial 2 - Matemáticas (editado)",
+                                "duration_minutes": 90
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "patch": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Update (ExamController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamController@update`. **Roles permitidos:** admin, teacher.",
+                "operationId": "patch_api_exams_exam_",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "status": "published"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Destroy (ExamController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamController@destroy`. **Roles permitidos:** admin, teacher.",
+                "operationId": "delete_api_exams_exam_",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/exams/{exam}/attempts/start": {
+            "post": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Start (ExamAttemptController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamAttemptController@start`. **Roles permitidos:** student.",
+                "operationId": "post_api_exams_exam_attempts_start",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": []
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/exams/{exam}/attempts/{attempt}": {
+            "get": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Show (ExamAttemptController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamAttemptController@show`. **Roles permitidos:** student.",
+                "operationId": "get_api_exams_exam_attempts_attempt_",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "attempt",
+                        "in": "path",
+                        "required": true,
+                        "description": "attempt_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/exams/{exam}/attempts/{attempt}/pause": {
+            "patch": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Pause (ExamAttemptController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamAttemptController@pause`. **Roles permitidos:** student.",
+                "operationId": "patch_api_exams_exam_attempts_attempt_pause",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "attempt",
+                        "in": "path",
+                        "required": true,
+                        "description": "attempt_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": []
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/exams/{exam}/attempts/{attempt}/resume": {
+            "patch": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Resume (ExamAttemptController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamAttemptController@resume`. **Roles permitidos:** student.",
+                "operationId": "patch_api_exams_exam_attempts_attempt_resume",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "attempt",
+                        "in": "path",
+                        "required": true,
+                        "description": "attempt_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": []
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/exams/{exam}/attempts/{attempt}/submit": {
+            "post": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Submit (ExamAttemptController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamAttemptController@submit`. **Roles permitidos:** student.",
+                "operationId": "post_api_exams_exam_attempts_attempt_submit",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "attempt",
+                        "in": "path",
+                        "required": true,
+                        "description": "attempt_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "answers": [
+                                    {
+                                        "question_id": "<question_id>",
+                                        "selected_option_ids": [],
+                                        "answer_text": null
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/exams/{exam}/questions": {
+            "get": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Index (QuestionController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\QuestionController@index`. **Roles permitidos:** admin, teacher, student.",
+                "operationId": "get_api_exams_exam_questions",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Store (QuestionController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\QuestionController@store`. **Roles permitidos:** admin, teacher.",
+                "operationId": "post_api_exams_exam_questions",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "question_text": "¿Cuánto es 5 x 3?",
+                                "question_type": "multiple_choice",
+                                "points": 1,
+                                "order_index": 1,
+                                "options": [
+                                    {
+                                        "option_index": 1,
+                                        "option_text": "8",
+                                        "is_correct": false
+                                    },
+                                    {
+                                        "option_index": 2,
+                                        "option_text": "15",
+                                        "is_correct": true
+                                    },
+                                    {
+                                        "option_index": 3,
+                                        "option_text": "18",
+                                        "is_correct": false
+                                    },
+                                    {
+                                        "option_index": 4,
+                                        "option_text": "10",
+                                        "is_correct": false
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/groups": {
+            "get": {
+                "tags": [
+                    "05 · Grupos"
+                ],
+                "summary": "Index (GroupController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@index`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_groups",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "05 · Grupos"
+                ],
+                "summary": "Store (GroupController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@store`. **Roles permitidos:** admin, teacher.",
+                "operationId": "post_api_groups",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "name": "10-B",
+                                "grade": 10,
+                                "section": "B",
+                                "year": 2026,
+                                "group_code": "10B2026"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/groups/{group}": {
+            "get": {
+                "tags": [
+                    "05 · Grupos"
+                ],
+                "summary": "Show (GroupController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@show`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_groups_group_",
+                "parameters": [
+                    {
+                        "name": "group",
+                        "in": "path",
+                        "required": true,
+                        "description": "group_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "05 · Grupos"
+                ],
+                "summary": "Update (GroupController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@update`. **Roles permitidos:** admin, teacher.",
+                "operationId": "put_api_groups_group_",
+                "parameters": [
+                    {
+                        "name": "group",
+                        "in": "path",
+                        "required": true,
+                        "description": "group_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "name": "10-B (editado)",
+                                "grade": 10,
+                                "section": "B",
+                                "year": 2026
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "05 · Grupos"
+                ],
+                "summary": "Destroy (GroupController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@destroy`. **Roles permitidos:** admin, teacher.",
+                "operationId": "delete_api_groups_group_",
+                "parameters": [
+                    {
+                        "name": "group",
+                        "in": "path",
+                        "required": true,
+                        "description": "group_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/groups/{group}/students": {
+            "post": {
+                "tags": [
+                    "05 · Grupos"
+                ],
+                "summary": "Add students (GroupController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@addStudents`. **Roles permitidos:** admin, teacher.",
+                "operationId": "post_api_groups_group_students",
+                "parameters": [
+                    {
+                        "name": "group",
+                        "in": "path",
+                        "required": true,
+                        "description": "group_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "05 · Grupos"
+                ],
+                "summary": "Remove students (GroupController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@removeStudents`. **Roles permitidos:** admin, teacher.",
+                "operationId": "delete_api_groups_group_students",
+                "parameters": [
+                    {
+                        "name": "group",
+                        "in": "path",
+                        "required": true,
+                        "description": "group_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/institutions": {
+            "get": {
+                "tags": [
+                    "03 · Instituciones (admin)"
+                ],
+                "summary": "Index (InstitutionController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionController@index`. **Roles permitidos:** admin.",
+                "operationId": "get_api_institutions",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/institutions/{institution}": {
+            "get": {
+                "tags": [
+                    "03 · Instituciones (admin)"
+                ],
+                "summary": "Show (InstitutionController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionController@show`. **Roles permitidos:** admin.",
+                "operationId": "get_api_institutions_institution_",
+                "parameters": [
+                    {
+                        "name": "institution",
+                        "in": "path",
+                        "required": true,
+                        "description": "institution_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "03 · Instituciones (admin)"
+                ],
+                "summary": "Update (InstitutionController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionController@update`. **Roles permitidos:** admin.",
+                "operationId": "put_api_institutions_institution_",
+                "parameters": [
+                    {
+                        "name": "institution",
+                        "in": "path",
+                        "required": true,
+                        "description": "institution_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "name": "Institución Editada",
+                                "address": "Calle 123",
+                                "phone": "3100000000",
+                                "email": "info@neoeducore.edu.co",
+                                "is_active": true
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/institutions/{institution}/toggle": {
+            "patch": {
+                "tags": [
+                    "03 · Instituciones (admin)"
+                ],
+                "summary": "Toggle status (InstitutionController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionController@toggleStatus`. **Roles permitidos:** admin.",
+                "operationId": "patch_api_institutions_institution_toggle",
+                "parameters": [
+                    {
+                        "name": "institution",
+                        "in": "path",
+                        "required": true,
+                        "description": "institution_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": []
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/password/change": {
+            "post": {
+                "tags": [
+                    "01 · Auth y Sesión"
+                ],
+                "summary": "Change password (ForgotPasswordController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Auth\\ForgotPasswordController@changePassword`. Limitado por `throttle:5,1`.",
+                "operationId": "post_api_password_change",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "current_password": "password123",
+                                "password": "NuevaPass123",
+                                "password_confirmation": "NuevaPass123"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/password/forgot": {
+            "post": {
+                "tags": [
+                    "01 · Auth y Sesión"
+                ],
+                "summary": "Send reset link (ForgotPasswordController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Auth\\ForgotPasswordController@sendResetLink`. Limitado por `throttle:5,1`.",
+                "operationId": "post_api_password_forgot",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "email": "estudiante1@neoeducore.edu.co"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                }
+            }
+        },
+        "/api/password/reset": {
+            "post": {
+                "tags": [
+                    "01 · Auth y Sesión"
+                ],
+                "summary": "Reset password (ForgotPasswordController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Auth\\ForgotPasswordController@resetPassword`. Limitado por `throttle:5,1`.",
+                "operationId": "post_api_password_reset",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "email": "estudiante1@neoeducore.edu.co",
+                                "token": "<token recibido por correo>",
+                                "password": "NuevaPass123",
+                                "password_confirmation": "NuevaPass123"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                }
+            }
+        },
+        "/api/password/verify": {
+            "post": {
+                "tags": [
+                    "01 · Auth y Sesión"
+                ],
+                "summary": "Verify token (ForgotPasswordController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Auth\\ForgotPasswordController@verifyToken`. Limitado por `throttle:10,1`.",
+                "operationId": "post_api_password_verify",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "email": "estudiante1@neoeducore.edu.co",
+                                "token": "<token recibido por correo>"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                }
+            }
+        },
+        "/api/ping": {
+            "get": {
+                "tags": [
+                    "00 · Health"
+                ],
+                "summary": "Closure",
+                "description": "Controlador: `Closure`.",
+                "operationId": "get_api_ping",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    }
+                }
+            }
+        },
+        "/api/questions/{question}": {
+            "put": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Update (QuestionController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\QuestionController@update`. **Roles permitidos:** admin, teacher.",
+                "operationId": "put_api_questions_question_",
+                "parameters": [
+                    {
+                        "name": "question",
+                        "in": "path",
+                        "required": true,
+                        "description": "question_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "question_text": "¿Cuánto es 5 x 3? (editado)",
+                                "points": 2,
+                                "options": [
+                                    {
+                                        "option_index": 1,
+                                        "option_text": "8",
+                                        "is_correct": false
+                                    },
+                                    {
+                                        "option_index": 2,
+                                        "option_text": "15",
+                                        "is_correct": true
+                                    },
+                                    {
+                                        "option_index": 3,
+                                        "option_text": "18",
+                                        "is_correct": false
+                                    },
+                                    {
+                                        "option_index": 4,
+                                        "option_text": "10",
+                                        "is_correct": false
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Destroy (QuestionController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\QuestionController@destroy`. **Roles permitidos:** admin, teacher.",
+                "operationId": "delete_api_questions_question_",
+                "parameters": [
+                    {
+                        "name": "question",
+                        "in": "path",
+                        "required": true,
+                        "description": "question_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/register": {
+            "post": {
+                "tags": [
+                    "01 · Auth y Sesión"
+                ],
+                "summary": "Register (AuthController)",
+                "description": "Controlador: `App\\Http\\Controllers\\AuthController@register`. **Roles permitidos:** admin.",
+                "operationId": "post_api_register",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "full_name": "Estudiante de Prueba",
+                                "email": "nuevo.estudiante@neoeducore.edu.co",
+                                "password": "Password123",
+                                "password_confirmation": "Password123",
+                                "user_type": "student"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/reports/ai/tutor-usage": {
+            "get": {
+                "tags": [
+                    "12 · Reportes"
+                ],
+                "summary": "Tutor usage (ReportController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\ReportController@tutorUsage`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_reports_ai_tutor_usage",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/reports/exams/{exam}/results": {
+            "get": {
+                "tags": [
+                    "12 · Reportes"
+                ],
+                "summary": "Exam results (ReportController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\ReportController@examResults`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_reports_exams_exam_results",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/reports/exams/{exam}/results.csv": {
+            "get": {
+                "tags": [
+                    "12 · Reportes"
+                ],
+                "summary": "Export exam results csv (ReportController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\ReportController@exportExamResultsCsv`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_reports_exams_exam_results_csv",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/reports/exams/{exam}/summary": {
+            "get": {
+                "tags": [
+                    "12 · Reportes"
+                ],
+                "summary": "Exam summary (ReportController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\ReportController@examSummary`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_reports_exams_exam_summary",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/reports/students/me/strategies": {
+            "get": {
+                "tags": [
+                    "12 · Reportes"
+                ],
+                "summary": "My strategies (ReportController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\ReportController@myStrategies`. **Roles permitidos:** student.",
+                "operationId": "get_api_reports_students_me_strategies",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/reports/students/{student_user_id}/history": {
+            "get": {
+                "tags": [
+                    "12 · Reportes"
+                ],
+                "summary": "Student history (ReportController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\ReportController@studentHistory`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_reports_students_student_user_id_history",
+                "parameters": [
+                    {
+                        "name": "student_user_id",
+                        "in": "path",
+                        "required": true,
+                        "description": "student_user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/reports/students/{student_user_id}/history.csv": {
+            "get": {
+                "tags": [
+                    "12 · Reportes"
+                ],
+                "summary": "Export student history csv (ReportController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\ReportController@exportStudentHistoryCsv`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_reports_students_student_user_id_history_csv",
+                "parameters": [
+                    {
+                        "name": "student_user_id",
+                        "in": "path",
+                        "required": true,
+                        "description": "student_user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/reports/students/{student_user_id}/strategies": {
+            "get": {
+                "tags": [
+                    "12 · Reportes"
+                ],
+                "summary": "Student strategies (ReportController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\ReportController@studentStrategies`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_reports_students_student_user_id_strategies",
+                "parameters": [
+                    {
+                        "name": "student_user_id",
+                        "in": "path",
+                        "required": true,
+                        "description": "student_user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/reports/students/{student_user_id}/summary": {
+            "get": {
+                "tags": [
+                    "12 · Reportes"
+                ],
+                "summary": "Student summary (ReportController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\ReportController@studentSummary`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_reports_students_student_user_id_summary",
+                "parameters": [
+                    {
+                        "name": "student_user_id",
+                        "in": "path",
+                        "required": true,
+                        "description": "student_user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/student-answers/{studentAnswer}/review": {
+            "patch": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Review (StudentAnswerController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentAnswerController@review`. **Roles permitidos:** admin, teacher.",
+                "operationId": "patch_api_student_answers_studentAnswer_review",
+                "parameters": [
+                    {
+                        "name": "studentAnswer",
+                        "in": "path",
+                        "required": true,
+                        "description": "student_answer_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "is_correct": true,
+                                "points_awarded": 1,
+                                "explanation": "Respuesta correcta."
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/student-progress": {
+            "get": {
+                "tags": [
+                    "08 · Progreso"
+                ],
+                "summary": "Index (StudentProgressController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentProgressController@index`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_student_progress",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "08 · Progreso"
+                ],
+                "summary": "Upsert (StudentProgressController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentProgressController@upsert`. **Roles permitidos:** admin, teacher.",
+                "operationId": "post_api_student_progress",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "student_user_id": "<student_user_id>",
+                                "subject_id": "<subject_id>",
+                                "mastery_percentage": 82.5
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/student-progress/me": {
+            "get": {
+                "tags": [
+                    "08 · Progreso"
+                ],
+                "summary": "Me (StudentProgressController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentProgressController@me`. **Roles permitidos:** student.",
+                "operationId": "get_api_student_progress_me",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/student-progress/recalc": {
+            "post": {
+                "tags": [
+                    "08 · Progreso"
+                ],
+                "summary": "Recalc from attempts (StudentProgressController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentProgressController@recalcFromAttempts`. **Roles permitidos:** admin, teacher.",
+                "operationId": "post_api_student_progress_recalc",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "student_user_id": "<student_user_id>",
+                                "subject_id": "<subject_id>"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/students": {
+            "get": {
+                "tags": [
+                    "04 · Estudiantes"
+                ],
+                "summary": "Index (StudentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentController@index`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_students",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
                     }
                 },
                 "security": [
@@ -163,36 +3025,40 @@
         "/api/students/bulk-upload": {
             "post": {
                 "tags": [
-                    "Students"
+                    "04 · Estudiantes"
                 ],
-                "summary": "Carga masiva de estudiantes (CSV o XLSX)",
-                "operationId": "d995a2f7d713198316bd8b37065bb190",
+                "summary": "Bulk upload (StudentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentController@bulkUpload`. **Roles permitidos:** admin. Limitado por `throttle:3,1`.",
+                "operationId": "post_api_students_bulk_upload",
                 "requestBody": {
                     "required": true,
                     "content": {
                         "multipart/form-data": {
                             "schema": {
-                                "required": [
-                                    "file"
-                                ],
+                                "type": "object",
                                 "properties": {
                                     "file": {
-                                        "description": "Archivo CSV o XLSX. Máximo 5 MB y 5.000 filas.",
                                         "type": "string",
-                                        "format": "binary"
+                                        "format": "binary",
+                                        "description": "CSV o XLSX. Máximo 5 MB y 5.000 filas."
                                     }
-                                },
-                                "type": "object"
+                                }
                             }
                         }
                     }
                 },
                 "responses": {
-                    "200": {
-                        "description": "Resultado de la importación"
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
                     },
                     "422": {
-                        "description": "Archivo inválido o supera límites"
+                        "description": "Error de validación"
                     }
                 },
                 "security": [
@@ -205,13 +3071,1276 @@
         "/api/students/bulk-upload/template": {
             "get": {
                 "tags": [
-                    "Students"
+                    "04 · Estudiantes"
                 ],
-                "summary": "Descargar plantilla CSV para carga masiva",
-                "operationId": "19d971bc6307715dfc9c180a29047833",
+                "summary": "Bulk upload template (StudentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentController@bulkUploadTemplate`. **Roles permitidos:** admin.",
+                "operationId": "get_api_students_bulk_upload_template",
                 "responses": {
                     "200": {
-                        "description": "Archivo CSV de plantilla"
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/students/me": {
+            "get": {
+                "tags": [
+                    "04 · Estudiantes"
+                ],
+                "summary": "Me (StudentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentController@me`. **Roles permitidos:** student.",
+                "operationId": "get_api_students_me",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/students/me/available-exams": {
+            "get": {
+                "tags": [
+                    "04 · Estudiantes"
+                ],
+                "summary": "Available exams (StudentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentController@availableExams`. **Roles permitidos:** student.",
+                "operationId": "get_api_students_me_available_exams",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/students/me/subjects": {
+            "get": {
+                "tags": [
+                    "04 · Estudiantes"
+                ],
+                "summary": "My subjects (StudentSubjectController)",
+                "description": "Controlador: `\\App\\Http\\Controllers\\Academic\\StudentSubjectController@mySubjects`. **Roles permitidos:** student.",
+                "operationId": "get_api_students_me_subjects",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/students/{student_user_id}": {
+            "get": {
+                "tags": [
+                    "04 · Estudiantes"
+                ],
+                "summary": "Show (StudentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentController@show`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_students_student_user_id_",
+                "parameters": [
+                    {
+                        "name": "student_user_id",
+                        "in": "path",
+                        "required": true,
+                        "description": "student_user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "04 · Estudiantes"
+                ],
+                "summary": "Update (StudentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentController@update`. **Roles permitidos:** admin, teacher.",
+                "operationId": "put_api_students_student_user_id_",
+                "parameters": [
+                    {
+                        "name": "student_user_id",
+                        "in": "path",
+                        "required": true,
+                        "description": "student_user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "student_code": "STU-EDIT-001",
+                                "grade": 10,
+                                "section": "A",
+                                "birth_date": "2010-05-14",
+                                "parent_name": "Acudiente Ejemplo",
+                                "parent_email": "acudiente@mail.com",
+                                "group_code": "10A2026",
+                                "adecuacion_type": null,
+                                "learning_style": "visual"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/students/{student_user_id}/status": {
+            "patch": {
+                "tags": [
+                    "04 · Estudiantes"
+                ],
+                "summary": "Set status (StudentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentController@setStatus`. **Roles permitidos:** admin, teacher.",
+                "operationId": "patch_api_students_student_user_id_status",
+                "parameters": [
+                    {
+                        "name": "student_user_id",
+                        "in": "path",
+                        "required": true,
+                        "description": "student_user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "status": "active"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/students/{student_user_id}/subjects": {
+            "post": {
+                "tags": [
+                    "04 · Estudiantes"
+                ],
+                "summary": "Enroll (StudentSubjectController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\StudentSubjectController@enroll`. **Roles permitidos:** admin, teacher.",
+                "operationId": "post_api_students_student_user_id_subjects",
+                "parameters": [
+                    {
+                        "name": "student_user_id",
+                        "in": "path",
+                        "required": true,
+                        "description": "student_user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "subject_id": "<subject_id>"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "get": {
+                "tags": [
+                    "04 · Estudiantes"
+                ],
+                "summary": "Index (StudentSubjectController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\StudentSubjectController@index`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_students_student_user_id_subjects",
+                "parameters": [
+                    {
+                        "name": "student_user_id",
+                        "in": "path",
+                        "required": true,
+                        "description": "student_user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/students/{student_user_id}/subjects/{subject}": {
+            "delete": {
+                "tags": [
+                    "04 · Estudiantes"
+                ],
+                "summary": "Unenroll (StudentSubjectController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\StudentSubjectController@unenroll`. **Roles permitidos:** admin, teacher.",
+                "operationId": "delete_api_students_student_user_id_subjects_subject_",
+                "parameters": [
+                    {
+                        "name": "student_user_id",
+                        "in": "path",
+                        "required": true,
+                        "description": "student_user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "subject",
+                        "in": "path",
+                        "required": true,
+                        "description": "subject_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/study-resources": {
+            "get": {
+                "tags": [
+                    "09 · Recursos de estudio"
+                ],
+                "summary": "Index (StudyResourceController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\StudyResourceController@index`. **Roles permitidos:** admin, teacher, student.",
+                "operationId": "get_api_study_resources",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "09 · Recursos de estudio"
+                ],
+                "summary": "Store (StudyResourceController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\StudyResourceController@store`. **Roles permitidos:** admin, teacher.",
+                "operationId": "post_api_study_resources",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "title": "Repaso de Fracciones",
+                                "description": "Video introductorio",
+                                "resource_type": "video",
+                                "url": "https://www.youtube.com/watch?v=ejemplo",
+                                "estimated_duration": 20,
+                                "difficulty": "basic",
+                                "grade_min": 9,
+                                "grade_max": 11,
+                                "language": "es"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/study-resources/{study_resource}": {
+            "get": {
+                "tags": [
+                    "09 · Recursos de estudio"
+                ],
+                "summary": "Show (StudyResourceController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\StudyResourceController@show`. **Roles permitidos:** admin, teacher, student.",
+                "operationId": "get_api_study_resources_study_resource_",
+                "parameters": [
+                    {
+                        "name": "study_resource",
+                        "in": "path",
+                        "required": true,
+                        "description": "study_resource_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "09 · Recursos de estudio"
+                ],
+                "summary": "Update (StudyResourceController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\StudyResourceController@update`. **Roles permitidos:** admin, teacher.",
+                "operationId": "put_api_study_resources_study_resource_",
+                "parameters": [
+                    {
+                        "name": "study_resource",
+                        "in": "path",
+                        "required": true,
+                        "description": "study_resource_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "title": "Repaso de Fracciones (editado)",
+                                "difficulty": "intermediate"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "patch": {
+                "tags": [
+                    "09 · Recursos de estudio"
+                ],
+                "summary": "Update (StudyResourceController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\StudyResourceController@update`. **Roles permitidos:** admin, teacher.",
+                "operationId": "patch_api_study_resources_study_resource_",
+                "parameters": [
+                    {
+                        "name": "study_resource",
+                        "in": "path",
+                        "required": true,
+                        "description": "study_resource_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "title": "Repaso de Fracciones (editado)",
+                                "difficulty": "intermediate"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "09 · Recursos de estudio"
+                ],
+                "summary": "Destroy (StudyResourceController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\StudyResourceController@destroy`. **Roles permitidos:** admin, teacher.",
+                "operationId": "delete_api_study_resources_study_resource_",
+                "parameters": [
+                    {
+                        "name": "study_resource",
+                        "in": "path",
+                        "required": true,
+                        "description": "study_resource_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/subjects": {
+            "get": {
+                "tags": [
+                    "06 · Materias"
+                ],
+                "summary": "Index (SubjectController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\SubjectController@index`. **Roles permitidos:** admin, teacher, student.",
+                "operationId": "get_api_subjects",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "06 · Materias"
+                ],
+                "summary": "Store (SubjectController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\SubjectController@store`. **Roles permitidos:** admin.",
+                "operationId": "post_api_subjects",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "name": "Ciencias Naturales"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/subjects/{subject}": {
+            "get": {
+                "tags": [
+                    "06 · Materias"
+                ],
+                "summary": "Show (SubjectController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\SubjectController@show`. **Roles permitidos:** admin, teacher, student.",
+                "operationId": "get_api_subjects_subject_",
+                "parameters": [
+                    {
+                        "name": "subject",
+                        "in": "path",
+                        "required": true,
+                        "description": "subject_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "06 · Materias"
+                ],
+                "summary": "Update (SubjectController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\SubjectController@update`. **Roles permitidos:** admin.",
+                "operationId": "put_api_subjects_subject_",
+                "parameters": [
+                    {
+                        "name": "subject",
+                        "in": "path",
+                        "required": true,
+                        "description": "subject_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "name": "Ciencias Naturales (editado)"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "patch": {
+                "tags": [
+                    "06 · Materias"
+                ],
+                "summary": "Update (SubjectController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\SubjectController@update`. **Roles permitidos:** admin.",
+                "operationId": "patch_api_subjects_subject_",
+                "parameters": [
+                    {
+                        "name": "subject",
+                        "in": "path",
+                        "required": true,
+                        "description": "subject_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "name": "Ciencias Naturales (editado)"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "06 · Materias"
+                ],
+                "summary": "Destroy (SubjectController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\SubjectController@destroy`. **Roles permitidos:** admin.",
+                "operationId": "delete_api_subjects_subject_",
+                "parameters": [
+                    {
+                        "name": "subject",
+                        "in": "path",
+                        "required": true,
+                        "description": "subject_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/system/config": {
+            "put": {
+                "tags": [
+                    "14 · Configuración del sistema"
+                ],
+                "summary": "Update (SystemConfigController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\SystemConfigController@update`. **Roles permitidos:** admin.",
+                "operationId": "put_api_system_config",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "timezone": "America/Bogota",
+                                "language": "es",
+                                "max_exam_duration": 180,
+                                "allow_registration": false,
+                                "contact_email": "contacto@neoeducore.edu.co"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "get": {
+                "tags": [
+                    "14 · Configuración del sistema"
+                ],
+                "summary": "Show (SystemConfigController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\SystemConfigController@show`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_system_config",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/users": {
+            "get": {
+                "tags": [
+                    "02 · Usuarios (admin)"
+                ],
+                "summary": "Index (UserController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\UserController@index`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_users",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/users/{user}": {
+            "get": {
+                "tags": [
+                    "02 · Usuarios (admin)"
+                ],
+                "summary": "Show (UserController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\UserController@show`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_users_user_",
+                "parameters": [
+                    {
+                        "name": "user",
+                        "in": "path",
+                        "required": true,
+                        "description": "user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "02 · Usuarios (admin)"
+                ],
+                "summary": "Update (UserController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\UserController@update`. **Roles permitidos:** admin.",
+                "operationId": "put_api_users_user_",
+                "parameters": [
+                    {
+                        "name": "user",
+                        "in": "path",
+                        "required": true,
+                        "description": "user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "full_name": "Nombre Editado",
+                                "email": "editado@neoeducore.edu.co",
+                                "status": "active"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "02 · Usuarios (admin)"
+                ],
+                "summary": "Destroy (UserController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\UserController@destroy`. **Roles permitidos:** admin.",
+                "operationId": "delete_api_users_user_",
+                "parameters": [
+                    {
+                        "name": "user",
+                        "in": "path",
+                        "required": true,
+                        "description": "user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/users/{user}/reset-password": {
+            "patch": {
+                "tags": [
+                    "02 · Usuarios (admin)"
+                ],
+                "summary": "Reset password (UserController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\UserController@resetPassword`. **Roles permitidos:** admin.",
+                "operationId": "patch_api_users_user_reset_password",
+                "parameters": [
+                    {
+                        "name": "user",
+                        "in": "path",
+                        "required": true,
+                        "description": "user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "password": "NuevaPass123",
+                                "password_confirmation": "NuevaPass123"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/users/{user}/status": {
+            "patch": {
+                "tags": [
+                    "02 · Usuarios (admin)"
+                ],
+                "summary": "Set status (UserController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\UserController@setStatus`. **Roles permitidos:** admin.",
+                "operationId": "patch_api_users_user_status",
+                "parameters": [
+                    {
+                        "name": "user",
+                        "in": "path",
+                        "required": true,
+                        "description": "user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "example": {
+                                "status": "active"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
                     }
                 },
                 "security": [
@@ -226,19 +4355,9 @@
         "securitySchemes": {
             "sanctum": {
                 "type": "http",
-                "bearerFormat": "JWT",
-                "scheme": "bearer"
+                "scheme": "bearer",
+                "description": "Token opaco de Laravel Sanctum. Se obtiene en `POST /api/auth/login` y se envía como `Authorization: Bearer <token>`."
             }
         }
-    },
-    "tags": [
-        {
-            "name": "Auth",
-            "description": "Auth"
-        },
-        {
-            "name": "Students",
-            "description": "Students"
-        }
-    ]
+    }
 }

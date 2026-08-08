@@ -21,6 +21,12 @@ class QuestionController extends Controller
      */
     public function index(Request $request, Exam $exam)
     {
+        // Misma comprobación que `ExamController::show()`: si no, esta ruta era
+        // la vía directa a los enunciados de un examen ajeno o en borrador.
+        if (!Exam::query()->whereKey($exam->getKey())->visibleTo($request->user())->exists()) {
+            return response()->json(['message' => 'No encontrado'], 404);
+        }
+
         $query = $exam->questions()->with('options');
 
         if ($exam->randomize_questions) {

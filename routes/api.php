@@ -41,7 +41,13 @@ Route::get('/ping', fn () => response()->json(['ok' => true]));
 | cuentas dentro de su institución (ver grupo role:admin más abajo).
 | El primer admin se crea mediante el seeder (php artisan db:seed).
 */
-Route::post('/auth/login', [AuthController::class, 'login'])->name('login');
+// `throttle:login` cuenta por correo+IP y, además, por IP a secas. Es la puerta
+// más atacada del sistema y hasta el 07/08/2026 no tenía ningún tope: con
+// BCRYPT_ROUNDS=10 cada intento cuesta ~100 ms de CPU, así que servía tanto para
+// fuerza bruta como para agotar los workers. Ver config/rate_limits.php.
+Route::post('/auth/login', [AuthController::class, 'login'])
+    ->middleware('throttle:login')
+    ->name('login');
 
 /*
 |--------------------------------------------------------------------------
@@ -94,6 +100,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/student-progress/me', [StudentProgressController::class, 'me']);
         Route::get('/ai-recommendations/me', [AiRecommendationController::class, 'myRecommendations']);
         Route::get('/students/me/available-exams', [StudentController::class, 'availableExams']);
+
+        // Estrategias del tutor, en el grupo de alumno y ANTES de la ruta con
+        // comodín del grupo docente: si se registrara después, `me` entraría por
+        // `{student_user_id}` y el alumno acabaría en una ruta que no le toca.
+        Route::get('/reports/students/me/strategies', [ReportController::class, 'myStrategies']);
 
         // Tutor IA conversacional
         // Doble throttle: el primero acota al usuario, el segundo (de institución)
@@ -195,6 +206,17 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/reports/exams/{exam}/results', [ReportController::class, 'examResults']);
         Route::get('/reports/exams/{exam}/results.csv', [ReportController::class, 'exportExamResultsCsv']);
         Route::get('/reports/students/{student_user_id}/history', [ReportController::class, 'studentHistory']);
+        Route::get('/reports/students/{student_user_id}/history.csv', [ReportController::class, 'exportStudentHistoryCsv']);
+
+        // Resúmenes agregados para los gráficos y el PDF que arma el frontend.
+        // Van aparte de los listados paginados: quien solo quiere la tabla no
+        // paga los agregados, y quien solo quiere los gráficos no pagina.
+        Route::get('/reports/exams/{exam}/summary', [ReportController::class, 'examSummary']);
+        Route::get('/reports/students/{student_user_id}/summary', [ReportController::class, 'studentSummary']);
+
+        // Estrategias del tutor de un alumno. El docente solo ve las nacidas de
+        // exámenes suyos; el chat con el tutor no sale por aquí nunca ([175]).
+        Route::get('/reports/students/{student_user_id}/strategies', [ReportController::class, 'studentStrategies']);
         Route::get('/reports/ai/tutor-usage', [ReportController::class, 'tutorUsage']);
 
         // Analíticas agregadas

@@ -95,10 +95,7 @@ class AiRecommendationService
                 "Se detectan áreas por reforzar.\nAcciones sugeridas:\n- Repasa conceptos base.\n- Practica con ejemplos guiados.\n- Pide apoyo en los temas con más errores."
             );
 
-            // ✅ Sugerir 1 recurso del catálogo del tenant (tu StudyResource no tiene subject_id)
-            $resource = StudyResource::query()
-                ->orderBy('created_at', 'desc')
-                ->first();
+            $resource = $this->recursoSugerido($attempt);
 
             if ($resource) {
                 $created[] = $this->create(
@@ -210,11 +207,12 @@ class AiRecommendationService
             return $this->generateFromAttempt($attempt);
         }
 
-        $strengthText = $this->extractSection($content, 'strength') ?? 'Buen desempeño en varios temas. Sigue practicando para consolidar lo aprendido.';
-        $weaknessText = $this->extractSection($content, 'weakness') ?? 'Refuerza los temas donde tuviste más errores con ejemplos guiados.';
-        $actionText   = $this->extractSection($content, 'action') ?? "Acciones:\n- Repasa los errores.\n- Practica ejercicios.\n- Pide aclaraciones del tema.";
+        $strengthText = $this->depurar($this->extractSection($content, 'strength'), 'Buen desempeño en varios temas. Sigue practicando para consolidar lo aprendido.');
+        $weaknessText = $this->depurar($this->extractSection($content, 'weakness'), 'Refuerza los temas donde tuviste más errores con ejemplos guiados.');
+        $actionText   = $this->depurar($this->extractSection($content, 'action'), "Acciones:\n- Repasa los errores.\n- Practica ejercicios.\n- Pide aclaraciones del tema.");
 
         [$resourceText, $resourceJson] = $this->extractResource($content);
+        $resourceText = $this->depurar($resourceText, 'Recurso sugerido: repasar el tema con una guía práctica o un video corto.');
 
         $created = [];
         $created[] = $this->create($studentUserId, $subjectId, $examId, 'strength', $strengthText, null);
@@ -223,7 +221,7 @@ class AiRecommendationService
 
         // Si OpenAI no dio JSON útil, intentamos sugerir un recurso del catálogo
         if ($resourceJson === null) {
-            $r = StudyResource::query()->orderBy('created_at', 'desc')->first();
+            $r = $this->recursoSugerido($attempt);
             if ($r) {
                 $resourceJson = [
                     'title' => $r->title,
@@ -239,6 +237,81 @@ class AiRecommendationService
         $created[] = $this->create($studentUserId, $subjectId, $examId, 'resource', $resourceText, $resourceJson);
 
         return $created;
+    }
+
+    /**
+     * Recurso del catálogo del centro adecuado al estudiante.
+     *
+     * Antes era `orderBy('created_at','desc')->first()`: **el último recurso
+     * subido a la institución, para todo el mundo**. Un alumno de 1.º que
+     * reprobaba Ciencias recibía el vídeo de Estudios Sociales de 6.º si era el
+     * más reciente. El informe promete «recursos personalizados» en la Figura 10
+     * y [263] pone el ejemplo contrario, así que la elección no puede ser
+     * indiferente al alumno.
+     *
+     * Se filtra por el **rango de grado** del recurso (`grade_min`/`grade_max`,
+     * columnas que ya existían y nadie usaba) y se prefiere la dificultad
+     * `basic`: esta rama solo se recorre por debajo del 65-70 %, donde lo útil es
+     * material de refuerzo, no de ampliación.
+     *
+     * **Limitación conocida, y es de modelo, no de código:** `study_resources`
+     * no tiene `subject_id`, así que no se puede acotar por materia. Es la misma
+     * carencia de metadatos que impide diagnosticar por tema (`questions` tampoco
+     * tiene tema ni indicador). Anotado en `ESTADO_Y_PENDIENTES.md` §3.5.
+     */
+    private function recursoSugerido(ExamAttempt $attempt): ?StudyResource
+    {
+        $attempt->loadMissing('student');
+        $grade = $attempt->student?->grade;
+
+        $porDificultad = fn ($q) => $q
+            ->orderByRaw("CASE WHEN difficulty = 'basic' THEN 0 WHEN difficulty IS NULL THEN 1 ELSE 2 END")
+            ->orderByDesc('created_at');
+
+        if ($grade !== null) {
+            $delGrado = $porDificultad(
+                StudyResource::query()
+                    ->where(fn ($w) => $w->whereNull('grade_min')->orWhere('grade_min', '<=', $grade))
+                    ->where(fn ($w) => $w->whereNull('grade_max')->orWhere('grade_max', '>=', $grade))
+            )->first();
+
+            if ($delGrado) {
+                return $delGrado;
+            }
+        }
+
+        // Sin grado en el perfil, o sin nada que le encaje: mejor un recurso
+        // genérico que ninguno — el texto de la recomendación ya es útil sin él,
+        // pero el alumno agradece un punto de partida.
+        return $porDificultad(StudyResource::query())->first();
+    }
+
+    /**
+     * Pasa por `AiOutputValidator` un texto salido del modelo, o devuelve el de
+     * reserva si no supera la validación.
+     *
+     * Estas cuatro secciones **no pasaban por ningún filtro**: `chat()` y
+     * `getDiagnosis()` del tutor sí validaban su salida, pero las recomendaciones
+     * regeneradas se guardaban crudas en `ai_recommendations`, y de ahí van al
+     * alumno, al reporte de estrategias del docente y al PDF. Es la misma
+     * superficie y merecía la misma comprobación: PII, longitud y enlaces fuera
+     * de la lista blanca.
+     */
+    private function depurar(?string $texto, string $reserva): string
+    {
+        $texto = $texto !== null ? trim($texto) : '';
+
+        if ($texto === '') {
+            return $reserva;
+        }
+
+        $validator = new AiOutputValidator();
+
+        if ($validator->validate($texto) !== null) {
+            return $reserva;
+        }
+
+        return $validator->sanitize($texto);
     }
 
     private function extractSection(string $text, string $key): ?string

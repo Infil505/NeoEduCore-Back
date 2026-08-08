@@ -305,7 +305,14 @@ class StudentController extends Controller
                         // Contraseña no usable: el usuario la define vía el enlace que recibe por correo.
                         'password_hash'  => Hash::make(Str::random(40)),
                         'user_type'      => UserType::Student->value,
-                        'status'         => UserStatus::Active->value,
+
+                        // Nace INACTIVA: la activa su dueño al definir la
+                        // contraseña desde el correo de alta. Antes se creaba
+                        // ya activa, así que en el panel no había forma de
+                        // distinguir a quien nunca entró de quien lleva meses
+                        // usando la plataforma — y aun así no podía entrar,
+                        // porque su contraseña es aleatoria.
+                        'status'         => UserStatus::Inactive->value,
                     ]);
 
                     $usersCreated++;
@@ -509,26 +516,17 @@ class StudentController extends Controller
 
     public function availableExams(Request $request)
     {
-        $user    = $request->user();
-        $student = Student::with('groups')->where('user_id', $user->id)->first();
+        $user = $request->user();
 
-        if (!$student) {
-            return response()->json(['data' => []]);
-        }
-
-        $groupIds = $student->groups->pluck('id');
-
-        if ($groupIds->isEmpty()) {
-            return response()->json(['data' => []]);
-        }
-
+        // La regla de «examen visible para este alumno» (activo, vigente y
+        // asignado a sus grupos) vive en `Exam::scopeVisibleTo`, que es la que
+        // aplican también `/exams` y `/exams/{id}`. Aquí solo se añade lo propio
+        // de la disponibilidad: que le queden intentos.
+        //
         // withCount mueve el filtro de intentos a la BD: elimina la query separada
         // y el filtrado en memoria sobre colecciones potencialmente grandes.
         $exams = Exam::query()
-            ->where('status', 'active')
-            ->where(fn($q) => $q->whereNull('available_from')->orWhere('available_from', '<=', now()))
-            ->where(fn($q) => $q->whereNull('available_until')->orWhere('available_until', '>=', now()))
-            ->whereHas('groups', fn($q) => $q->whereIn('groups.id', $groupIds))
+            ->visibleTo($user)
             ->withCount(['attempts as submitted_count' => fn($q) =>
                 $q->where('student_user_id', $user->id)->whereNotNull('submitted_at')
             ])

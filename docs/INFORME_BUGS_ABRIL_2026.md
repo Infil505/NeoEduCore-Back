@@ -4,6 +4,11 @@
 **Estado al iniciar (17/04):** 82 tests pasando / 0 fallando  
 **Estado al finalizar (09/05):** 142 tests pasando / 0 fallando  
 
+> **📁 DOCUMENTO HISTÓRICO — cerrado el 09/05/2026.** Registra los bugs encontrados y
+> corregidos entre el 17/04 y el 09/05/2026, cuando la suite tenía 142 pruebas. **No refleja el
+> estado actual del sistema.** Para eso, `ESTADO_Y_PENDIENTES.md`. Se conserva como evidencia
+> del entregable 6 del TFG («documento con los resultados de las pruebas técnicas»).
+
 ---
 
 ## 1. Metodología de búsqueda

@@ -1,7 +1,7 @@
 # NeoEduCore — Estado del proyecto y pendientes
-**Última actualización:** 31 de julio de 2026  
+**Última actualización:** 8 de agosto de 2026  
 **Rama activa:** Darwin  
-**Tests:** 243 pasando / 0 fallando
+**Tests:** 305 pasando / 0 fallando
 
 ---
 
@@ -12,6 +12,9 @@
 4. [Bugs activos](#4-bugs-activos)
 5. [TODO priorizado](#5-todo-priorizado)
 6. [Referencia de endpoints existentes](#6-referencia-de-endpoints-existentes)
+7. [Límites de peticiones](#7-límites-de-peticiones-07082026)
+8. [Ciclo de vida de la cuenta](#8-ciclo-de-vida-de-la-cuenta-07082026)
+9. [Entregables del TFG fuera del código](#9-entregables-del-tfg-fuera-del-código)
 
 ---
 
@@ -96,7 +99,7 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 
 ### ✅ Ciclo académico — reasignación masiva y repitentes
 - Rutas (**admin-only**, `throttle:10,1`): `POST /api/bulk/reassign-group`, `POST /api/bulk/reassign-subjects`, `POST /api/bulk/reset-progress`
-- Lógica en `app/services/Academic/BulkReassignmentService.php`; el controlador solo valida y traduce a HTTP
+- Lógica en `app/Services/Academic/BulkReassignmentService.php`; el controlador solo valida y traduce a HTTP
 - Cubre el ciclo completo de fin de año: promoción, repitentes, alumnos nuevos y plan de materias
 - **Repitentes:** `reset-progress` marca `student_progress.reset_at`, y `StudentProgressService::recalcFromAttempts` ignora los intentos anteriores al corte. Sin esa marca el reseteo se desharía en el siguiente examen. El historial de intentos **no** se borra
 - Todo transaccional (lote entero o nada); los ids desconocidos vuelven en `skipped` sin abortar
@@ -160,20 +163,45 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 - **Me** `GET /api/ai-recommendations/me` (student)
 - **Show** `GET /api/ai-recommendations/{id}`
 - **Regenerate post-examen** `POST /api/exam-attempts/{attempt}/recommendations/regenerate`
-  - Llama GPT-4o-mini; límite: 1 generación + 3 regeneraciones por intento
+  - Llama GPT-4o-mini; límite: la generación automática del submit + 3 regeneraciones
+  - El cupo es **por intento**: `ai_recommendations` no tiene `attempt_id`, así que se
+    cuentan los `generated_at` distintos desde la entrega de ese intento. Un segundo
+    intento del mismo examen arranca con el cupo limpio
   - Fallback a plantillas estáticas si OpenAI falla
+  - El texto devuelto por el modelo pasa por `AiOutputValidator` (PII, longitud y
+    lista blanca de enlaces) antes de guardarse
+
+⚠️ **Lo que genera el submit NO lo escribe la IA.** `AiRecommendationService::generateFromAttempt`
+—el camino por defecto, el único que recorre un alumno que no pulsa nada— es un
+`if/elseif/else` sobre el porcentaje con textos fijos, sin ninguna llamada a OpenAI.
+La IA solo interviene si el estudiante pide explícitamente regenerar. Es una decisión
+de arquitectura (no meter una llamada de segundos dentro de la transacción del submit,
+que es el pico de concurrencia del sistema), pero **el informe la describe al revés**:
+ver [§3.6](#36-el-tutor-lo-que-hace-vs-lo-que-el-informe-dice).
 
 ---
 
 ### ✅ Tutor IA conversacional
 - **Chat** `POST /api/ai/tutor/chat` — chat con contexto del estudiante (perfil + progreso + historial)
   - Adapta el prompt según `learning_style` del estudiante
+  - Contexto opcional: `subject_id` y `exam_id` (ambos validados contra lo que el
+    alumno puede ver; el examen vale si lo rindió **o** si hoy lo tiene disponible)
   - Limita historial a 60 mensajes almacenados, 20 mensajes de contexto a OpenAI
   - Fallback con mensaje de error amigable si OpenAI falla
-  - Throttle: 30 req/min
+  - Throttle: 30 req/min por usuario + `ai-global` 120/min por institución
+- **Diagnosis** `GET /api/ai/tutor/diagnosis` — resumen IA del progreso por materia
 - **Sessions** `GET /api/ai/tutor/sessions` — listado paginado (excluye JSONB `messages`)
 - **End session** `PATCH /api/ai/tutor/sessions/{id}/end`
 - Historial persistido en tabla `ai_chat_sessions` (messages JSONB, scoped por tenant)
+
+🔒 **Nada que identifique al estudiante sale hacia OpenAI** (desde 08/08/2026). Viajan
+grado, estilo de aprendizaje y porcentaje de dominio por materia; **no** el nombre.
+El saludo personalizado lo pone el frontend, que ya sabe quién ha iniciado sesión.
+Cubierto por `AiTutorPrivacyTest`.
+
+🔒 **La lista blanca de dominios se aplica también al texto libre del tutor.** Un enlace
+fuera de `config/ai_resources.php` se sustituye por `[enlace no permitido]` y el resto
+de la respuesta se conserva.
 
 ---
 
@@ -203,10 +231,74 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 ---
 
 ### ✅ Reportes
-- Resultados de examen `GET /api/reports/exams/{exam}/results`
+Grupal (por examen):
+- Resultados paginados `GET /api/reports/exams/{exam}/results`
 - Exportar CSV `GET /api/reports/exams/{exam}/results.csv`
-- Historial de estudiante `GET /api/reports/students/{id}/history`
+- Resumen para gráficos `GET /api/reports/exams/{exam}/summary`
+
+Individual (por estudiante):
+- Historial paginado `GET /api/reports/students/{id}/history`
+- Exportar CSV `GET /api/reports/students/{id}/history.csv`
+- Resumen para gráficos `GET /api/reports/students/{id}/summary?points=`
+
 - IDOR protegido: teacher solo accede a sus propios exámenes
+
+**Reparto backend/frontend.** El backend expone datos; el PDF con gráficos lo
+arma el frontend a partir de los `summary`. Los endpoints devuelven las series
+ya agregadas y listas para pintar:
+
+| Serie | Endpoint | Gráfico |
+|---|---|---|
+| `score_distribution` | examen | barras (histograma por rango de nota) |
+| `performance_levels` | examen | pastel (4 niveles, categorías **ordenadas**) |
+| `score_trend` | estudiante | líneas (del intento más antiguo al más reciente) |
+| `subject_mastery` | estudiante | barras (dominio por materia) |
+
+Los agregados se resuelven en **un solo SELECT** con `COUNT(*) FILTER`, no
+recorriendo intentos en PHP; `QueryBudgetTest::test_exam_summary_cost_is_flat_per_attempt_count`
+lo vigila.
+
+`passing_percentage` (nota mínima de aprobación, 65 por defecto) vive en
+`institutions.settings` y se edita con `PUT /api/system/config`. Separa aprobados
+de reprobados y fija los cortes de los niveles de desempeño.
+
+Estrategias del tutor (requisito [740] del informe):
+- Estudiante `GET /api/reports/students/me/strategies`
+- Docente/admin `GET /api/reports/students/{id}/strategies`
+- Filtros `?subject_id=` y `?limit=` (por sección, 20 por defecto, máx. 100)
+
+Devuelve las `ai_recommendations` agrupadas en las cuatro categorías del enum,
+en orden narrativo: **Fortalezas → Aspectos por reforzar → Acciones sugeridas →
+Recursos de apoyo**.
+
+**Frontera de privacidad, fijada por [175] del informe.** El historial de chat
+con el tutor (`ai_chat_sessions`) **no sale por ningún reporte**, ni siquiera en
+el del propio alumno; solo salen las recomendaciones estructuradas. El docente
+ve únicamente las nacidas de exámenes que él creó; el admin, las de su
+institución. Está cubierto por
+`TutorStrategiesTest::test_chat_history_never_appears_in_the_strategies_report`.
+
+⚠️ **Cambio de comportamiento (05/08/2026) — `GET /api/exams`.** Al estudiante
+se le aplica ahora `Exam::scopeVisibleTo`: solo exámenes **activos, dentro de su
+ventana de disponibilidad y asignados a sus grupos**. `GET /api/exams/{id}` y
+`GET /api/exams/{id}/questions` devuelven **404** si no lo superan (404 y no 403:
+un 403 confirmaría que la prueba existe). Antes el alumno listaba el catálogo
+completo, borradores incluidos, y con esos ids leía los enunciados de cualquier
+examen antes de presentarlo. Además, al estudiante se le oculta el correo del
+docente y la configuración del examen (`max_attempts`, `randomize_questions`,
+`allow_review_after_submission`, `show_results_immediately`). Docente y admin no
+cambian. Cubierto por `ExamVisibilityTest`.
+
+> Si el frontend usaba `GET /api/exams` para la vista del alumno, ahora recibirá
+> menos. El endpoint pensado para eso es `GET /api/students/me/available-exams`,
+> que además indica los intentos ya entregados.
+
+⚠️ **Cambio de comportamiento (05/08/2026).** `GET /api/ai-recommendations`
+(docente) **se restringió**: antes listaba el `recommendation_text` de cualquier
+alumno de la institución, incluidos exámenes ajenos; ahora aplica la misma regla
+que `show()` y se limita a los exámenes propios del docente. Ninguna prueba
+existente cubría el hueco. Si el frontend dependía del listado completo, hay que
+usar una cuenta admin.
 
 ---
 
@@ -241,7 +333,7 @@ Las imágenes del documento `CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx` 
 | Enviar examen (Enviado) | ✅ | `submitted_at` registrado |
 | Calificar automáticamente | ✅ | MC y TF auto-graded; SA/Essay → needs_review |
 | Mostrar resultados | ✅ | |
-| IA genera recomendaciones personalizadas | ⚠️ | OpenAI en regenerate; plantillas estáticas en submit automático |
+| IA genera recomendaciones personalizadas | ⚠️ | OpenAI **solo** en regenerate; plantillas estáticas en el submit automático, que es el camino por defecto. Ver [§3.6](#36-el-tutor-lo-que-hace-vs-lo-que-el-informe-dice) nº 1 |
 
 ---
 
@@ -249,6 +341,8 @@ Las imágenes del documento `CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx` 
 
 **Lo que existe:**
 - `POST /api/ai/tutor/chat` — chat con historial por sesión, contexto del estudiante (perfil + progreso por materia)
+- Modos `ask` / `explain` / `practice` + `topic` — cubren «no entendí» y «quiero practicar» de [173]
+- `GET /api/ai/tutor/diagnosis` — resumen IA del progreso
 - `GET /api/ai/tutor/sessions` — historial de sesiones paginado
 - `PATCH /api/ai/tutor/sessions/{id}/end` — cerrar sesión
 - `learning_style` en perfil del estudiante adapta el prompt del tutor
@@ -257,9 +351,14 @@ Las imágenes del documento `CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx` 
 - `POST /api/exam-attempts/{id}/recommendations/regenerate` — recomendaciones post-examen
 
 **Lo que falta:**
-- [ ] Flujos interactivos estructurados (practicar / estudiar / preguntar / ver diagnóstico)
-- [ ] Carga automática del diagnóstico al iniciar sesión del tutor
-- [ ] Generación de ejemplos por tipo de aprendizaje (gráficos/audio alternativo)
+- [ ] Carga automática del diagnóstico al iniciar sesión del tutor (hoy es una llamada aparte que dispara el frontend)
+- [ ] Generación de ejemplos por tipo de aprendizaje (gráficos/audio alternativo) — el estilo condiciona el *tono* del prompt, no el *formato* de la respuesta, que siempre es texto
+- [ ] Registro de incidencias del tutor: los bloqueos por PII o enlace no permitido solo dejan `Log::warning`, sin tabla ni contador (ver §9.3)
+
+> **Corregido el 08/08/2026:** este apartado listaba «flujos interactivos estructurados»
+> como pendiente mientras la [sección 5](#-brechas-vs-tfg--completado-09052026) los daba
+> por hechos desde el 09/05/2026. Existen: son los modos `mode`/`topic` y el endpoint de
+> diagnóstico.
 
 ---
 
@@ -280,14 +379,143 @@ Las imágenes del documento `CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx` 
 | Asignar Grupos | Profesor/Admin | ✅ |
 | Ver Analíticas | Profesor/Admin | ✅ |
 | Generar Reportes | Profesor/Admin | ✅ |
-| Configurar Sistema | Admin | ❌ No existe endpoint |
+| Configurar Sistema | Admin | ✅ `GET/PUT /api/system/config` (añadido 26/06/2026) |
 | Revisar Resultados | Profesor/Admin | ✅ |
 
 ---
 
 ### 3.4 Modelo de datos (image3)
 
-El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripción explícita estudiante-materia) que no existe en el schema actual. Lo más cercano es `student_progress` (progreso por materia) pero no cubre el caso de "inscripción" formal a una materia.
+El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripción explícita estudiante-materia). **Se implementó el 09/05/2026** (`student_subjects`, con `enrolled_at` y unicidad `(student_user_id, subject_id)`), pero el informe **no la documenta** como entidad. Ver `ANALISIS_MODELO_DATOS_TFG.md` §9.3, que la lista junto a `AiChatSession` entre las entidades ausentes del diagrama de clases.
+
+---
+
+### 3.5 Las relaciones: informe vs. sistema (revisado 08/08/2026)
+
+Contraste hecho sobre `database/sql/01_schema.sql` (artefacto generado), los modelos
+Eloquent y `ANALISIS_MODELO_DATOS_TFG.md`. **Lo relevante es que las cifras que ese
+documento lleva al informe se quedaron desfasadas al aplicarse su propia migración.**
+
+#### Cifras reales, para la figura de modelo de datos del informe
+
+| Magnitud | Decía `ANALISIS_MODELO_DATOS_TFG.md` §9.2 | Real (tras H1 y H8) |
+|---|---|---|
+| Claves foráneas | 42 | **47** |
+| Entidades | 17 | **15** |
+| Tablas pivote | 4 | **4** |
+
+- Las 42 eran el conteo **previo** a `align_fk_constraints_with_tfg_model`, que añadió 3;
+  el 08/08 se añadieron 2 más (H8). §2 de aquel documento sí acierta al decir «36 en el
+  boceto, 42 en la implementación» como foto histórica; §9.2 lo repetía como si fuera el
+  estado actual. **Ya corregido allí.**
+- **19 tablas de dominio** = 15 entidades + 4 pivotes (`group_students`, `exam_targets`,
+  `student_answer_options`, `student_subjects`). Aparte, 5 de framework: `migrations`,
+  `jobs`, `failed_jobs`, `password_reset_tokens`, `personal_access_tokens`.
+- 16 tienen modelo Eloquent (las 15 entidades + `StudentSubject`); 3 pivotes no lo tienen.
+
+Reproducible:
+
+```bash
+grep -c "ADD CONSTRAINT .* FOREIGN KEY" database/sql/01_schema.sql   # 47
+grep -c "^CREATE TABLE public\." database/sql/01_schema.sql          # 24 (19 + 5)
+```
+
+#### Lo que sí se sostiene
+
+**6 FK apuntan a `students(user_id)`** (`ai_chat_sessions`, `ai_recommendations`,
+`exam_attempts`, `group_students`, `student_progress`, `student_subjects`). La
+corrección del «grupo A» aguanta.
+
+#### Coherencia de tenant — cerrada el 08/08/2026 (H8)
+
+Hay **18 columnas `institution_id`**, y hasta esta sesión no eran homogéneas: dos sin FK
+ninguna (`exam_attempts`, `student_progress`) y dos con `NO ACTION` mientras el resto
+cascadeaba (`students`, `group_students`). Las cuatro venían de lo mismo: la migración de
+alineación se ciñó a lo que declaraba el boceto del TFG, y el boceto no las cubría.
+
+Estado final: **las 18 con FK**, 17 en `CASCADE` y solo `users.institution_id` en
+`SET NULL` — deliberado, dar de baja un centro no borra a las personas.
+
+Las dos que pasaron a `CASCADE` eran **inalcanzables** (no hay `DELETE /institutions`,
+solo `toggle`). Se arreglaron por eso precisamente: el día que ese endpoint exista,
+`NO ACTION` en `students` habría dado un 500, que es el fallo de abril otra vez.
+
+En cambio **sí estaba vivo** el caso hermano de autoría, corregido el 08/08/2026 (H1):
+`study_resources.created_by` era la última FK a `users(id)` en NO ACTION, y hacía que
+`DELETE /api/users/{id}` devolviera **500** para cualquier docente que hubiera subido un
+recurso. Mismo punto ciego que los 500 de abril: el escenario de prueba no montaba la
+fila que rompe.
+
+#### Relaciones declaradas que el código no usaba
+
+`ai_chat_sessions.exam_id` estaba en la migración, en `$fillable`, en la relación
+`exam()` y en el listado de sesiones, pero **ninguna ruta la escribía**: siempre NULL.
+`ANALISIS_MODELO_DATOS_TFG.md` §3.4 la presenta al informe como relación real del
+sistema. **Cableada el 08/08/2026** (H4): `POST /ai/tutor/chat` acepta `exam_id`.
+
+#### Relaciones Eloquent que faltan respecto a las FK
+
+No son fallos, pero si el diagrama de clases (§9.3 de aquel documento) se dibuja
+leyendo los modelos, saldrá incompleto:
+
+- `Student`, `AiChatSession`, `AiRecommendation`, `StudentAnswer`, `StudentProgress`,
+  `Question`, `QuestionOption` y `ExamAttempt` tienen FK a `institutions` sin
+  `belongsTo(Institution::class)`.
+- `Institution` declara 4 `hasMany` de las 12 relaciones que le apuntan.
+- `Subject` solo declara `hasMany(Exam::class)`.
+
+---
+
+### 3.6 El tutor: lo que hace vs. lo que el informe dice
+
+La brecha más grande del proyecto, y la que peor se defiende si no se aborda de frente:
+el tutor IA es el diferenciador del TFG.
+
+| # | El informe dice | El sistema hace | Estado |
+|---|---|---|---|
+| 1 | [122][222][255][736] el tutor analiza los resultados y genera recomendaciones personalizadas | En el submit las genera un `if/elseif/else` sobre el porcentaje, **sin OpenAI**. La IA solo entra si el alumno pulsa regenerar | 🔴 Abierto — decisión de redacción |
+| 2 | Figura 10 y [263]: «recursos personalizados» | Era el recurso más reciente del centro, igual para todos | ✅ Corregido (H3) |
+| 3 | [173] «prohibirá datos personales» · [394] anonimización, Ley 8968, menores | El `full_name` del alumno viajaba en cada prompt a OpenAI | ✅ Corregido (H2) |
+| 4 | [173] materiales externos «mediante una lista blanca» | La lista blanca no cubría el texto libre del chat | ✅ Corregido (H2) |
+| 5 | [173] docentes con «solo métricas agregadas» y «reportes anónimos» | `tutor-usage` devolvía al docente un top 10 de alumnos **con nombre** | ✅ Corregido (H5) |
+| 6 | [173] «registrará incidencias» + criterio «>75 % de mensajes que superen validación» | Solo `Log::warning`. Sin tabla, sin contador: **el criterio no es medible** | 🔴 Abierto — ya en §9.3 |
+| 7 | [171] ítems con «tema, indicador y dificultad» · [222] «indicadores curriculares» | `questions` no tiene tema, indicador ni dificultad. La única señal es `mastery_percentage` **por materia** | 🔴 Abierto — decisión de alcance |
+| 8 | [397] el sistema avisa de que la sugerencia viene de un modelo automatizado | La respuesta del chat es `{session_id, reply, message_count}`: no hay campo de aviso | 🟡 Abierto — contrato con el frontend |
+| 9 | [173] recomendaciones «breves (2–4 oraciones)» | System prompt: «máximo 4 párrafos», 600 tokens (800 en práctica) | 🟡 Redacción |
+| 10 | [222] «modelos GPT-4 (variante ligera)» | `gpt-4o-mini`, que es variante de GPT-4o, no de GPT-4 | 🟡 Redacción |
+
+> **Con el criterio de esta sesión, siete de las diez se resuelven escribiendo.** «Manda el
+> sistema» quiere decir que los nº 1, 6, 7, 9 y 10 se cierran ajustando el informe, no el
+> código — están recogidos como correcciones concretas en `ANALISIS_MODELO_DATOS_TFG.md`
+> §10.2. Quedan dos que **no** conviene resolver así:
+>
+> - **nº 8 (aviso de IA).** [397] promete algo razonable y barato de cumplir. O viaja en la
+>   respuesta del chat, o el informe lo atribuye explícitamente a la interfaz; hoy no lo
+>   dice ninguno de los dos, que es la única opción mala.
+> - **Expiración de sesión** (§9.3): el informe pide 60 min y hay 12 h. Son cuentas de
+>   menores en equipos posiblemente compartidos del centro. Aquí es más defendible bajar
+>   la variable que relajar el requisito escrito.
+
+**Sobre el nº 1 — es la decisión que hay que tomar antes de redactar.** No es un
+descuido: meter una llamada a OpenAI de varios segundos dentro de la transacción del
+submit ataría un worker de Octane justo en el pico real del sistema (todos los alumnos
+entregan a la vez), que es lo que `ANALISIS_CONCURRENCIA.md` pide evitar. Las dos
+salidas son legítimas:
+
+- **(a) Diferirlo a la cola.** El submit responde al instante con las plantillas y un
+  job regenera con IA después. Cumple el informe tal como está escrito y no toca la
+  concurrencia. Cuesta trabajo: job, estado «recomendación en preparación» y el
+  frontend enterándose de que llegó.
+- **(b) Redactar el diseño real** — heurística inmediata + refinamiento IA bajo demanda.
+  Cero código, y se defiende bien: respuesta instantánea, coste de API acotado y el
+  alumno decide si quiere el análisis profundo. Hay que reescribir [122], [222], [255]
+  y [736] para que digan eso.
+
+**Sobre el nº 7 — bloquea a los nº 6 y 2.** Sin tema por ítem no hay diagnóstico por
+tema, luego no hay «temas más recomendados» para el docente ([173]) ni recurso por
+tema. `study_resources` tampoco tiene `subject_id`. Es una decisión de alcance: añadir
+las columnas a `questions` (y llevarlas al ERD nuevo) o recortar la promesa en [171],
+[222], [263] y [276].
 
 ---
 
@@ -371,6 +599,30 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 
 > **Nota (resuelta 31/07/2026):** al generar la colección se detectó que `GroupController::addStudents()` y `removeStudents()` existían pero **no estaban enrutados**. Ya lo están (`POST`/`DELETE /api/groups/{group}/students`) — ver sesión 31/07/2026, G4.
 
+### Sesión 08/08/2026 — Contraste con el informe: integridad, privacidad del tutor y personalización
+
+> Origen: revisión del `.docx` contra el código, centrada en **las relaciones** y en
+> **qué hace el tutor de verdad**. El análisis completo, en [§3.5](#35-las-relaciones-informe-vs-sistema-revisado-08082026)
+> y [§3.6](#36-el-tutor-lo-que-hace-vs-lo-que-el-informe-dice). Suite: **305/305** (antes 290).
+>
+> **Criterio fijado en esta sesión: manda el sistema construido; el informe se ajusta a
+> él.** El esquema `schema de la base de datos.sql` deja de ser «la referencia» y pasa a
+> ser un boceto inicial. Eso cerró de un golpe las decisiones que llevaban meses abiertas
+> por no querer desviarse de aquel documento (H8), y convierte todo lo que queda del
+> modelo de datos en **correcciones al informe**, recogidas en `ANALISIS_MODELO_DATOS_TFG.md`
+> §10 con cita y número de párrafo.
+
+| # | Archivo(s) | Descripción | Estado |
+|---|-----------|-------------|--------|
+| H1 | migración `study_resources_created_by_set_null`, `01_schema.sql`, `CascadeIntegrityTest` | **`DELETE /api/users/{id}` daba 500 con docentes que hubieran subido recursos.** `study_resources.created_by` era la última FK a `users(id)` en NO ACTION, y `UserController::destroy()` hace `$user->delete()` sin manejar violaciones de FK: la excepción de PostgreSQL salía tal cual. Misma familia que los 500 de abril (G10) y **mismo punto ciego**: `test_deleting_a_teacher_keeps_their_exams` monta exámenes para el docente, pero no recursos. Pasa a SET NULL, coherente con las otras dos FK de autoría (`exams.created_by_teacher_id` y `calendar_events.created_by`): dar de baja a un docente no debe destruir el material que dejó al centro ni quedar bloqueado por él. El modelo del TFG **tampoco** lo cubría —declara la FK sin `ON DELETE`, igual que la implementación—, así que la comparación de G10 no lo marcó: ambas partes coincidían en el mismo hueco. **+1 test**, verificado que falla sin el arreglo | ✅ |
+| H2 | `AiTutorService.php`, `AiOutputValidator.php`, `AiRecommendationService.php`, `AiTutorPrivacyTest.php` | **🔒 El nombre del alumno viajaba a OpenAI, y la lista blanca no cubría el chat.** (a) `buildSystemPrompt()` y `getDiagnosis()` incrustaban el `full_name` en el prompt: el nombre real de un menor salía hacia un tercero en **cada turno** de conversación, contra [173] («prohibirá datos personales») y [394] (anonimización, Ley 8968). `AiOutputValidator` no lo veía: filtra PII en la **salida**, nunca en la entrada. Ahora solo viaja contexto pedagógico —grado, estilo de aprendizaje, dominio por materia— y el saludo personalizado lo pone el frontend. (b) `isUrlAllowed()` solo se aplicaba al JSON estructurado de las recomendaciones; un enlace escrito en prosa por el tutor llegaba intacto a un niño de primaria. `sanitize()` sustituye ahora los enlaces fuera de `config/ai_resources.php` por `[enlace no permitido]` y conserva el resto de la explicación. (c) De paso: los cuatro textos de `regenerateForAttempt` **no pasaban por ningún validador** y se guardaban crudos en `ai_recommendations`, de donde van al alumno, al reporte del docente y al PDF. **+5 tests**, verificado que fallan sin el arreglo | ✅ |
+| H3 | `AiRecommendationService.php` | **El recurso «personalizado» era el mismo para todo el mundo.** `StudyResource::orderBy('created_at','desc')->first()`: el último subido al centro, sin mirar al alumno. Un estudiante de 2.º que reprobaba recibía el material de 6.º si era el más reciente, mientras la Figura 10 y [263] prometen recursos personalizados. Ahora filtra por el rango de grado del recurso (`grade_min`/`grade_max`, columnas que existían y nadie usaba) y prefiere dificultad `basic`, que es lo que corresponde en la rama de bajo desempeño. **Limitación de modelo, no de código:** `study_resources` no tiene `subject_id`, así que no se puede acotar por materia — ver §3.6 nº 7. **+1 test** | ✅ |
+| H4 | `AiTutorController.php`, `AiTutorService.php`, `ApiSpec.php`, `Level4_AiTutorFlowTest` | **`ai_chat_sessions.exam_id` era una relación muerta.** Estaba en la tabla, en `$fillable`, en la relación `exam()` y en el listado de sesiones, pero ninguna ruta la escribía: siempre NULL — y `ANALISIS_MODELO_DATOS_TFG.md` §3.4 la presenta al informe como relación real del sistema. Documentar una relación muerta en el ERD es peor que no tenerla. `POST /ai/tutor/chat` acepta ahora `exam_id`, válido si el alumno **rindió** el examen o si hoy lo tiene disponible: `scopeVisibleTo` a secas no sirve porque exige activo y en ventana, que es justo lo que deja de ser el examen recién entregado — el caso de uso principal. **+2 tests** | ✅ |
+| H5 | `ReportController.php`, `TutorStrategiesTest`, `Level5_AnalyticsReportsTest` | **`tutor-usage` no era un reporte anónimo.** Devolvía `top_students_by_usage`: top 10 de alumnos **con nombre y propio** y cuántos mensajes escribió cada uno. [173] limita al personal docente a «métricas agregadas» y pide «reportes anónimos»; identificar a menores por su comportamiento de uso no es ninguna de las dos cosas. El ranking queda **solo para admin**, que responde por los datos del centro y lo necesita para detectar abuso o coste desbocado; al docente le llegan los agregados. Misma frontera que ya aplicaba `ReportStrategyService`: el docente accede al artefacto *pedagógico*, no al rastro de la conversación. La consulta ni se lanza si quien pregunta no es admin. **+2 tests** | ✅ |
+| H6 | `ExamAttemptController.php`, `AiRecommendationsTest` | **El cupo de regeneraciones no contaba generaciones.** Era `ceil($totalFilas / 4)` sobre todas las recomendaciones del par (examen, materia), con dos errores: `generateFromAttempt` guarda 1 o 2 filas según el porcentaje —no 4—, así que la división no medía nada real; y sin corte temporal un **segundo intento** del mismo examen nacía con el cupo del primero gastado, pese a que la documentación decía «por intento». Ahora se cuentan los `generated_at` distintos desde la entrega de ese intento, que sí equivale a una generación, sin tocar el esquema (`ai_recommendations` no tiene `attempt_id`). **+1 test** | ✅ |
+| H8 | migración `complete_tenant_fk_coherence`, `01_schema.sql`, `CascadeIntegrityTest` | **Coherencia de tenant cerrada.** De las 18 columnas `institution_id`, dos no tenían FK (`exam_attempts`, `student_progress`) y dos estaban en `NO ACTION` mientras el resto cascadeaba (`students`, `group_students`). Las cuatro venían de que la alineación de G10 se ciñó al boceto del TFG, que no las declaraba, y la duda quedó anotada como **«coherencia del modelo vs. fidelidad al documento de referencia»**. Al fijarse que **manda el sistema y el informe se ajusta**, esa tensión desaparece y gana la coherencia. Ahora las 18 tienen FK: 17 en `CASCADE` y `users` en `SET NULL` (deliberado). Las dos nuevas cierran el mismo agujero de aislamiento multi-tenant que se tapó en otras tres tablas; las dos endurecidas son hoy inalcanzables (no hay `DELETE /institutions`) y se arreglan justo por eso — el día que exista, `NO ACTION` habría dado un 500. Migración con detección previa de huérfanos y `down()` real. **+3 tests**, incluido el borrado completo de una institución | ✅ |
+| H7 | `ESTADO_Y_PENDIENTES.md` | **Auditoría del propio documento.** Afirmaba 243 tests (eran 290), se fechaba el 31/07 con secciones del 03/08 y 05/08, daba por pendientes cosas ya resueltas (PDF del backend, medición del reporte de 1.000 estudiantes, prueba de carga) y se contradecía consigo mismo en los flujos del tutor —§3.2 los listaba como pendientes y la §5 como completados desde el 09/05—. Además hablaba de «React/Next.js» como frontend, repitiendo el error del informe que este mismo documento manda corregir. Detalle en §3.5, §3.6 y en las notas de corrección en línea | ✅ |
+
 ### Sesión 31/07/2026 — Catálogo de materias, drift de esquema y reasignación masiva
 
 | # | Archivo(s) | Descripción | Estado |
@@ -449,7 +701,11 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 - [x] **Adecuación curricular en exámenes** — `ExamAttemptRulesService` aplica tiempo extra: `acceso` → ×1.25, `evaluacion` → ×1.50
 - [x] **Validación de output IA** — `AiOutputValidator` verifica longitud y patrones PII; aplicado en `AiController` y `AiTutorService`
 - [x] **Whitelist de URLs en recursos IA** — `config/ai_resources.php` con dominios permitidos; validación en `StudyResourceController` (store/update) y en `AiRecommendationService::extractResource()`
-- [x] **Métricas de uso del tutor** — `GET /reports/ai/tutor-usage` con total sesiones/mensajes, estudiantes únicos, top tipos de recomendación y top estudiantes por uso
+  - ⚠️ **Estaba incompleto:** no cubría el texto libre del tutor, que es el canal por el
+    que un enlace llega de verdad a un alumno. Cerrado el 08/08/2026 (H2)
+- [x] **Métricas de uso del tutor** — `GET /reports/ai/tutor-usage` con total sesiones/mensajes, estudiantes únicos y top tipos de recomendación
+  - El top 10 de estudiantes por uso es **solo admin** desde el 08/08/2026 (H5): con
+    nombre y propio no era el «reporte anónimo» que promete [173]
 
 ---
 
@@ -496,11 +752,23 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 > 📄 **Análisis completo en [`ANALISIS_MODELO_DATOS_TFG.md`](ANALISIS_MODELO_DATOS_TFG.md)** — comparación sistema↔informe, evidencia y lista accionable de correcciones al documento del TFG.
 
 - [ ] **El informe del TFG describe un stack que no es el construido.** Afirma Node.js como capa de datos, Next.js en el frontend, autenticación JWT y despliegue en Render/Railway. La realidad es Laravel+Eloquent sin intermediario, React 19 + Vite, Sanctum y DigitalOcean/Coolify/Supabase. **4 correcciones críticas** — detalle y evidencia en `ANALISIS_MODELO_DATOS_TFG.md` §9.1.
-- [ ] **El informe afirma exportación a PDF, que no existe** ([215]). No hay ningún paquete PDF en `composer.json` y `ReportExportService` solo tiene `streamCsv()`. No se arregla reescribiendo: es decisión de alcance (implementarla o retirar la afirmación). Ver §9.8.
-- [ ] **El informe no tiene diagrama de modelo de datos**, y omite `ai_chat_sessions` y `student_subjects`. Material para redactarlo en §3, §4 y §9.2-9.3.
-- [ ] **Requisitos de rendimiento sin verificar**: «200 concurrentes» está modelado pero no probado, y «reporte de 1000 estudiantes en <5 s» nunca se midió. Ver §9.5.
-- [ ] **`exam_attempts.institution_id` y `student_progress.institution_id` siguen sin FK.** Mismo hueco de tenant que se cerró en las otras 3 tablas (G10), pero **el documento del TFG tampoco las declara**, así que se dejaron fuera para no desviarse de la referencia. Ver §7.2.
-- [ ] **Los borrados ahora son realmente destructivos.** Antes `DELETE /subjects|/groups|/exams|/users` fallaban con 500 cuando había contenido, lo que protegía por accidente. Ahora funcionan y cascadean: borrar una materia elimina sus exámenes **y todos los resultados de los alumnos**. El frontend debería pedir confirmación explícita. Ver §7.3.
+- [x] ~~**El informe afirma exportación a PDF, que no existe**~~ → **Backend resuelto el 05/08/2026.** Los endpoints `summary` entregan las series de barras, líneas y pastel, y `history.csv` la exportación individual; el PDF lo compone el frontend (decisión de arquitectura en `ANALISIS_MODELO_DATOS_TFG.md` §9.8.1, con las dos alternativas implementadas y comparadas). **Queda fuera del backend:** que el frontend lo arme. Hasta entonces [215] sigue siendo parcialmente falsa a nivel de sistema.
+- [x] ~~**El informe no tiene diagrama de modelo de datos**~~ → **Dibujados el 08/08/2026** en [`DIAGRAMAS.md`](DIAGRAMAS.md): ERD, aislamiento multi-tenant, clases, arquitectura, y los flujos de autenticación, examen, tutor IA, casos de uso y ciclo académico. Los 11 diagramas se validaron con el parser de Mermaid y el ERD se cruzó contra `01_schema.sql` (19/19 tablas, todos los valores de enum). **Queda incorporarlos al `.docx`**: la tabla final de `DIAGRAMAS.md` dice qué figura del informe sustituye cada uno.
+- [ ] **Requisitos de rendimiento: dos de tres medidos.** ✅ «≤2 s bajo carga normal» (p95 = 1,19 s con 8 workers) y ✅ «reporte de 1000 estudiantes en <5 s» (3.790 → 1.068 ms tras corregir el N+1) quedaron medidos el 03/08/2026 (G11). 🟡 Sigue abierto **«200 concurrentes»**: está validado que el throughput escala ×6,6 de 1 a 8 workers y que satura sin errores 5xx, pero no la cifra exacta sobre el despliegue real con Octane. Ver §9.5.
+- [x] ~~**`exam_attempts.institution_id` y `student_progress.institution_id` siguen sin FK**~~ → **Resuelto el 08/08/2026 (H8).** Se dejaron fuera de G10 por no desviarse del boceto del TFG; al fijar que manda el sistema, esa razón deja de valer. Ver `ANALISIS_MODELO_DATOS_TFG.md` §7.2.
+- [ ] **Los borrados ahora son realmente destructivos.** Antes `DELETE /subjects|/groups|/exams|/users` fallaban con 500 cuando había contenido, lo que protegía por accidente. Ahora funcionan y cascadean: borrar una materia elimina sus exámenes **y todos los resultados de los alumnos**. El frontend debería pedir confirmación explícita. Ver `ANALISIS_MODELO_DATOS_TFG.md` §7.3.
+
+### 📌 Pendientes abiertos (anotados 08/08/2026)
+
+> 📄 Contexto y evidencia en [§3.5](#35-las-relaciones-informe-vs-sistema-revisado-08082026) y [§3.6](#36-el-tutor-lo-que-hace-vs-lo-que-el-informe-dice).
+
+- [ ] 🔴 **Decidir qué dice el informe sobre las recomendaciones post-examen.** Hoy el submit las genera con plantillas, no con IA; el informe afirma lo contrario en cuatro pasajes ([122], [222], [255], [736]). Opciones: (a) diferir la generación IA a la cola, o (b) redactar el diseño real. **Es la decisión más expuesta del TFG** y condiciona la redacción del capítulo del tutor.
+- [ ] 🔴 **`questions` no tiene tema, indicador ni dificultad**, y `study_resources` no tiene `subject_id`. Sin esos metadatos no hay diagnóstico por tema, ni «temas más recomendados» para el docente ([173]), ni recurso por materia. Bloquea también el entregable «banco de 60 ítems con metadatos» de [171]. Decisión de alcance: añadir las columnas o recortar la promesa en [171], [222], [263] y [276].
+- [ ] 🟡 **El aviso de que la respuesta viene de una IA no está en el contrato.** [397] promete que el sistema lo informa «cada vez que el tutor intervenga»; la respuesta del chat es `{session_id, reply, message_count}`. O viaja en la respuesta, o queda como responsabilidad escrita del frontend.
+- [x] ~~**`students.institution_id` y `group_students.institution_id` en NO ACTION**~~ → **Resuelto (H8).** Ver también §7.2 de `ANALISIS_MODELO_DATOS_TFG.md`.
+- [x] ~~**Corregir las cifras del modelo de datos en `ANALISIS_MODELO_DATOS_TFG.md` §9.2**~~ → **Corregidas.** Son **47 FK** y 19 tablas de dominio (15 entidades + 4 pivotes), y el estado final está ahora en §1.1 de aquel documento.
+- [x] ~~**Aplicar a producción las dos migraciones del 08/08 y regenerar `01_schema.sql`**~~ → **Hecho el 08/08/2026.** `migrate --force` + `schema:dump-sql` contra Supabase. Verificado en `pg_constraint`: 47 FK, las 5 tocadas correctas, y de las 18 columnas `institution_id` la única que no cascadea es `users` (`SET NULL`, deliberado). Datos idénticos antes y después (73 usuarios, 65 estudiantes, 206 materias, 3 intentos). **`ENABLE ROW LEVEL SECURITY` conservado en las 24 tablas** — era el riesgo de regenerar el artefacto. El dump solo reordenó dos bloques respecto a la edición a mano (pg_dump ordena por nombre de constraint); el contenido coincidía.
+- [ ] 📄 **Llevar al `.docx` las contradicciones de `ANALISIS_MODELO_DATOS_TFG.md` §10.** Ocho internas (§10.1) y once contra el sistema (§10.2). ⚠️ **Los números de párrafo de la §9 están desfasados**: el `.docx` se editó después. Equivalencias en §10.3, y la recomendación es buscar por texto, no por índice.
 
 ### 📌 Pendientes abiertos (anotados 31/07/2026)
 
@@ -516,7 +784,12 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 ---
 
 > **Backend prácticamente completo** — módulos, bugs, seguridad, optimizaciones, brechas TFG, tests de integración y comportamiento de eliminación implementados. Quedan los pendientes abiertos de arriba (no bloqueantes).
-> Fuera del código: frontend (React/Next.js), banco de ítems (60+ preguntas), piloto con usuarios, documento académico.
+> Fuera del código: frontend (**React 19 + Vite + TypeScript**, sin Next.js), banco de ítems (60+ preguntas), piloto con usuarios, documento académico.
+>
+> Lo que **sí** puede bloquear la defensa no es técnico: lo que el informe dice que hace
+> el tutor ([§3.6](#36-el-tutor-lo-que-hace-vs-lo-que-el-informe-dice)) y las
+> contradicciones del documento consigo mismo, recogidas por escrito en
+> `ANALISIS_MODELO_DATOS_TFG.md` §10 para que el equipo entre a corregirlas.
 
 ---
 
@@ -528,10 +801,19 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | GET | `/api/ping` | Health check |
 | POST | `/api/auth/login` | Login |
 | POST | `/api/password/forgot` | Solicitar reset |
-| POST | `/api/password/verify` | Verificar 
-
- |
+| POST | `/api/password/verify` | Verificar token de reset |
 | POST | `/api/password/reset` | Resetear contraseña |
+
+### Autenticados — cualquier rol
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/auth/me` | Usuario autenticado |
+| POST | `/api/auth/logout` | Revocar el token actual |
+| POST | `/api/password/change` | Cambiar la propia contraseña |
+
+> También existe `GET /api/documentation` (interfaz Swagger servida por L5-Swagger
+> sobre el `api-docs.json` que genera `php artisan openapi:generate`). No es un
+> endpoint de la API.
 
 ### Autenticados — Solo estudiante
 | Método | Ruta | Descripción |
@@ -546,7 +828,7 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | POST | `/api/exam-attempts/{attempt}/recommendations/regenerate` | Regenerar recomendaciones IA |
 | GET | `/api/student-progress/me` | Mi progreso por materia |
 | GET | `/api/ai-recommendations/me` | Mis recomendaciones IA |
-| POST | `/api/ai/tutor/chat` | Chat con tutor IA |
+| POST | `/api/ai/tutor/chat` | Chat con tutor IA — contexto opcional `subject_id` y `exam_id` |
 | GET | `/api/ai/tutor/sessions` | Mis sesiones del tutor |
 | PATCH | `/api/ai/tutor/sessions/{id}/end` | Finalizar sesión del tutor |
 
@@ -596,7 +878,13 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | GET | `/api/ai-recommendations/{id}` | Ver recomendación |
 | GET | `/api/reports/exams/{exam}/results` | Reporte de examen |
 | GET | `/api/reports/exams/{exam}/results.csv` | CSV de resultados |
+| GET | `/api/reports/exams/{exam}/summary` | Agregados del examen para gráficos |
 | GET | `/api/reports/students/{id}/history` | Historial estudiante |
+| GET | `/api/reports/students/{id}/history.csv` | CSV del historial |
+| GET | `/api/reports/students/{id}/summary` | Agregados del estudiante para gráficos |
+| GET | `/api/reports/students/{id}/strategies` | Estrategias del tutor (acotado a exámenes propios) |
+| GET | `/api/reports/ai/tutor-usage` | Métricas de uso del tutor — el top nominal de alumnos **solo lo ve el admin** |
+| GET | `/api/system/config` | Configuración de la institución |
 | GET | `/api/analytics/institution` | Estadísticas institucionales |
 | GET | `/api/analytics/subjects` | Rendimiento por materia |
 | GET | `/api/analytics/students/{id}` | Detalle analítico de estudiante |
@@ -606,6 +894,7 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 |--------|------|-------------|
 | GET | `/api/students/me/subjects` | Mis materias inscritas |
 | GET | `/api/ai/tutor/diagnosis` | Diagnóstico IA de mi progreso |
+| GET | `/api/reports/students/me/strategies` | Mis estrategias del tutor (sin el chat) |
 
 ### Autenticados — Admin y Profesor (materias del estudiante)
 | Método | Ruta | Descripción |
@@ -626,6 +915,7 @@ El diagrama ER del documento muestra una entidad **`StudentSubject`** (inscripci
 | POST | `/api/bulk/reassign-group` | Reasignación masiva de grupo (`throttle:10,1`) |
 | POST | `/api/bulk/reassign-subjects` | Reasignación masiva de materias (`throttle:10,1`) |
 | POST | `/api/bulk/reset-progress` | Reseteo de progreso para repitentes (`throttle:10,1`) |
+| PUT | `/api/system/config` | Editar configuración (incl. `passing_percentage`) |
 
 #### Reasignación masiva — contrato
 
@@ -719,4 +1009,152 @@ Notas del paso 5 y sus efectos sobre repitentes:
 
 ---
 
-*Documento actualizado el 31/07/2026.*
+*Sección de reasignación masiva, redactada el 31/07/2026. La fecha del documento
+completo está en la cabecera.*
+
+---
+
+## 7. Límites de peticiones (07/08/2026)
+
+Definidos en `config/rate_limits.php`, ajustables por entorno. Los limitadores con
+nombre se registran en `AppServiceProvider::registrarLimitadores()`.
+
+| Ámbito | Límite | Clave |
+|---|---|---|
+| **Toda la API** (grupo `api`) | 120/min | usuario autenticado, o IP si no lo hay |
+| **`POST /auth/login`** | 5/min **y** 60/min | correo+IP **y** IP |
+| Contraseñas (`forgot`, `reset`, `change`) | 5/min | IP |
+| `password/verify` | 10/min | IP |
+| Tutor IA (chat) | 30/min + **`ai-global` 120/min** | usuario + **institución** |
+| `ai/generate` | 20/min | usuario |
+| Carga masiva | 3/min | usuario |
+| Operaciones en lote | 10/min | usuario |
+
+**El login no tenía ningún tope hasta el 07/08/2026.** Con `BCRYPT_ROUNDS=10` cada
+intento cuesta ~100 ms de CPU, así que servía para fuerza bruta *y* para agotar los
+workers. La clave compuesta **correo+IP** es deliberada: solo por correo, un tercero
+podría dejar fuera a un alumno agotándole el cupo antes de un examen; solo por IP,
+se bloquearía a un aula entera tras el mismo NAT — que es el pico real del sistema.
+Cubierto por `tests/Feature/Auth/LoginThrottleTest.php`, incluido un caso de 30
+alumnos entrando desde la misma IP.
+
+⚠️ **Y todo depende de `TRUSTED_PROXIES`.** En producción la app va detrás de
+Traefik: sin declarar proxies de confianza, `$request->ip()` devuelve la IP del
+proxy y **todos los límites por IP agrupan a los usuarios en un único cubo** — el
+tope de 60/min pensado para un aula tras un NAT se aplicaría a todo el sistema a
+la vez, y se autobloquearía sin que nadie lo atacara. Configurado en
+`config/trusted_proxies.php` (rangos privados por defecto, que no son
+falsificables desde internet). Cubierto por `tests/Feature/Auth/TrustedProxiesTest.php`.
+
+**Defensa en profundidad, más allá de los límites:**
+
+| Medida | Dónde |
+|---|---|
+| `statement_timeout` 15 s en peticiones HTTP | `config/database.php` + `AppServiceProvider`; **no** en consola, para no cortar migraciones |
+| Reciclado de workers cada 500 peticiones | `Dockerfile` (`octane:start --max-requests=500`) |
+| Tamaño máximo de subida | 5 MB / 5.000 filas en carga masiva |
+
+**Lo que NO cubre la aplicación:** un DDoS volumétrico no se para desde Laravel.
+Hace falta una capa de red delante (Cloudflare), hoy **no desplegada** — ver
+`docs/DEPLOY_COOLIFY.md` §9. Conviene decirlo así en el informe: el requisito no
+funcional de disponibilidad del 99 % no se sostiene solo con la aplicación.
+
+⚠️ **Todo esto depende de `CACHE_STORE`.** Los contadores viven en la caché: con
+`array` y Octane cada worker lleva el suyo y ningún límite es global — con ~40
+workers, un 5/min se convierte en 200/min. Debe ser `database`, `file` o `redis`.
+`AppServiceProvider` escribe un `Log::warning` al arrancar si detecta `array` fuera
+de tests.
+
+---
+
+## 8. Ciclo de vida de la cuenta (07/08/2026)
+
+**Una cuenta creada por carga masiva nace `inactive` y la activa su dueño** al
+definir la contraseña desde el enlace del correo. Es el único punto donde una
+cuenta pasa a `active` por acción del usuario.
+
+| Vía de alta | `status` inicial | Motivo |
+|---|---|---|
+| Carga masiva CSV/XLSX | **`inactive`** | La contraseña es aleatoria: nadie puede entrar hasta que su dueño la defina |
+| `POST /api/register` (admin) | `active` | El admin escribe la contraseña y la entrega en mano; **no se envía correo**, así que crearla inactiva la dejaría inservible |
+
+Flujo completo del alta:
+
+```
+Admin sube CSV → User(status=inactive, contraseña aleatoria) + Student
+   ↓ PasswordSetupService: token hasheado en password_reset_tokens
+   ↓ PasswordSetupMail encolado → lo envía el worker
+Usuario pulsa el enlace → GET /password/reset/{token}?email=…  (formulario Blade)
+   ↓ POST /api/password/reset
+   ↓ guarda password_hash · status pasa a active · consume el token · revoca sesiones
+Ya puede entrar → POST /api/auth/login  (exige status === active)
+```
+
+Reglas que sostienen el flujo:
+
+- **`/password/forgot` responde a cuentas `active` e `inactive`, nunca a `suspended`.** Sin esto, quien perdiera el correo de alta quedaba bloqueado para siempre. Una cuenta suspendida la bloqueó un administrador a propósito y no debe tener vía de vuelta.
+- **El correo se elige según el estado:** `inactive` recibe `PasswordSetupMail` («activá tu cuenta»); el resto, `PasswordResetMail`. A quien nunca tuvo contraseña no se le habla de recuperarla.
+- **Solo se activa desde `inactive`.** Un reset sobre una cuenta `suspended` cambia la contraseña pero **no la reactiva**.
+- La columna `users.status` pasó a `DEFAULT 'inactive'` (migración `2026_08_07_000001`) para que la base no contradiga la regla. **No modifica filas existentes.**
+
+Sigue pendiente de decisión: `PATCH /users/{id}/reset-password` (un admin fija la
+contraseña de otro) **no activa** la cuenta. Es coherente con «la activa su
+dueño», pero deja una trampa de soporte: el admin cambia la contraseña, el
+usuario sigue sin poder entrar y no es evidente por qué. Se resuelve con
+`PATCH /users/{id}/status`.
+
+---
+
+## 9. Entregables del TFG fuera del código
+
+> Rescatado de `ANALISIS_BRECHAS_TFG.md` (17/04–09/05/2026) al eliminarlo el 05/08/2026: el
+> resto de aquel documento había quedado obsoleto —hablaba de 142 tests, de «JWT» y de que el
+> proyecto «carece completamente de frontend»— y su función de comparar sistema contra informe
+> la cubre hoy `ANALISIS_MODELO_DATOS_TFG.md` §9. Esto es lo único que no estaba recogido en
+> ningún otro sitio. **Cada punto se reverificó contra el código el 05/08/2026**; los que ya
+> estaban resueltos (validación MIME del bulk-upload, política de contraseñas en `resetPassword`,
+> RBAC, whitelist de recursos IA, headers de seguridad, N+1, índices) no se han traído.
+
+### 9.1 Entregables no-código exigidos por el TFG
+
+| Entregable | Prioridad | Nota |
+|---|---|---|
+| Mockups / prototipo visual (Figma) — Sprint 1 | ALTA | Sin prototipo entregado |
+| **Banco de ítems**: mínimo 60 preguntas reales con metadatos (tema, indicador, dificultad) | ALTA | Los seeders traen muy pocas |
+| Acta del taller de co-diseño con docentes | ALTA | Entregable de Fase 1 |
+| Piloto con usuarios reales (docentes y estudiantes) | ALTA | Fase de validación; condiciona los cap. 7 y 8 del informe |
+| Rúbricas para preguntas abiertas | MEDIA | Fase 2 |
+| Mini-guía para creación de nuevos ítems | MEDIA | Fase 2 |
+| Manual de usuario básico en línea | MEDIA | Requisito no funcional de usabilidad |
+| Cronograma / bitácora del proyecto | MEDIA | Capítulo 11 del informe |
+| Anexo 1: encuestas a docentes y estudiantes | — | Diseñar y aplicar |
+| Anexo 2: guía de entrevistas semi-estructuradas | — | Diseñar y aplicar |
+
+### 9.2 Capítulos del informe pendientes
+
+Además de las 10 correcciones de `ANALISIS_MODELO_DATOS_TFG.md` §9, que son sobre lo ya escrito:
+
+| Capítulo | Estado | Acción |
+|---|---|---|
+| 3 · Metodología | ❌ | Describir Scrum e instrumentos de recolección |
+| 5 · Conclusiones y recomendaciones | ❌ | Al cerrar la implementación |
+| 7 · Validación y resultados del piloto | ❌ | Requiere el piloto |
+| 8 · Discusión de resultados | ❌ | Post-piloto |
+| 9 · Aspectos éticos, legales y de privacidad | ❌ | **Datos de menores**: relevante para el tutor IA y las recomendaciones |
+| 10 · Trabajo futuro y escalabilidad | ❌ | Roadmap post-TFG |
+| 11 · Gestión del proyecto | ❌ | Sprints, hitos, riesgos |
+| 1 · Introducción · 2 · Marco teórico · 4 · Resultados · 6 · Implementación | ⚠️ Parcial | Completar y actualizar diagramas |
+
+### 9.3 Brechas técnicas todavía abiertas
+
+Reverificadas contra el código el 05/08/2026:
+
+| Brecha | Gravedad | Evidencia |
+|---|---|---|
+| **Expiración de sesión: el informe exige 60 min, el sistema tiene 12 h** | ALTA | `config/sanctum.php`: `'expiration' => env('SANCTUM_TOKEN_EXPIRATION_MINUTES', 60 * 12)`. Es una discrepancia con el requisito no funcional de seguridad del informe: o se ajusta la variable, o se corrige el informe |
+| **Log de incidentes del tutor IA** | ALTA | No existe tabla ni servicio: los bloqueos por PII o por enlace fuera de la lista blanca solo dejan `Log::warning` en `AiTutorService` y `AiRecommendationService`. El informe [173] promete que «registrará incidencias» y fija como criterios de éxito «cero incidentes de PII» y «más del 75 % de mensajes que superen validación» — **el segundo no es calculable**: no se persiste ni el total validado ni el bloqueado. O se añade el contador, o se retira el criterio del informe |
+| **Backups cifrados de la BD** | ALTA | Sin script ni documentación. Requisito no funcional de seguridad |
+| **Documentación OpenAPI** | ~~ALTA~~ ✅ | Resuelto el 05/08/2026: `php artisan openapi:generate` produce los **103 endpoints** desde las rutas reales. Antes había 6 anotados a mano. No se edita a mano y no se desincroniza |
+| **Medición de cobertura ≥70%** | ALTA | El TFG la exige; no hay reporte generado. `php artisan test --coverage --min=70` (requiere Xdebug o PCOV) |
+| **HTTPS/TLS documentado** | MEDIA | Lo resuelve Coolify, pero debe quedar escrito en `DEPLOY_COOLIFY.md` |
+| **Monitoreo y alertas de caída** | MEDIA | Requisito no funcional de disponibilidad; sin Sentry ni equivalente |

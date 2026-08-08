@@ -1,6 +1,8 @@
 # Pruebas de API con Postman — NeoEduCore
 
-Colección lista para importar que cubre **todas y cada una de las rutas** de la API (93 endpoints en 15 carpetas), generada automáticamente desde `php artisan route:list`.
+Colección lista para importar que cubre **todas y cada una de las rutas** de la API, generada
+automáticamente desde `php artisan route:list`. No se edita a mano: **se regenera** (ver más abajo),
+así que el recuento de endpoints es siempre el que imprima el generador.
 
 ## Archivos
 

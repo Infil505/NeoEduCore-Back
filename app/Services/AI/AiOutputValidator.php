@@ -7,6 +7,9 @@ class AiOutputValidator
     private const MAX_LENGTH = 4000;
     private const MIN_LENGTH = 5;
 
+    /** Lo que queda en el texto donde había un enlace fuera de la lista blanca. */
+    public const URL_BLOQUEADA = '[enlace no permitido]';
+
     // Patrones que indican posible dato personal.
     // Nota: se afinan para NO marcar números "normales" de un tutor (resultados
     // de matemáticas, rangos de años, fechas de una explicación). Solo se bloquea
@@ -45,13 +48,38 @@ class AiOutputValidator
 
     public function sanitize(string $text): string
     {
-        $text = trim($text);
+        $text = $this->sanitizeUrls(trim($text));
 
         if (strlen($text) > self::MAX_LENGTH) {
             $text = mb_substr($text, 0, self::MAX_LENGTH);
         }
 
         return $text;
+    }
+
+    /**
+     * Sustituye por un aviso las URLs que no estén en la lista blanca.
+     *
+     * `isUrlAllowed()` solo se aplicaba a la URL del JSON estructurado que el
+     * modelo emite al regenerar recomendaciones, y a las que teclea un docente en
+     * `study_resources`. El **texto libre no pasaba por ningún filtro**: si el
+     * tutor escribía un enlace en medio de una explicación, llegaba tal cual a un
+     * niño de primaria. [173] no distingue canales: los materiales externos van
+     * «mediante una lista blanca de recursos educativos verificados».
+     *
+     * Se sustituye el enlace en vez de bloquear la respuesta entera: la
+     * explicación sigue siendo útil sin él, y descartarla haría que el tutor
+     * pareciera averiado cada vez que el modelo cita una fuente cualquiera.
+     */
+    public function sanitizeUrls(string $text): string
+    {
+        // Los cierres habituales de markdown y de puntuación no son parte del
+        // host, pero sí los captura un `\S+`, así que se excluyen del match.
+        return (string) preg_replace_callback(
+            '#\bhttps?://[^\s<>"\'\)\]]+#i',
+            fn (array $m) => $this->isUrlAllowed($m[0]) ? $m[0] : self::URL_BLOQUEADA,
+            $text
+        );
     }
 
     public function isUrlAllowed(string $url): bool

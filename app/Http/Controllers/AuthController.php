@@ -81,6 +81,15 @@ class AuthController extends Controller
                 'email' => $email,
                 'password_hash' => Hash::make($data['password']),
                 'user_type' => $userType,
+
+                // Activa desde el alta, a diferencia de la carga masiva.
+                //
+                // Aquí el administrador escribe la contraseña y se la entrega en
+                // mano al usuario: no se envía ningún correo de activación, así
+                // que crearla inactiva la dejaría inservible para siempre — no
+                // habría enlace con el que activarla. La regla real es «una
+                // cuenta está inactiva mientras nadie haya definido una
+                // contraseña usable», y aquí ya la hay.
                 'status' => UserStatus::Active->value,
             ]);
 

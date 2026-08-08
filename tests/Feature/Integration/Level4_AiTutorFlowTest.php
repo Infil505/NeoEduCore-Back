@@ -5,6 +5,8 @@ namespace Tests\Feature\Integration;
 use App\Models\Academic\Subject;
 use App\Models\Admin\Institution;
 use App\Models\Admin\User;
+use App\Models\Exams\Exam;
+use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
 use App\Models\Students\StudentProgress;
 use Tests\TestCase;
@@ -277,5 +279,67 @@ class Level4_AiTutorFlowTest extends TestCase
             'id'         => $res->json('data.session_id'),
             'subject_id' => $subject->id,
         ]);
+    }
+
+    // -------------------------------------------------------------------------
+    // Contexto de examen — `ai_chat_sessions.exam_id`
+    //
+    // La columna existía en la tabla, en `$fillable`, en la relación `exam()` y
+    // en el listado de sesiones, pero ninguna ruta la escribía: era siempre NULL
+    // pese a estar documentada como relación del sistema en §3.4 del análisis del
+    // modelo de datos.
+    // -------------------------------------------------------------------------
+
+    public function test_chat_links_the_session_to_an_exam_the_student_has_taken(): void
+    {
+        ['institution' => $institution, 'studentUser' => $studentUser] = $this->buildStudent();
+
+        $subject = Subject::factory()->create(['institution_id' => $institution->id]);
+        $exam    = Exam::factory()->create([
+            'institution_id' => $institution->id,
+            'subject_id'     => $subject->id,
+            // Ya presentado: fuera de `scopeVisibleTo`, que exige activo y en
+            // ventana. Es justo el caso de uso — preguntarle al tutor por el
+            // examen que uno acaba de entregar.
+            'status'         => 'completed',
+        ]);
+        ExamAttempt::factory()->create([
+            'institution_id'  => $institution->id,
+            'exam_id'         => $exam->id,
+            'student_user_id' => $studentUser->id,
+            'submitted_at'    => now(),
+        ]);
+
+        $this->actingAs($studentUser, 'sanctum');
+
+        $res = $this->postJson('/api/ai/tutor/chat', [
+            'message' => '¿Por qué fallé la pregunta 3?',
+            'exam_id' => $exam->id,
+        ])->assertOk();
+
+        $this->assertDatabaseHas('ai_chat_sessions', [
+            'id'      => $res->json('data.session_id'),
+            'exam_id' => $exam->id,
+        ]);
+    }
+
+    public function test_chat_rejects_an_exam_the_student_never_took_and_cannot_see(): void
+    {
+        ['institution' => $institution, 'studentUser' => $studentUser] = $this->buildStudent();
+
+        $subject = Subject::factory()->create(['institution_id' => $institution->id]);
+        // De su institución, pero en borrador y sin intento: ni visible ni suyo.
+        $exam = Exam::factory()->create([
+            'institution_id' => $institution->id,
+            'subject_id'     => $subject->id,
+            'status'         => 'draft',
+        ]);
+
+        $this->actingAs($studentUser, 'sanctum');
+
+        $this->postJson('/api/ai/tutor/chat', [
+            'message' => 'Hola',
+            'exam_id' => $exam->id,
+        ])->assertStatus(422);
     }
 }

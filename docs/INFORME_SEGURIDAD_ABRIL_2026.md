@@ -5,6 +5,13 @@
 **Estado al iniciar (17/04):** 82 tests pasando / 0 fallando  
 **Estado al finalizar (09/05):** 142 tests pasando / 0 fallando  
 
+> **📁 DOCUMENTO HISTÓRICO — cerrado el 09/05/2026.** Registra la revisión de seguridad hecha
+> entre el 17/04 y el 09/05/2026. **No refleja el estado actual y no debe leerse como que la
+> seguridad quedó auditada:** hubo al menos dos rondas de hallazgos posteriores, ambas
+> encontradas de casualidad y no auditando —la filtración de respuestas (G12) en
+> `ESTADO_Y_PENDIENTES.md`, y cuatro hallazgos más en `ANALISIS_MODELO_DATOS_TFG.md` §9.8.3—.
+> **La revisión sistemática de seguridad por rol sigue pendiente.**
+
 ---
 
 ## 1. Metodología

@@ -22,6 +22,11 @@
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_STORE" value="array"/>
+        <!-- La suite lanza cientos de peticiones desde la misma IP: el limite
+             general se sube para que no se bloquee a si misma. Los limites
+             especificos (login, ai-global) se dejan reales, que son los que
+             tienen tests propios. -->
+        <env name="RATE_LIMIT_API_PER_MINUTE" value="100000"/>
         <env name="DB_CONNECTION" value="pgsql"/>
         <env name="DB_DATABASE" value="neoeducore"/>
         <env name="MAIL_MAILER" value="array"/>

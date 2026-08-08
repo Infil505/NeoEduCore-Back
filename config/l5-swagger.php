@@ -28,6 +28,14 @@ return [
                 /*
                  * File name of the generated json documentation file
                  */
+                /*
+                 | ⚠️ Este fichero lo genera `php artisan openapi:generate`, que lo
+                 | construye desde las rutas reales (103 endpoints).
+                 |
+                 | NO ejecutes `l5-swagger:generate`: sobrescribiría este mismo
+                 | fichero con lo que haya en atributos #[OA\...], que hoy son 6
+                 | endpoints. L5-Swagger se usa solo para SERVIR la interfaz.
+                 */
                 'docs_json' => 'api-docs.json',
 
                 /*

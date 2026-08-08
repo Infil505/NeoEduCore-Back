@@ -182,9 +182,14 @@ class Level5_AnalyticsReportsTest extends TestCase
                     'total_messages',
                 ],
                 'top_recommendation_types',
-                'top_students_by_usage',
             ],
         ]);
+
+        // El escenario entra como docente, y `top_students_by_usage` (top 10 con
+        // nombre y propio) es solo para admin desde el 08/08/2026: [173] limita
+        // al personal docente a métricas agregadas y anónimas. El caso del admin
+        // está en `TutorStrategiesTest`.
+        $res->assertJsonMissingPath('data.top_students_by_usage');
     }
 
     public function test_tutor_usage_total_messages_counts_correctly(): void

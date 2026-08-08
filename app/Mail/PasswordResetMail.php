@@ -10,57 +10,55 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
+/**
+ * Correo de **recuperación** de contraseña: lo pide el propio usuario desde
+ * «olvidé mi contraseña».
+ *
+ * No confundir con `PasswordSetupMail`, que es el del alta de cuenta. Antes los
+ * dos flujos compartían este Mailable y el texto solo servía para el alta: quien
+ * pedía recuperar su contraseña recibía un correo diciéndole que se acababa de
+ * crear su cuenta, contradiciendo además al propio asunto.
+ */
 class PasswordResetMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
-    public $token;
-    public $user;
-    public $resetUrl;
+    public string $resetUrl;
 
-    /**
-     * Create a new message instance.
-     */
-    public function __construct(string $token, User $user)
+    public function __construct(public string $token, public User $user)
     {
-        $this->token = $token;
-        $this->user = $user;
-
-        // Enlace al formulario de reset servido por el backend
-        // (ruta web `password.reset.form`: GET /password/reset/{token}?email=...).
         $this->resetUrl = url('/password/reset/' . $token) . '?email=' . urlencode($user->email);
     }
 
-    /**
-     * Get the message envelope.
-     */
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Recuperar Contraseña - ' . config('app.name'),
+            subject: 'Recuperar tu contraseña · ' . config('app.name'),
         );
     }
 
-    /**
-     * Get the message content definition.
-     */
     public function content(): Content
     {
+        $datos = [
+            'resetUrl' => $this->resetUrl,
+            'user'     => $this->user,
+            'appName'  => config('app.name'),
+            // Se anuncia el plazo REAL configurado, no una cifra fija:
+            // si alguien cambia AUTH_PASSWORD_RESET_EXPIRE_MINUTES, el
+            // correo no se queda diciendo otra cosa.
+            'horas'    => (int) round(\App\Http\Controllers\Auth\ForgotPasswordController::minutosDeVigencia() / 60),
+        ];
+
+        // `text:` añade la parte en texto plano del multipart. Sin ella el correo
+        // va solo en HTML, lo que penaliza la entregabilidad y deja sin contenido
+        // a los clientes que bloquean HTML.
         return new Content(
             view: 'emails.password-reset',
-            with: [
-                'resetUrl' => $this->resetUrl,
-                'user' => $this->user,
-                'appName' => config('app.name')
-            ]
+            text: 'emails.password-reset-text',
+            with: $datos,
         );
     }
 
-    /**
-     * Get the attachments for the message.
-     *
-     * @return array<int, \Illuminate\Mail\Mailables\Attachment>
-     */
     public function attachments(): array
     {
         return [];

@@ -10,6 +10,31 @@ use Illuminate\Support\Facades\Log;
 use OpenAI\Laravel\Facades\OpenAI;
 use App\Services\AI\AiOutputValidator;
 
+/**
+ * Tutor IA conversacional.
+ *
+ * ## SIN_DATOS_IDENTIFICATIVOS
+ *
+ * **Nada que identifique al estudiante sale hacia OpenAI.** Hasta el 08/08/2026
+ * el `full_name` del alumno se incrustaba en el system prompt de `chat()` y en
+ * el prompt de `getDiagnosis()`, de modo que el nombre real de un menor viajaba
+ * a un tercero en cada turno de conversación.
+ *
+ * Contradecía dos compromisos explícitos del informe: [173] («prohibirá datos
+ * personales») y [394] («protocolos estrictos de confidencialidad y
+ * anonimización… ningún dato será compartido con terceros»), este último citando
+ * la Ley 8968 y subrayando que se trata de menores de edad.
+ *
+ * `AiOutputValidator` no cubría esto: filtra PII en la **salida** del modelo,
+ * nunca en la entrada.
+ *
+ * Lo que sí viaja es contexto pedagógico no identificativo: grado, estilo de
+ * aprendizaje y porcentaje de dominio por materia. La personalización que ve el
+ * alumno no se pierde — el saludo por su nombre lo pone el frontend, que ya sabe
+ * quién ha iniciado sesión.
+ *
+ * Cubierto por `tests/Feature/AI/AiTutorPrivacyTest.php`.
+ */
 class AiTutorService
 {
     private const MAX_HISTORY_MESSAGES = 20;
@@ -34,13 +59,14 @@ class AiTutorService
         ?string $sessionId = null,
         ?string $subjectId = null,
         string $mode = 'ask',
-        ?string $topic = null
+        ?string $topic = null,
+        ?string $examId = null
     ): array {
         // El controlador ya verificó que el usuario tiene perfil de estudiante,
         // así que aquí solo hace falta el contexto para el prompt (cacheable).
         $systemPrompt = $this->systemPromptCacheado($studentUserId);
 
-        $session = $this->resolveSession($studentUserId, $sessionId, $subjectId);
+        $session = $this->resolveSession($studentUserId, $sessionId, $subjectId, $examId);
 
         $history = collect($session->messages ?? [])
             ->take(-self::MAX_HISTORY_MESSAGES)
@@ -149,7 +175,17 @@ class AiTutorService
         return true;
     }
 
-    private function resolveSession(string $studentUserId, ?string $sessionId, ?string $subjectId): AiChatSession
+    /**
+     * `exam_id` existía en la tabla, en `$fillable`, en la relación `exam()` y en
+     * el listado de sesiones, pero **ninguna ruta lo escribía nunca**: la columna
+     * era siempre NULL. `ANALISIS_MODELO_DATOS_TFG.md` §3.4 la presenta como una
+     * de las relaciones que el sistema tiene y el informe no documenta, así que
+     * o se cableaba o había que sacarla del modelo de datos del TFG. Se cablea:
+     * consultar al tutor sobre el examen recién entregado es el caso de uso
+     * natural, y con la referencia guardada el reporte de uso puede decir sobre
+     * qué prueba se conversó.
+     */
+    private function resolveSession(string $studentUserId, ?string $sessionId, ?string $subjectId, ?string $examId = null): AiChatSession
     {
         if ($sessionId) {
             $session = AiChatSession::where('id', $sessionId)
@@ -158,6 +194,19 @@ class AiTutorService
                 ->first();
 
             if ($session) {
+                // La sesión ya existe: solo se rellenan los huecos. Si el alumno
+                // abrió el chat sin contexto y luego pregunta por un examen, la
+                // conversación queda anclada a él; lo que no se hace es
+                // reescribir un contexto que ya estaba puesto.
+                $faltantes = array_filter([
+                    'subject_id' => $session->subject_id === null ? $subjectId : null,
+                    'exam_id'    => $session->exam_id === null ? $examId : null,
+                ]);
+
+                if ($faltantes !== []) {
+                    $session->update($faltantes);
+                }
+
                 return $session;
             }
         }
@@ -165,6 +214,7 @@ class AiTutorService
         return AiChatSession::create([
             'student_user_id' => $studentUserId,
             'subject_id'      => $subjectId,
+            'exam_id'         => $examId,
             'messages'        => [],
         ]);
     }
@@ -186,10 +236,13 @@ class AiTutorService
             return "Hola {$name}. Aún no tienes exámenes registrados. ¡Realiza tu primer examen para ver tu diagnóstico personalizado!";
         }
 
-        $prompt = "Genera un diagnóstico educativo breve y motivador para {$name}.\n\n"
+        // El nombre NO entra en el prompt (ver `SIN_DATOS_IDENTIFICATIVOS`); solo
+        // se usa abajo, en el texto de reserva, que no sale del servidor.
+        $prompt = "Genera un diagnóstico educativo breve y motivador para un estudiante de primaria.\n\n"
             . "Progreso por materia:\n{$progressLines}\n\n"
             . "Incluye: resumen general, fortalezas, áreas por mejorar y 1-2 acciones concretas. "
-            . "Máximo 4 párrafos. Usa español claro y alentador.";
+            . "Máximo 4 párrafos. Usa español claro y alentador. "
+            . "No uses ningún nombre propio: no sabes cómo se llama.";
 
         try {
             $response = OpenAI::chat()->create([
@@ -239,7 +292,7 @@ class AiTutorService
     {
         // El timeout sale de OPENAI_REQUEST_TIMEOUT (config/openai.php, default
         // 30 s). Acótalo: mientras dura la llamada el worker de Octane está
-        // bloqueado y no puede atender a nadie más. Ver ANALISIS_CONCURRENCIA.md.
+        // bloqueado y no puede atender a nadie más. Ver docs/ANALISIS_CONCURRENCIA.md.
         try {
             $response = OpenAI::chat()->create([
                 'model'    => config('services.openai.model', 'gpt-4o-mini'),
@@ -272,7 +325,6 @@ class AiTutorService
 
     private function buildSystemPrompt(Student $student): string
     {
-        $name  = $student->user?->full_name ?? 'el estudiante';
         $grade = $student->grade ? "grado {$student->grade}" : null;
         $style = $student->learning_style?->value;
 
@@ -288,7 +340,9 @@ class AiTutorService
             return "  - {$subjectName}: {$p->mastery_percentage}% de dominio";
         })->join("\n");
 
-        $parts = ["Eres un tutor educativo personalizado para {$name}."];
+        // Sin nombre ni ningún otro identificador: ver `SIN_DATOS_IDENTIFICATIVOS`.
+        // Sin nombre ni ningún otro identificador: ver `SIN_DATOS_IDENTIFICATIVOS`.
+        $parts = ['Eres un tutor educativo personalizado para un estudiante de primaria.'];
 
         if ($grade || $style) {
             $profile = collect([$grade, $style ? "estilo de aprendizaje: {$style}" : null])
@@ -308,7 +362,8 @@ class AiTutorService
         $parts[] = "Responde siempre en español, de forma clara y motivadora. "
             . "Adapta el nivel de detalle al perfil. "
             . "Sé conciso (máximo 4 párrafos). "
-            . "No inventes datos ni resultados que no se te hayan dado.";
+            . "No inventes datos ni resultados que no se te hayan dado. "
+            . "No te dirijas al estudiante por su nombre ni se lo preguntes: no lo conoces.";
 
         return implode("\n", $parts);
     }

@@ -44,6 +44,9 @@ class SystemConfigController extends Controller
             'max_exam_duration'  => ['sometimes', 'integer', 'between:5,300'],
             'allow_registration' => ['sometimes', 'boolean'],
             'contact_email'      => ['nullable', 'email', 'max:120'],
+            // Nota mínima de aprobación de los reportes. El tope de 100 evita
+            // dejar la institución con todos los exámenes reprobados por error.
+            'passing_percentage' => ['sometimes', 'numeric', 'between:0,100'],
         ]);
 
         $institution = Institution::findOrFail($request->user()->institution_id);

@@ -29,6 +29,27 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Tiempo máximo de una consulta (milisegundos)
+    |--------------------------------------------------------------------------
+    |
+    | Lo aplica `AppServiceProvider::limitarDuracionDeConsultas()` con un
+    | `SET statement_timeout` al establecerse cada conexión: el DSN de Laravel
+    | para PostgreSQL no admite opciones libpq, así que no puede ir dentro de la
+    | conexión de abajo.
+    |
+    | **Solo en peticiones HTTP.** Migraciones, seeders y trabajos en cola quedan
+    | fuera a propósito: pueden tardar legítimamente mucho más.
+    |
+    | 15 s es holgado — lo más caro medido (exportar 1.000 estudiantes) tarda
+    | ~1 s. No está para afinar el rendimiento, sino para que una consulta
+    | descontrolada no retenga un worker de Octane para siempre.
+    |
+    */
+
+    'statement_timeout_ms' => (int) env('DB_STATEMENT_TIMEOUT_MS', 15000),
+
     'connections' => [
 
         'sqlite' => [

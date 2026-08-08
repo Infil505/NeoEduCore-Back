@@ -51,4 +51,10 @@ EXPOSE 8000
 
 # Servidor HTTP con Octane sobre FrankenPHP.
 # (Las migraciones se corren como paso de despliegue en Coolify, no aquí.)
-CMD ["php", "artisan", "octane:start", "--server=frankenphp", "--host=0.0.0.0", "--port=8000"]
+# `--max-requests=500`: Octane mantiene la app EN MEMORIA entre peticiones, que es
+# de donde sale su rendimiento, pero también significa que cualquier fuga de
+# memoria o estado residual de un worker se acumula indefinidamente. Reciclarlo
+# cada 500 peticiones acota ese arrastre a cambio de un arranque en frío
+# ocasional. Es además la contramedida barata frente a una petición maliciosa que
+# deje un worker en mal estado: se recicla solo.
+CMD ["php", "artisan", "octane:start", "--server=frankenphp", "--host=0.0.0.0", "--port=8000", "--max-requests=500"]

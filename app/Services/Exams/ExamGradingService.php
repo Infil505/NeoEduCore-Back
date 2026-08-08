@@ -27,7 +27,7 @@ class ExamGradingService
      *
      * Importa porque las entregas llegan en ráfaga al cerrarse la ventana del
      * examen y cada query es un round-trip de red contra la BD gestionada.
-     * Ver ANALISIS_CONCURRENCIA.md y tests/Feature/Perf/QueryBudgetTest.php.
+     * Ver docs/ANALISIS_CONCURRENCIA.md y tests/Feature/Perf/QueryBudgetTest.php.
      */
     public function gradeAttempt(
         Exam $exam,

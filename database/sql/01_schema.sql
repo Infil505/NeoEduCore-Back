@@ -3,7 +3,7 @@
 --
 
 
--- Dumped from database version 17.9
+-- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.9
 
 SET statement_timeout = 0;
@@ -668,7 +668,7 @@ CREATE TABLE public.users (
     password_hash character varying(255) NOT NULL,
     full_name character varying(255) NOT NULL,
     user_type public.user_type NOT NULL,
-    status public.user_status DEFAULT 'active'::public.user_status NOT NULL,
+    status public.user_status DEFAULT 'inactive'::public.user_status NOT NULL,
     remember_token character varying(100),
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone
@@ -1323,6 +1323,14 @@ ALTER TABLE ONLY public.exam_attempts
 
 
 --
+-- Name: exam_attempts exam_attempts_institution_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_attempts
+    ADD CONSTRAINT exam_attempts_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
+
+
+--
 -- Name: exam_attempts exam_attempts_student_user_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1391,7 +1399,7 @@ ALTER TABLE ONLY public.group_students
 --
 
 ALTER TABLE ONLY public.group_students
-    ADD CONSTRAINT group_students_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id);
+    ADD CONSTRAINT group_students_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
 
 
 --
@@ -1491,6 +1499,14 @@ ALTER TABLE ONLY public.student_answers
 
 
 --
+-- Name: student_progress student_progress_institution_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_progress
+    ADD CONSTRAINT student_progress_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
+
+
+--
 -- Name: student_progress student_progress_student_user_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1535,7 +1551,7 @@ ALTER TABLE ONLY public.student_subjects
 --
 
 ALTER TABLE ONLY public.students
-    ADD CONSTRAINT students_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id);
+    ADD CONSTRAINT students_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
 
 
 --
@@ -1551,7 +1567,7 @@ ALTER TABLE ONLY public.students
 --
 
 ALTER TABLE ONLY public.study_resources
-    ADD CONSTRAINT study_resources_created_by_foreign FOREIGN KEY (created_by) REFERENCES public.users(id);
+    ADD CONSTRAINT study_resources_created_by_foreign FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
@@ -1583,121 +1599,145 @@ ALTER TABLE ONLY public.users
 --
 
 ALTER TABLE public.ai_chat_sessions ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: ai_recommendations; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.ai_recommendations ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: calendar_events; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.calendar_events ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: exam_attempts; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.exam_attempts ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: exam_targets; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.exam_targets ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: exams; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.exams ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: failed_jobs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.failed_jobs ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: group_students; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.group_students ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: groups; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.groups ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: institutions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.institutions ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: jobs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: migrations; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.migrations ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: password_reset_tokens; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.password_reset_tokens ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: personal_access_tokens; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.personal_access_tokens ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: question_options; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.question_options ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: questions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.questions ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: student_answer_options; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.student_answer_options ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: student_answers; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.student_answers ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: student_progress; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.student_progress ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: student_subjects; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.student_subjects ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: students; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: study_resources; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.study_resources ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: subjects; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.subjects ENABLE ROW LEVEL SECURITY;
+
 --
 -- Name: users; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+
 --
 -- PostgreSQL database dump complete
 --
