@@ -2,7 +2,7 @@
 
 namespace Tests\Feature\Crud;
 
-use App\Mail\PasswordResetMail;
+use App\Mail\PasswordSetupMail;
 use App\Models\Admin\Institution;
 use App\Models\Admin\User;
 use App\Models\Students\Student;
@@ -50,6 +50,11 @@ class BulkUploadStudentsTest extends TestCase
             'email'          => 'ana.solis@ejemplo.com',
             'institution_id' => $institution->id,
             'user_type'      => 'student',
+
+            // Nace INACTIVA: la activa su dueña al definir la contraseña desde
+            // el correo. Antes se creaba ya activa, y en el panel no había forma
+            // de saber quién había completado el alta y quién no.
+            'status'         => 'inactive',
         ]);
         $ana = User::where('email', 'ana.solis@ejemplo.com')->first();
         $this->assertDatabaseHas('students', [
@@ -59,7 +64,11 @@ class BulkUploadStudentsTest extends TestCase
         ]);
 
         // El Mailable es ShouldQueue → se registra como encolado, no como enviado
-        Mail::assertQueued(PasswordResetMail::class, 2);
+        // PasswordSetupMail y no PasswordResetMail: a estos usuarios les
+        // crearon la cuenta, no pidieron recuperar su contraseña. Los dos
+        // flujos compartían Mailable y el texto solo servía para el alta.
+        Mail::assertQueued(PasswordSetupMail::class, 2);
+        Mail::assertNotQueued(\App\Mail\PasswordResetMail::class);
     }
 
     public function test_bulk_upload_requires_admin(): void

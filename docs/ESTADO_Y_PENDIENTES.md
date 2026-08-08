@@ -12,7 +12,9 @@
 4. [Bugs activos](#4-bugs-activos)
 5. [TODO priorizado](#5-todo-priorizado)
 6. [Referencia de endpoints existentes](#6-referencia-de-endpoints-existentes)
-7. [Entregables del TFG fuera del código](#7-entregables-del-tfg-fuera-del-código)
+7. [Límites de peticiones](#7-límites-de-peticiones-07082026)
+8. [Ciclo de vida de la cuenta](#8-ciclo-de-vida-de-la-cuenta-07082026)
+9. [Entregables del TFG fuera del código](#8-entregables-del-tfg-fuera-del-código)
 
 ---
 
@@ -793,7 +795,98 @@ Notas del paso 5 y sus efectos sobre repitentes:
 
 ---
 
-## 7. Entregables del TFG fuera del código
+## 7. Límites de peticiones (07/08/2026)
+
+Definidos en `config/rate_limits.php`, ajustables por entorno. Los limitadores con
+nombre se registran en `AppServiceProvider::registrarLimitadores()`.
+
+| Ámbito | Límite | Clave |
+|---|---|---|
+| **Toda la API** (grupo `api`) | 120/min | usuario autenticado, o IP si no lo hay |
+| **`POST /auth/login`** | 5/min **y** 60/min | correo+IP **y** IP |
+| Contraseñas (`forgot`, `reset`, `change`) | 5/min | IP |
+| `password/verify` | 10/min | IP |
+| Tutor IA (chat) | 30/min + **`ai-global` 120/min** | usuario + **institución** |
+| `ai/generate` | 20/min | usuario |
+| Carga masiva | 3/min | usuario |
+| Operaciones en lote | 10/min | usuario |
+
+**El login no tenía ningún tope hasta el 07/08/2026.** Con `BCRYPT_ROUNDS=10` cada
+intento cuesta ~100 ms de CPU, así que servía para fuerza bruta *y* para agotar los
+workers. La clave compuesta **correo+IP** es deliberada: solo por correo, un tercero
+podría dejar fuera a un alumno agotándole el cupo antes de un examen; solo por IP,
+se bloquearía a un aula entera tras el mismo NAT — que es el pico real del sistema.
+Cubierto por `tests/Feature/Auth/LoginThrottleTest.php`, incluido un caso de 30
+alumnos entrando desde la misma IP.
+
+⚠️ **Y todo depende de `TRUSTED_PROXIES`.** En producción la app va detrás de
+Traefik: sin declarar proxies de confianza, `$request->ip()` devuelve la IP del
+proxy y **todos los límites por IP agrupan a los usuarios en un único cubo** — el
+tope de 60/min pensado para un aula tras un NAT se aplicaría a todo el sistema a
+la vez, y se autobloquearía sin que nadie lo atacara. Configurado en
+`config/trusted_proxies.php` (rangos privados por defecto, que no son
+falsificables desde internet). Cubierto por `tests/Feature/Auth/TrustedProxiesTest.php`.
+
+**Defensa en profundidad, más allá de los límites:**
+
+| Medida | Dónde |
+|---|---|
+| `statement_timeout` 15 s en peticiones HTTP | `config/database.php` + `AppServiceProvider`; **no** en consola, para no cortar migraciones |
+| Reciclado de workers cada 500 peticiones | `Dockerfile` (`octane:start --max-requests=500`) |
+| Tamaño máximo de subida | 5 MB / 5.000 filas en carga masiva |
+
+**Lo que NO cubre la aplicación:** un DDoS volumétrico no se para desde Laravel.
+Hace falta una capa de red delante (Cloudflare), hoy **no desplegada** — ver
+`docs/DEPLOY_COOLIFY.md` §9. Conviene decirlo así en el informe: el requisito no
+funcional de disponibilidad del 99 % no se sostiene solo con la aplicación.
+
+⚠️ **Todo esto depende de `CACHE_STORE`.** Los contadores viven en la caché: con
+`array` y Octane cada worker lleva el suyo y ningún límite es global — con ~40
+workers, un 5/min se convierte en 200/min. Debe ser `database`, `file` o `redis`.
+`AppServiceProvider` escribe un `Log::warning` al arrancar si detecta `array` fuera
+de tests.
+
+---
+
+## 8. Ciclo de vida de la cuenta (07/08/2026)
+
+**Una cuenta creada por carga masiva nace `inactive` y la activa su dueño** al
+definir la contraseña desde el enlace del correo. Es el único punto donde una
+cuenta pasa a `active` por acción del usuario.
+
+| Vía de alta | `status` inicial | Motivo |
+|---|---|---|
+| Carga masiva CSV/XLSX | **`inactive`** | La contraseña es aleatoria: nadie puede entrar hasta que su dueño la defina |
+| `POST /api/register` (admin) | `active` | El admin escribe la contraseña y la entrega en mano; **no se envía correo**, así que crearla inactiva la dejaría inservible |
+
+Flujo completo del alta:
+
+```
+Admin sube CSV → User(status=inactive, contraseña aleatoria) + Student
+   ↓ PasswordSetupService: token hasheado en password_reset_tokens
+   ↓ PasswordSetupMail encolado → lo envía el worker
+Usuario pulsa el enlace → GET /password/reset/{token}?email=…  (formulario Blade)
+   ↓ POST /api/password/reset
+   ↓ guarda password_hash · status pasa a active · consume el token · revoca sesiones
+Ya puede entrar → POST /api/auth/login  (exige status === active)
+```
+
+Reglas que sostienen el flujo:
+
+- **`/password/forgot` responde a cuentas `active` e `inactive`, nunca a `suspended`.** Sin esto, quien perdiera el correo de alta quedaba bloqueado para siempre. Una cuenta suspendida la bloqueó un administrador a propósito y no debe tener vía de vuelta.
+- **El correo se elige según el estado:** `inactive` recibe `PasswordSetupMail` («activá tu cuenta»); el resto, `PasswordResetMail`. A quien nunca tuvo contraseña no se le habla de recuperarla.
+- **Solo se activa desde `inactive`.** Un reset sobre una cuenta `suspended` cambia la contraseña pero **no la reactiva**.
+- La columna `users.status` pasó a `DEFAULT 'inactive'` (migración `2026_08_07_000001`) para que la base no contradiga la regla. **No modifica filas existentes.**
+
+Sigue pendiente de decisión: `PATCH /users/{id}/reset-password` (un admin fija la
+contraseña de otro) **no activa** la cuenta. Es coherente con «la activa su
+dueño», pero deja una trampa de soporte: el admin cambia la contraseña, el
+usuario sigue sin poder entrar y no es evidente por qué. Se resuelve con
+`PATCH /users/{id}/status`.
+
+---
+
+## 9. Entregables del TFG fuera del código
 
 > Rescatado de `ANALISIS_BRECHAS_TFG.md` (17/04–09/05/2026) al eliminarlo el 05/08/2026: el
 > resto de aquel documento había quedado obsoleto —hablaba de 142 tests, de «JWT» y de que el

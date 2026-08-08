@@ -11,36 +11,36 @@ use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Correo de **recuperación** de contraseña: lo pide el propio usuario desde
- * «olvidé mi contraseña».
+ * Correo de **alta de cuenta**: el usuario no la pidió, se la crearon (carga
+ * masiva de estudiantes o alta desde administración) y tiene que establecer su
+ * primera contraseña.
  *
- * No confundir con `PasswordSetupMail`, que es el del alta de cuenta. Antes los
- * dos flujos compartían este Mailable y el texto solo servía para el alta: quien
- * pedía recuperar su contraseña recibía un correo diciéndole que se acababa de
- * crear su cuenta, contradiciendo además al propio asunto.
+ * Usa el mismo mecanismo de token que la recuperación (`password_reset_tokens`),
+ * pero el mensaje es distinto y por eso es un Mailable aparte: aquí procede
+ * explicar que la cuenta es nueva; en `PasswordResetMail` eso sería falso.
  */
-class PasswordResetMail extends Mailable implements ShouldQueue
+class PasswordSetupMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
-    public string $resetUrl;
+    public string $setupUrl;
 
     public function __construct(public string $token, public User $user)
     {
-        $this->resetUrl = url('/password/reset/' . $token) . '?email=' . urlencode($user->email);
+        $this->setupUrl = url('/password/reset/' . $token) . '?email=' . urlencode($user->email);
     }
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Recuperar tu contraseña · ' . config('app.name'),
+            subject: 'Activá tu cuenta de ' . config('app.name'),
         );
     }
 
     public function content(): Content
     {
         $datos = [
-            'resetUrl' => $this->resetUrl,
+            'setupUrl' => $this->setupUrl,
             'user'     => $this->user,
             'appName'  => config('app.name'),
             // Se anuncia el plazo REAL configurado, no una cifra fija:
@@ -49,12 +49,9 @@ class PasswordResetMail extends Mailable implements ShouldQueue
             'horas'    => (int) round(\App\Http\Controllers\Auth\ForgotPasswordController::minutosDeVigencia() / 60),
         ];
 
-        // `text:` añade la parte en texto plano del multipart. Sin ella el correo
-        // va solo en HTML, lo que penaliza la entregabilidad y deja sin contenido
-        // a los clientes que bloquean HTML.
         return new Content(
-            view: 'emails.password-reset',
-            text: 'emails.password-reset-text',
+            view: 'emails.password-setup',
+            text: 'emails.password-setup-text',
             with: $datos,
         );
     }

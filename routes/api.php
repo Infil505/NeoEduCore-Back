@@ -40,7 +40,13 @@ Route::get('/ping', fn () => response()->json(['ok' => true]));
 | cuentas dentro de su institución (ver grupo role:admin más abajo).
 | El primer admin se crea mediante el seeder (php artisan db:seed).
 */
-Route::post('/auth/login', [AuthController::class, 'login'])->name('login');
+// `throttle:login` cuenta por correo+IP y, además, por IP a secas. Es la puerta
+// más atacada del sistema y hasta el 07/08/2026 no tenía ningún tope: con
+// BCRYPT_ROUNDS=10 cada intento cuesta ~100 ms de CPU, así que servía tanto para
+// fuerza bruta como para agotar los workers. Ver config/rate_limits.php.
+Route::post('/auth/login', [AuthController::class, 'login'])
+    ->middleware('throttle:login')
+    ->name('login');
 
 /*
 |--------------------------------------------------------------------------

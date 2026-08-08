@@ -36,6 +36,8 @@ Guía para desplegar NeoEduCore (Laravel + Octane + FrankenPHP) y aguantar picos
 
 ## 6. Variables de entorno (en Coolify, no en el repo)
 ```
+APP_NAME=NeoEduCore        # sale en el ASUNTO y el cuerpo de los correos;
+                          # con el valor por defecto llegan diciendo "Laravel"
 APP_ENV=production
 APP_DEBUG=false
 APP_KEY=base64:...            # php artisan key:generate --show
@@ -48,6 +50,14 @@ DB_PORT=5432
 DB_DATABASE=postgres
 DB_USERNAME=postgres.xxxxxxxx
 DB_PASSWORD=...
+
+# Proxies de confianza. SIN ESTO, $request->ip() devuelve la IP de Traefik y
+# TODOS los limites por IP agrupan a los usuarios en un unico cubo: el sistema
+# se autobloquea sin que nadie lo ataque. Los rangos privados cubren Traefik.
+TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+
+# Corta consultas HTTP que pasen de este tiempo (ms). No afecta a migraciones ni cola.
+DB_STATEMENT_TIMEOUT_MS=15000
 
 QUEUE_CONNECTION=database
 CACHE_STORE=database          # o redis si agregás uno
@@ -78,3 +88,24 @@ BCRYPT_ROUNDS=10
 - `BCRYPT_ROUNDS=10` solo para el evento/piloto si esperás muchos logins a la vez; podés volver a 12 después.
 - La imagen NO incluye `.env` (lo inyecta Coolify) ni `vendor` (se instala en el build).
 - Primer admin: `php artisan db:seed` (una vez) o crearlo manualmente; luego el admin da de alta al resto vía `/register`.
+
+## 9. Si se pone Cloudflare delante
+
+Es la medida anti-DDoS con mejor relación coste/beneficio: absorbe el tráfico
+volumétrico, que **no se puede parar desde la aplicación** —si llegan 10 Gbps, el
+droplet se satura antes de que Laravel vea nada—. Pero hay que hacer un cambio a
+la vez, o rompe el rate limiting:
+
+1. Poner el dominio en Cloudflare (plan gratuito basta).
+2. **Añadir los rangos de Cloudflare a `TRUSTED_PROXIES`**, sin quitar los
+   privados: la cadena pasa a ser cliente → Cloudflare → Traefik → app, y la
+   cabecera llega como `X-Forwarded-For: <cliente>, <cloudflare>`. Symfony la
+   recorre de derecha a izquierda saltándose los proxies de confianza; si los de
+   Cloudflare no están, se detiene en su IP y la toma por la del cliente — con lo
+   que **todo el tráfico vuelve a agruparse en un solo cubo**. Rangos vigentes en
+   <https://www.cloudflare.com/ips/>.
+3. Comprobar en producción que `$request->ip()` devuelve IPs reales antes de dar
+   el cambio por bueno.
+
+El paso 2 no es opcional ni cosmético: sin él, el paso 1 deja el sistema peor que
+antes.

@@ -171,7 +171,17 @@
       "Bash(grep -v \":0$\")",
       "Bash(php -l app/Support/ApiSpec.php)",
       "Bash(cp postman/NeoEduCore.postman_collection.json /tmp/postman.antes.json)",
-      "Bash(php -l postman/generate_postman_collection.php)"
+      "Bash(php -l postman/generate_postman_collection.php)",
+      "Bash(php -l app/Http/Controllers/Auth/ForgotPasswordController.php)",
+      "Bash(php -l app/Mail/PasswordResetMail.php)",
+      "Bash(php -l /tmp/compilado.php)",
+      "Bash(php -l compilado_tmp.php)",
+      "Bash(grep -n \"^use App\\\\\\\\\\\\\\\\Enums\" app/Http/Controllers/Auth/ForgotPasswordController.php)",
+      "Bash(sed -i \"s|use App\\\\\\\\\\\\\\\\Domain\\\\\\\\\\\\\\\\Auth\\\\\\\\\\\\\\\\PasswordPolicy;|use App\\\\\\\\\\\\\\\\Domain\\\\\\\\\\\\\\\\Auth\\\\\\\\\\\\\\\\PasswordPolicy;\\\\nuse App\\\\\\\\\\\\\\\\Enums\\\\\\\\\\\\\\\\UserStatus;|\" app/Http/Controllers/Auth/ForgotPasswordController.php)",
+      "Bash(php -l tests/Feature/Auth/PasswordResetTest.php)",
+      "Bash(php -l app/Providers/AppServiceProvider.php)",
+      "Bash(grep -n \"protected\\\\|public static function\\\\|static \\\\$\" vendor/laravel/framework/src/Illuminate/Http/Middleware/TrustProxies.php)",
+      "Bash(awk '{print $1}')"
     ]
   }
 }

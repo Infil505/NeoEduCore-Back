@@ -94,7 +94,20 @@ return [
         'users' => [
             'provider' => 'users',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
-            'expire' => 60,
+
+            /*
+             | Vigencia del enlace de recuperación, EN MINUTOS.
+             |
+             | La app no usa el broker de Laravel (el flujo es propio, en
+             | ForgotPasswordController), pero sí lee esta clave: es el sitio
+             | canónico del framework y así el valor no queda duplicado ni
+             | escondido en una constante del controlador.
+             |
+             | El texto del correo anuncia este mismo plazo, calculado a partir
+             | de aquí, así que cambiarlo no deja el correo mintiendo.
+             */
+            'expire' => (int) env('AUTH_PASSWORD_RESET_EXPIRE_MINUTES', 60 * 24),
+
             'throttle' => 60,
         ],
     ],

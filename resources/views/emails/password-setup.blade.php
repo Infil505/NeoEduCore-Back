@@ -1,12 +1,13 @@
 {{--
-    Correo de RECUPERACIÓN de contraseña (el usuario lo pidió).
-    El de alta de cuenta es `emails/password-setup.blade.php`.
+    Correo de ALTA DE CUENTA: al usuario se la crearon (carga masiva o alta
+    desde administración) y tiene que establecer su primera contraseña.
+    El de recuperación es `emails/password-reset.blade.php`.
 --}}
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Recuperar tu contraseña | {{ $appName }}</title>
+    <title>Activá tu cuenta | {{ $appName }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body {
@@ -51,28 +52,27 @@
 </head>
 <body>
 <div class="container">
-    <h1>Recuperar tu contraseña</h1>
+    <h1>Activá tu cuenta</h1>
 
     <p>Hola <strong>{{ $user->full_name ?? 'Usuario' }}</strong>,</p>
 
     <p>
-        Recibimos una solicitud para restablecer la contraseña de tu cuenta en
-        <strong>{{ $appName }}</strong>. Para elegir una nueva, hacé clic en el botón:
+        Se creó tu cuenta en <strong>{{ $appName }}</strong>. Para activarla y
+        definir tu contraseña, hacé clic en el botón:
     </p>
 
     <div class="btn-wrap">
-        <a class="btn" href="{{ $resetUrl }}">Restablecer contraseña</a>
+        <a class="btn" href="{{ $setupUrl }}">Establecer contraseña</a>
     </div>
 
     <p class="fallback">
         Si el botón no funciona, copiá y pegá este enlace en tu navegador:<br>
-        <a href="{{ $resetUrl }}">{{ $resetUrl }}</a>
+        <a href="{{ $setupUrl }}">{{ $setupUrl }}</a>
     </p>
 
     <p class="aviso">
-        <strong>¿No fuiste vos?</strong> Ignorá este correo: tu contraseña
-        seguirá siendo la misma y nadie podrá entrar con este enlace sin
-        acceso a tu buzón.
+        Si no esperabas este correo, podés ignorarlo: la cuenta queda sin
+        activar y nadie puede usarla sin acceso a tu buzón.
     </p>
 
     <p style="font-size:13px;color:#6b7280;">
