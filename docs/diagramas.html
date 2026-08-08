@@ -217,8 +217,8 @@ node validar.mjs docs/DIAGRAMAS.md
 <code>Object.defineProperty</code>, no con una asignación directa.</p>
 </blockquote>
 <p>Si cambia el esquema, las cifras de la §1 se recomprueban con:</p>
-<pre><code class="language-bash">grep -c &quot;ADD CONSTRAINT .* FOREIGN KEY&quot; database/sql/01_schema.sql   # 47
-grep -c &quot;^CREATE TABLE public\.&quot;        database/sql/01_schema.sql   # 24 (19 dominio + 5 framework)
+<pre><code class="language-bash">grep -c &quot;ADD CONSTRAINT .* FOREIGN KEY&quot; database/sql/01_schema.sql   # 51
+grep -c &quot;^CREATE TABLE public\.&quot;        database/sql/01_schema.sql   # 25 (20 dominio + 5 framework)
 </code></pre>
 <hr />
 <h2>Índice</h2>
@@ -235,12 +235,12 @@ grep -c &quot;^CREATE TABLE public\.&quot;        database/sql/01_schema.sql   #
 </ol>
 <hr />
 <h2>1. Modelo entidad-relación</h2>
-<p><strong>19 tablas de dominio</strong> — 15 entidades y 4 pivotes — con <strong>47 claves foráneas</strong>. Aparte
+<p><strong>20 tablas de dominio</strong> — 15 entidades y 5 pivotes — con <strong>51 claves foráneas</strong>. Aparte
 quedan 5 tablas de framework (<code>migrations</code>, <code>jobs</code>, <code>failed_jobs</code>, <code>password_reset_tokens</code>,
 <code>personal_access_tokens</code>), que no son del dominio.</p>
-<p>Va en <strong>cuatro vistas</strong>, y no por capricho de maquetación: un ERD de 19 entidades con todos
+<p>Va en <strong>cuatro vistas</strong>, y no por capricho de maquetación: un ERD de 20 entidades con todos
 sus atributos es ilegible a cualquier tamaño. La §1.1 da la forma completa del modelo; las
-§1.2 a §1.4 entran al detalle por área. Entre las tres detalladas están las 19 tablas, sin
+§1.2 a §1.4 entran al detalle por área. Entre las tres detalladas están las 20 tablas, sin
 repetir ninguna.</p>
 <p>En las cuatro <strong>se omiten las aristas de <code>institution_id</code></strong>: las lleva <em>toda</em> tabla de dominio
 y saturarían la figura. Van en la <a href="#2-aislamiento-multi-tenant">§2</a>, que es donde además
@@ -272,6 +272,10 @@ enseñar el conjunto de un vistazo.</p>
     students ||--o{ student_subjects : &quot;&quot;
     subjects ||--o{ student_subjects : &quot;&quot;
 
+    users ||--o{ teacher_assignments : &quot;imparte&quot;
+    groups ||--o{ teacher_assignments : &quot;CASCADE&quot;
+    subjects ||--o{ teacher_assignments : &quot;CASCADE&quot;
+
     subjects ||--o{ exams : &quot;CASCADE&quot;
     exams ||--o{ questions : &quot;CASCADE&quot;
     questions ||--o{ question_options : &quot;CASCADE&quot;
@@ -296,8 +300,16 @@ enseñar el conjunto de un vistazo.</p>
   </div>
 </figure>
 <h3>1.2 Personas y estructura académica</h3>
-<p>Quién es quién y cómo se agrupa. Las dos tablas pivote de aquí sostienen el ciclo académico:
-la pertenencia a un grupo y la matrícula en materias.</p>
+<p>Quién es quién y cómo se agrupa. Las <strong>tres</strong> tablas pivote de aquí sostienen el ciclo
+académico: la pertenencia a un grupo, la matrícula en materias y —desde el 08/08/2026— la
+asignación del profesorado.</p>
+<blockquote>
+<p><strong><code>teacher_assignments</code> es la pieza que hay que leer con atención.</strong> Es la única fuente de
+la relación docente↔estudiante: «mis estudiantes» son los de los grupos que tengo
+asignados, y solo en las materias que imparto. Antes esa relación <strong>no existía en el
+modelo</strong> y el sistema la inferían de quién había creado cada examen, lo que permitía a un
+docente ampliarse el alcance solo. Ver §1.3 y la nota de decisiones al final de la §1.</p>
+</blockquote>
 <figure class="figura" id="figura-2">
   <div class="figura__barra">
     <span class="figura__n">Diagrama 2</span>
@@ -317,6 +329,9 @@ la pertenencia a un grupo y la matrícula en materias.</p>
     groups ||--o{ group_students : &quot;agrupa&quot;
     students ||--o{ student_subjects : &quot;matriculado&quot;
     subjects ||--o{ student_subjects : &quot;ofertada&quot;
+    users ||--o{ teacher_assignments : &quot;docente imparte&quot;
+    groups ||--o{ teacher_assignments : &quot;en el aula&quot;
+    subjects ||--o{ teacher_assignments : &quot;la materia&quot;
 
     institutions {
         uuid id PK
@@ -327,18 +342,18 @@ la pertenencia a un grupo y la matrícula en materias.</p>
     }
     users {
         uuid id PK
-        uuid institution_id FK &quot;SET NULL&quot;
+        uuid institution_id FK &quot;SET NULL, NULL solo en superadmin&quot;
         string full_name
         string email UK
         string password_hash &quot;bcrypt&quot;
-        enum user_type &quot;admin teacher student parent&quot;
+        enum user_type &quot;superadmin admin teacher student&quot;
         enum status &quot;active inactive suspended&quot;
     }
     students {
         uuid user_id PK, FK &quot;PK y FK a users a la vez&quot;
-        string student_code UK
-        int grade
-        string section
+        string student_code &quot;único por institución&quot;
+        int grade &quot;derivado del aula&quot;
+        string section &quot;derivado del aula&quot;
         int year
         enum status &quot;active inactive suspended&quot;
         enum learning_style &quot;visual auditivo lector&quot;
@@ -351,6 +366,8 @@ la pertenencia a un grupo y la matrícula en materias.</p>
         uuid id PK
         string name
         int grade
+        string section &quot;A-D&quot;
+        string group_code &quot;el «aula» de la carga masiva&quot;
         int year &quot;7A-2026 y 7A-2027 son filas distintas&quot;
         int student_count &quot;recalculado en cada alta y baja&quot;
     }
@@ -370,11 +387,26 @@ la pertenencia a un grupo y la matrícula en materias.</p>
         uuid student_user_id FK
         uuid subject_id FK
         timestamp enrolled_at
+    }
+    teacher_assignments {
+        uuid id PK
+        uuid teacher_user_id FK &quot;users, no students&quot;
+        uuid group_id FK &quot;CASCADE&quot;
+        uuid subject_id FK &quot;CASCADE&quot;
+        timestamp assigned_at
     }</pre>
   </div>
 </figure>
 <h3>1.3 Evaluación</h3>
 <p>Del examen a la opción marcada. Es la cadena que cascadea entera al borrar una materia.</p>
+<blockquote>
+<p><strong><code>created_by_teacher_id</code> es autoría, no permisos.</strong> Registra quién redactó el examen y
+sirve para conservarlo cuando el docente se va (<code>SET NULL</code>). <strong>No</strong> decide a qué
+estudiantes ve ese docente: eso sale de <code>teacher_assignments</code> (§1.2). Hasta el 08/08/2026
+ambas cosas eran la misma, y era un problema — bastaba dirigir un borrador a un grupo
+ajeno para ganar acceso a su alumnado. Hoy <code>exam_targets</code> solo acepta grupos donde el
+autor tenga asignación <strong>en la materia del examen</strong>.</p>
+</blockquote>
 <figure class="figura" id="figura-3">
   <div class="figura__barra">
     <span class="figura__n">Diagrama 3</span>
@@ -389,7 +421,7 @@ la pertenencia a un grupo y la matrícula en materias.</p>
   <div class="figura__lienzo">
     <pre class="mermaid">erDiagram
     subjects ||--o{ exams : &quot;CASCADE&quot;
-    users ||--o{ exams : &quot;created_by_teacher_id, SET NULL&quot;
+    users ||--o{ exams : &quot;autoría: created_by_teacher_id, SET NULL&quot;
     exams ||--o{ questions : &quot;CASCADE&quot;
     questions ||--o{ question_options : &quot;CASCADE&quot;
     exams ||--o{ exam_targets : &quot;CASCADE&quot;
@@ -540,7 +572,7 @@ material de estudio y el calendario.</p>
     }</pre>
   </div>
 </figure>
-<h3>Cuatro decisiones del modelo que conviene saber leer</h3>
+<h3>Seis decisiones del modelo que conviene saber leer</h3>
 <table>
 <thead>
 <tr>
@@ -570,11 +602,21 @@ material de estudio y el calendario.</p>
 <td><code>group_students</code></td>
 <td>La baja de un grupo es <strong>lógica</strong>: la fila se conserva como historial académico. Es el patrón que conviene extender a materias y grupos</td>
 </tr>
+<tr>
+<td><strong><code>teacher_assignments</code> existe como tabla, y no como inferencia</strong></td>
+<td><code>users → teacher_assignments → groups</code></td>
+<td>El permiso del docente es un <strong>dato que crea el administrador</strong>, no algo que se deduzca de lo que el docente hizo. Mientras se derivaba de la autoría del examen, el propio docente podía ampliarlo. La tabla nació vacía a propósito: al desplegar, nadie ve a nadie hasta que el admin asigne</td>
+</tr>
+<tr>
+<td><strong><code>students.student_code</code> es único <em>por institución</em></strong></td>
+<td><code>students</code></td>
+<td>Es un identificador <strong>interno de cada centro</strong>, no de la plataforma: dos colegios pueden numerar «EST-0001» cada uno. La constraint era global hasta el 08/08/2026 y lo impedía</td>
+</tr>
 </tbody>
 </table>
 <hr />
 <h2>2. Aislamiento multi-tenant</h2>
-<p>Cada fila del dominio lleva <code>institution_id</code>. <strong>Las 18 columnas tienen clave foránea</strong>, y
+<p>Cada fila del dominio lleva <code>institution_id</code>. <strong>Las 19 columnas tienen clave foránea</strong>, y
 todas cascadean menos una.</p>
 <figure class="figura" id="figura-5">
   <div class="figura__barra">
@@ -591,12 +633,12 @@ todas cascadean menos una.</p>
     <pre class="mermaid">flowchart TB
     INST[&quot;institutions&lt;br/&gt;&lt;i&gt;raíz del tenant&lt;/i&gt;&quot;]
 
-    subgraph CASCADE[&quot;17 tablas · ON DELETE CASCADE&quot;]
+    subgraph CASCADE[&quot;18 tablas · ON DELETE CASCADE&quot;]
         direction LR
         A[&quot;students · groups · subjects&lt;br/&gt;exams · questions · question_options&quot;]
         B[&quot;exam_attempts · student_answers&lt;br/&gt;student_answer_options · student_progress&quot;]
         C[&quot;ai_recommendations · ai_chat_sessions&lt;br/&gt;student_subjects · group_students · exam_targets&quot;]
-        D[&quot;study_resources · calendar_events&quot;]
+        D[&quot;study_resources · calendar_events · teacher_assignments&quot;]
     end
 
     SETNULL[&quot;users&lt;br/&gt;&lt;b&gt;ON DELETE SET NULL&lt;/b&gt;&quot;]
@@ -610,8 +652,12 @@ todas cascadean menos una.</p>
     MW --&gt;|&quot;inyecta institution_id&lt;br/&gt;del usuario autenticado&quot;| SCOPE
     SCOPE --&gt;|&quot;filtra toda consulta&lt;br/&gt;y rellena la columna al crear&quot;| CASCADE
 
+    SUPER[&quot;superadmin&lt;br/&gt;&lt;i&gt;institution_id = NULL&lt;/i&gt;&quot;]
+    SUPER -.-&gt;|&quot;nunca se vincula tenant_id:&lt;br/&gt;TenantScoped lo rechaza&quot;| MW
+
     style SETNULL stroke-width:3px
-    style INST stroke-width:3px</pre>
+    style INST stroke-width:3px
+    style SUPER stroke-width:3px,stroke-dasharray: 5 5</pre>
   </div>
 </figure>
 <p><strong>El aislamiento vive en dos capas, y esa redundancia es deliberada.</strong> <code>TenantScoped</code> filtra
@@ -619,6 +665,16 @@ en la aplicación — si detecta contexto HTTP sin <code>institution_id</code>, 
 vez de devolver datos de más. Las claves foráneas lo respaldan en la base: sin ellas era
 posible escribir un <code>institution_id</code> de una institución inexistente y romper el aislamiento
 por debajo del ORM.</p>
+<p><strong>El superadmin es la excepción, y por omisión en vez de por permiso.</strong> Es el operador de la
+plataforma —da de alta centros y a sus administradores— y no pertenece a ninguna institución:
+su <code>institution_id</code> es <code>NULL</code>. Eso significa que <code>SetTenantFromAuth</code> nunca llega a vincular un
+<code>tenant_id</code>, así que <strong>toda</strong> consulta a un modelo con <code>TenantScoped</code> falla para él. No es una
+regla de autorización que un controlador nuevo pueda olvidarse de aplicar: aunque una ruta
+académica se abriera a su rol por descuido, la consulta no devolvería datos igualmente.</p>
+<p>Ese rol nació el 08/08/2026 para cerrar un fallo concreto: <code>GET /api/institutions</code> estaba
+abierto a cualquier <code>admin</code> y <strong>no filtraba por institución</strong>, de modo que el administrador de
+un centro listaba todos los centros del SaaS. Hoy el admin de institución no tiene ninguna
+ruta hacia <code>/api/institutions</code>; gestiona lo suyo por <code>/api/system/config</code>.</p>
 <hr />
 <h2>3. Diagrama de clases</h2>
 <p>16 modelos Eloquent: las 15 entidades más <code>StudentSubject</code>. Los 3 pivotes restantes
@@ -655,6 +711,14 @@ no se ve en el esquema y sostiene la seguridad por rol.</p>
     class AcotaExamenAlEstudiante {
         &lt;&lt;trait&gt;&gt;
         +recorta la configuracion del examen al alumno
+    }
+    class AcotaAlDocente {
+        &lt;&lt;trait&gt;&gt;
+        +gruposDelDocente()
+        +materiasDelDocente()
+        +estudiantesDelDocente()
+        +docenteAlcanzaEstudiante()
+        +docenteAlcanzaGrupoEnMateria()
     }
 
     class Institution {
@@ -702,19 +766,38 @@ no se ve en el esquema y sostiene la seguridad por rol.</p>
         +student()
         +subject()
     }
+    class TeacherAssignment {
+        +timestamp assigned_at
+        +teacher()
+        +group()
+        +subject()
+    }
 
     TenantScoped &lt;|.. Student
     TenantScoped &lt;|.. Subject
     TenantScoped &lt;|.. Group
+    TenantScoped &lt;|.. TeacherAssignment
 
     Institution &quot;1&quot; --&gt; &quot;0..*&quot; User
     User &quot;1&quot; --&gt; &quot;0..1&quot; Student
     Student &quot;0..*&quot; --&gt; &quot;0..*&quot; Group : group_students
     Student &quot;0..*&quot; --&gt; &quot;0..*&quot; Subject : student_subjects
     StudentSubject ..&gt; Student
-    StudentSubject ..&gt; Subject</pre>
+    StudentSubject ..&gt; Subject
+
+    User &quot;1&quot; --&gt; &quot;0..*&quot; TeacherAssignment : docente
+    TeacherAssignment ..&gt; Group
+    TeacherAssignment ..&gt; Subject
+    AcotaAlDocente ..&gt; TeacherAssignment : unica fuente del alcance</pre>
   </div>
 </figure>
+<p><strong><code>AcotaAlDocente</code> es el trait que hay que mirar si se añade un endpoint.</strong> Resuelve «mis
+estudiantes» en un solo sitio, y existe precisamente porque la versión anterior de esa regla
+estaba copiada a mano en seis controladores —y <strong>faltaba en otros cuatro</strong>, que por eso
+servían el historial completo de cualquier alumno a cualquier docente—. Lo consumen
+<code>StudentController</code>, <code>StudentProgressController</code>, <code>ReportController</code>, <code>AnalyticsController</code>,
+<code>GroupController</code>, <code>StudentSubjectController</code>, <code>AiRecommendationController</code>, <code>ExamController</code>
+y <code>ReportStrategyService</code>.</p>
 <h3>3.2 Evaluación</h3>
 <figure class="figura" id="figura-7">
   <div class="figura__barra">
@@ -1217,24 +1300,29 @@ el propio informe llama <em>pedagógico</em>. Fijado como prueba en
   </div>
   <div class="figura__lienzo">
     <pre class="mermaid">flowchart LR
-    ADMIN([&quot;Admin&quot;])
+    SUPER([&quot;Superadmin&lt;br/&gt;&lt;i&gt;externo a los centros&lt;/i&gt;&quot;])
+    ADMIN([&quot;Admin de institución&quot;])
     DOCENTE([&quot;Docente&quot;])
     ALUMNO([&quot;Estudiante&quot;])
-    PARENT([&quot;Acudiente&lt;br/&gt;&lt;i&gt;reservado&lt;/i&gt;&quot;])
+
+    subgraph PLATAFORMA[&quot;Plataforma · solo superadmin&quot;]
+        S1[&quot;Alta y baja de instituciones&quot;]
+        S2[&quot;Gestionar administradores&lt;br/&gt;de cada institución&quot;]
+    end
 
     subgraph GESTION[&quot;Gestión institucional · solo admin&quot;]
-        U1[&quot;Gestionar instituciones&quot;]
+        U1[&quot;Configurar su institución&lt;br/&gt;&lt;i&gt;/system/config&lt;/i&gt;&quot;]
         U2[&quot;Dar de alta usuarios&lt;br/&gt;individual y masiva&quot;]
         U3[&quot;Administrar catálogo de materias&quot;]
-        U4[&quot;Configurar el sistema&lt;br/&gt;&lt;i&gt;incl. nota de aprobación&lt;/i&gt;&quot;]
+        U4[&quot;Crear grupos y matricular&lt;br/&gt;&lt;i&gt;membresía admin-only&lt;/i&gt;&quot;]
         U5[&quot;Promoción de fin de año&lt;br/&gt;&lt;i&gt;reasignación masiva&lt;/i&gt;&quot;]
+        U21[&quot;Asignar docentes a&lt;br/&gt;grupo y materia&quot;]
     end
 
     subgraph DOCENCIA[&quot;Docencia · admin y docente&quot;]
         U6[&quot;Crear y publicar exámenes&quot;]
         U7[&quot;Gestionar preguntas&quot;]
-        U8[&quot;Asignar exámenes a grupos&quot;]
-        U9[&quot;Gestionar grupos y matrículas&quot;]
+        U8[&quot;Asignar exámenes a sus grupos&quot;]
         U10[&quot;Calificar preguntas abiertas&quot;]
         U11[&quot;Ver analíticas y reportes&quot;]
         U12[&quot;Descargar estrategias del tutor&quot;]
@@ -1253,28 +1341,37 @@ el propio informe llama <em>pedagógico</em>. Fijado como prueba en
 
     COMUN[&quot;Iniciar sesión · recuperar contraseña · ver calendario&quot;]
 
+    SUPER --&gt; PLATAFORMA
     ADMIN --&gt; GESTION
     ADMIN --&gt; DOCENCIA
     DOCENTE --&gt; DOCENCIA
     ALUMNO --&gt; ESTUDIO
+    SUPER --&gt; COMUN
     ADMIN --&gt; COMUN
     DOCENTE --&gt; COMUN
     ALUMNO --&gt; COMUN
-    PARENT -.-&gt;|&quot;sin superficie de API&quot;| COMUN
 
-    U11 -.-&gt;|&quot;acotado a sus exámenes&quot;| DOCENTE
+    U11 -.-&gt;|&quot;acotado a sus grupos asignados&quot;| DOCENTE
     U12 -.-&gt;|&quot;sin el historial de chat&quot;| DOCENTE
+    U8 -.-&gt;|&quot;403 fuera de su asignación&quot;| DOCENTE
+    U21 -.-&gt;|&quot;habilita todo lo del docente&quot;| DOCENTE
 
-    style PARENT stroke-dasharray: 5 5</pre>
+    style SUPER stroke-width:3px</pre>
   </div>
 </figure>
-<p><strong>Dos precisiones que el informe no recoge:</strong></p>
+<p><strong>Tres precisiones que el informe no recoge:</strong></p>
 <ul>
-<li>El enum <code>UserType</code> tiene <strong>cuatro</strong> roles, no tres. <code>parent</code> está reservado para un futuro
-portal de acudientes y hoy <strong>no tiene ninguna ruta</strong>: conviene documentarlo como previsión
-de diseño, no dejarlo sin mencionar.</li>
-<li>El docente no es un admin recortado. Sobre sus propios exámenes puede todo; sobre los
-ajenos, nada — ni resultados, ni recomendaciones, ni estrategias.</li>
+<li>El enum <code>UserType</code> tiene <strong>cuatro</strong> roles, no tres, y el cuarto es <strong><code>superadmin</code></strong>, no el
+<code>parent</code> que figuraba antes: ese se retiró el 08/08/2026 tras comprobar que no tenía rutas
+ni una sola fila real. El superadmin es <strong>externo a las instituciones</strong> y su alcance se
+agota en dos CRUD: instituciones y sus administradores.</li>
+<li>El docente no es un admin recortado, <strong>y su alcance no se lo da él</strong>. Lo fija el
+administrador en <code>teacher_assignments</code>; fuera de sus grupos asignados no ve nada — ni
+estudiantes, ni resultados, ni recomendaciones, ni estrategias— y ni siquiera puede dirigir
+un examen a un grupo ajeno. La membresía de los grupos también es admin-only, para que no
+pueda ampliarse el alcance metiendo alumnos en un grupo suyo.</li>
+<li>El administrador de institución <strong>no ve el catálogo de instituciones</strong>. Su propio centro lo
+configura por <code>/api/system/config</code>.</li>
 </ul>
 <hr />
 <h2>9. Diagrama de proceso: el ciclo académico</h2>
@@ -1294,14 +1391,15 @@ ajenos, nada — ni resultados, ni recomendaciones, ni estrategias.</li>
     <pre class="mermaid">flowchart TB
     START([&quot;Inicio de curso&quot;])
 
-    A[&quot;Admin crea grupos del año&lt;br/&gt;&lt;i&gt;llevan year: 7A-2026 ≠ 7A-2027&lt;/i&gt;&quot;]
-    B[&quot;Alta de estudiantes&lt;br/&gt;&lt;i&gt;carga masiva o individual&lt;/i&gt;&quot;]
+    A[&quot;Admin crea las aulas del año&lt;br/&gt;&lt;i&gt;llevan year: 7A-2026 ≠ 7A-2027&lt;/i&gt;&quot;]
+    A2[&quot;Admin asigna docentes&lt;br/&gt;&lt;i&gt;teacher_assignments: grupo + materia&lt;/i&gt;&quot;]
+    B[&quot;Alta de estudiantes&lt;br/&gt;&lt;i&gt;la carga masiva exige columna «aula»&lt;br/&gt;y matricula en group_students&lt;/i&gt;&quot;]
     C[&quot;Alumno activa su cuenta&lt;br/&gt;&lt;i&gt;define contraseña&lt;/i&gt;&quot;]
     D[&quot;Matrícula en materias&lt;br/&gt;&lt;i&gt;student_subjects&lt;/i&gt;&quot;]
 
     E[&quot;Docente crea examen diagnóstico&lt;br/&gt;&lt;i&gt;draft&lt;/i&gt;&quot;]
     F[&quot;Añade preguntas y opciones&quot;]
-    G[&quot;Asigna a grupos&lt;br/&gt;&lt;i&gt;exam_targets&lt;/i&gt;&quot;]
+    G[&quot;Asigna a sus grupos&lt;br/&gt;&lt;i&gt;exam_targets · 403 si no los tiene&lt;/i&gt;&quot;]
     H[&quot;Publica y activa&quot;]
 
     I[&quot;Alumno presenta el examen&quot;]
@@ -1320,7 +1418,7 @@ ajenos, nada — ni resultados, ni recomendaciones, ni estrategias.</li>
     T[&quot;Resetear progreso&lt;br/&gt;&lt;i&gt;marca reset_at&lt;/i&gt;&quot;]
     END([&quot;Curso siguiente&quot;])
 
-    START --&gt; A --&gt; B --&gt; C --&gt; D
+    START --&gt; A --&gt; A2 --&gt; B --&gt; C --&gt; D
     D --&gt; E --&gt; F --&gt; G --&gt; H
     H --&gt; I --&gt; J --&gt; K
     K --&gt;|sí| L --&gt; M
@@ -1333,9 +1431,20 @@ ajenos, nada — ni resultados, ni recomendaciones, ni estrategias.</li>
     Q --&gt;|repitente| S --&gt; T --&gt; END
 
     style Q stroke-width:3px
-    style T stroke-width:3px</pre>
+    style T stroke-width:3px
+    style A2 stroke-width:3px</pre>
   </div>
 </figure>
+<p><strong>Los dos primeros pasos son nuevos y bloquean todo lo demás.</strong> Sin <code>teacher_assignments</code> el
+docente no ve a ningún estudiante —la tabla nace vacía a propósito—, y sin la columna <code>aula</code>
+en la carga masiva el alumno queda con etiqueta de sección pero sin matrícula, que en la
+práctica lo hace invisible: no lo ve ningún docente, no recibe exámenes y no sale en informes.
+El aula tiene que existir antes: el archivo <strong>no crea grupos</strong>, para que un typo en el código
+no genere un aula fantasma con un alumno dentro.</p>
+<p>Un matiz del traslado: volver a subir la fila de un estudiante con otra aula lo <strong>mueve</strong>,
+cerrando la matrícula anterior con <code>left_at</code> en vez de borrarla. Es la única vía por la que un
+alumno cambia de aula, y cambia también qué docente pasa a ver su expediente — por eso la
+respuesta del bulk informa de <code>reasignados</code> aparte de <code>matriculados</code>.</p>
 <p><strong>El paso que menos se ve y más importa es el reseteo.</strong> <code>recalcFromAttempts</code> promedia <em>todos</em>
 los intentos enviados y se dispara en cada entrega y en cada revisión de respuesta, así que
 poner el progreso a cero sin más se desharía solo en el siguiente examen. Por eso
@@ -1359,17 +1468,17 @@ promovidos. Así no hace falta ningún parámetro de exclusión.</p>
 <tr>
 <td>— <em>(no existe)</em></td>
 <td>§1 Modelo entidad-relación</td>
-<td><strong>Nueva.</strong> El informe no tiene ERD pese a tener 19 tablas y 47 FK</td>
+<td><strong>Nueva.</strong> El informe no tiene ERD pese a tener 20 tablas y 51 FK</td>
 </tr>
 <tr>
 <td>— <em>(no existe)</em></td>
 <td>§2 Aislamiento multi-tenant</td>
-<td><strong>Nueva.</strong> Es la decisión de arquitectura más transversal del sistema</td>
+<td><strong>Nueva.</strong> Es la decisión de arquitectura más transversal del sistema, y ahora incluye la frontera superadmin/institución</td>
 </tr>
 <tr>
 <td>Figura 2 · Diagrama de clases</td>
 <td>§3</td>
-<td>Rehacer: faltan <code>AiChatSession</code> y <code>StudentSubject</code></td>
+<td>Rehacer: faltan <code>AiChatSession</code>, <code>StudentSubject</code> y <code>TeacherAssignment</code></td>
 </tr>
 <tr>
 <td>Figura 7 y 8 · Arquitectura</td>
@@ -1394,12 +1503,12 @@ promovidos. Así no hace falta ningún parámetro de exclusión.</p>
 <tr>
 <td>Figura 9 · Casos de uso</td>
 <td>§8</td>
-<td>Rehacer: son cuatro roles, no tres</td>
+<td>Rehacer: son cuatro roles, no tres, y el cuarto es <code>superadmin</code> — externo a los centros — no el <code>parent</code> retirado</td>
 </tr>
 <tr>
 <td>Figura 3 · Diagrama de proceso</td>
 <td>§9</td>
-<td>Rehacer: añadir el ciclo completo con repitentes</td>
+<td>Rehacer: añadir el ciclo completo con repitentes, la asignación de docentes y el aula obligatoria en la carga masiva</td>
 </tr>
 </tbody>
 </table>

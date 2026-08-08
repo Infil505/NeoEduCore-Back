@@ -40,8 +40,8 @@ node validar.mjs docs/DIAGRAMAS.md
 Si cambia el esquema, las cifras de la §1 se recomprueban con:
 
 ```bash
-grep -c "ADD CONSTRAINT .* FOREIGN KEY" database/sql/01_schema.sql   # 47
-grep -c "^CREATE TABLE public\."        database/sql/01_schema.sql   # 24 (19 dominio + 5 framework)
+grep -c "ADD CONSTRAINT .* FOREIGN KEY" database/sql/01_schema.sql   # 51
+grep -c "^CREATE TABLE public\."        database/sql/01_schema.sql   # 25 (20 dominio + 5 framework)
 ```
 
 ---
@@ -62,13 +62,13 @@ grep -c "^CREATE TABLE public\."        database/sql/01_schema.sql   # 24 (19 do
 
 ## 1. Modelo entidad-relación
 
-**19 tablas de dominio** — 15 entidades y 4 pivotes — con **47 claves foráneas**. Aparte
+**20 tablas de dominio** — 15 entidades y 5 pivotes — con **51 claves foráneas**. Aparte
 quedan 5 tablas de framework (`migrations`, `jobs`, `failed_jobs`, `password_reset_tokens`,
 `personal_access_tokens`), que no son del dominio.
 
-Va en **cuatro vistas**, y no por capricho de maquetación: un ERD de 19 entidades con todos
+Va en **cuatro vistas**, y no por capricho de maquetación: un ERD de 20 entidades con todos
 sus atributos es ilegible a cualquier tamaño. La §1.1 da la forma completa del modelo; las
-§1.2 a §1.4 entran al detalle por área. Entre las tres detalladas están las 19 tablas, sin
+§1.2 a §1.4 entran al detalle por área. Entre las tres detalladas están las 20 tablas, sin
 repetir ninguna.
 
 En las cuatro **se omiten las aristas de `institution_id`**: las lleva *toda* tabla de dominio
@@ -92,6 +92,10 @@ erDiagram
     groups ||--o{ group_students : ""
     students ||--o{ student_subjects : ""
     subjects ||--o{ student_subjects : ""
+
+    users ||--o{ teacher_assignments : "imparte"
+    groups ||--o{ teacher_assignments : "CASCADE"
+    subjects ||--o{ teacher_assignments : "CASCADE"
 
     subjects ||--o{ exams : "CASCADE"
     exams ||--o{ questions : "CASCADE"
@@ -118,8 +122,15 @@ erDiagram
 
 ### 1.2 Personas y estructura académica
 
-Quién es quién y cómo se agrupa. Las dos tablas pivote de aquí sostienen el ciclo académico:
-la pertenencia a un grupo y la matrícula en materias.
+Quién es quién y cómo se agrupa. Las **tres** tablas pivote de aquí sostienen el ciclo
+académico: la pertenencia a un grupo, la matrícula en materias y —desde el 08/08/2026— la
+asignación del profesorado.
+
+> **`teacher_assignments` es la pieza que hay que leer con atención.** Es la única fuente de
+> la relación docente↔estudiante: «mis estudiantes» son los de los grupos que tengo
+> asignados, y solo en las materias que imparto. Antes esa relación **no existía en el
+> modelo** y el sistema la inferían de quién había creado cada examen, lo que permitía a un
+> docente ampliarse el alcance solo. Ver §1.3 y la nota de decisiones al final de la §1.
 
 ```mermaid
 erDiagram
@@ -129,6 +140,9 @@ erDiagram
     groups ||--o{ group_students : "agrupa"
     students ||--o{ student_subjects : "matriculado"
     subjects ||--o{ student_subjects : "ofertada"
+    users ||--o{ teacher_assignments : "docente imparte"
+    groups ||--o{ teacher_assignments : "en el aula"
+    subjects ||--o{ teacher_assignments : "la materia"
 
     institutions {
         uuid id PK
@@ -139,18 +153,18 @@ erDiagram
     }
     users {
         uuid id PK
-        uuid institution_id FK "SET NULL"
+        uuid institution_id FK "SET NULL, NULL solo en superadmin"
         string full_name
         string email UK
         string password_hash "bcrypt"
-        enum user_type "admin teacher student parent"
+        enum user_type "superadmin admin teacher student"
         enum status "active inactive suspended"
     }
     students {
         uuid user_id PK, FK "PK y FK a users a la vez"
-        string student_code UK
-        int grade
-        string section
+        string student_code "único por institución"
+        int grade "derivado del aula"
+        string section "derivado del aula"
         int year
         enum status "active inactive suspended"
         enum learning_style "visual auditivo lector"
@@ -163,6 +177,8 @@ erDiagram
         uuid id PK
         string name
         int grade
+        string section "A-D"
+        string group_code "el «aula» de la carga masiva"
         int year "7A-2026 y 7A-2027 son filas distintas"
         int student_count "recalculado en cada alta y baja"
     }
@@ -183,16 +199,30 @@ erDiagram
         uuid subject_id FK
         timestamp enrolled_at
     }
+    teacher_assignments {
+        uuid id PK
+        uuid teacher_user_id FK "users, no students"
+        uuid group_id FK "CASCADE"
+        uuid subject_id FK "CASCADE"
+        timestamp assigned_at
+    }
 ```
 
 ### 1.3 Evaluación
 
 Del examen a la opción marcada. Es la cadena que cascadea entera al borrar una materia.
 
+> **`created_by_teacher_id` es autoría, no permisos.** Registra quién redactó el examen y
+> sirve para conservarlo cuando el docente se va (`SET NULL`). **No** decide a qué
+> estudiantes ve ese docente: eso sale de `teacher_assignments` (§1.2). Hasta el 08/08/2026
+> ambas cosas eran la misma, y era un problema — bastaba dirigir un borrador a un grupo
+> ajeno para ganar acceso a su alumnado. Hoy `exam_targets` solo acepta grupos donde el
+> autor tenga asignación **en la materia del examen**.
+
 ```mermaid
 erDiagram
     subjects ||--o{ exams : "CASCADE"
-    users ||--o{ exams : "created_by_teacher_id, SET NULL"
+    users ||--o{ exams : "autoría: created_by_teacher_id, SET NULL"
     exams ||--o{ questions : "CASCADE"
     questions ||--o{ question_options : "CASCADE"
     exams ||--o{ exam_targets : "CASCADE"
@@ -334,7 +364,7 @@ erDiagram
     }
 ```
 
-### Cuatro decisiones del modelo que conviene saber leer
+### Seis decisiones del modelo que conviene saber leer
 
 | Decisión | Dónde se ve | Por qué |
 |---|---|---|
@@ -342,24 +372,26 @@ erDiagram
 | **`exams.created_by_teacher_id` es *nullable* con `SET NULL`** | `users → exams` | Permite dar de baja a un docente sin perder los exámenes que dejó al centro. Con `NOT NULL` habría sido imposible borrarlo |
 | **`exams.subject_id` es `CASCADE`** | `subjects → exams` | Eliminar una materia elimina su contenido académico. Es destructivo a propósito y en cadena: materia → exámenes → preguntas → intentos → respuestas |
 | **`group_students.left_at`** | `group_students` | La baja de un grupo es **lógica**: la fila se conserva como historial académico. Es el patrón que conviene extender a materias y grupos |
+| **`teacher_assignments` existe como tabla, y no como inferencia** | `users → teacher_assignments → groups` | El permiso del docente es un **dato que crea el administrador**, no algo que se deduzca de lo que el docente hizo. Mientras se derivaba de la autoría del examen, el propio docente podía ampliarlo. La tabla nació vacía a propósito: al desplegar, nadie ve a nadie hasta que el admin asigne |
+| **`students.student_code` es único *por institución*** | `students` | Es un identificador **interno de cada centro**, no de la plataforma: dos colegios pueden numerar «EST-0001» cada uno. La constraint era global hasta el 08/08/2026 y lo impedía |
 
 ---
 
 ## 2. Aislamiento multi-tenant
 
-Cada fila del dominio lleva `institution_id`. **Las 18 columnas tienen clave foránea**, y
+Cada fila del dominio lleva `institution_id`. **Las 19 columnas tienen clave foránea**, y
 todas cascadean menos una.
 
 ```mermaid
 flowchart TB
     INST["institutions<br/><i>raíz del tenant</i>"]
 
-    subgraph CASCADE["17 tablas · ON DELETE CASCADE"]
+    subgraph CASCADE["18 tablas · ON DELETE CASCADE"]
         direction LR
         A["students · groups · subjects<br/>exams · questions · question_options"]
         B["exam_attempts · student_answers<br/>student_answer_options · student_progress"]
         C["ai_recommendations · ai_chat_sessions<br/>student_subjects · group_students · exam_targets"]
-        D["study_resources · calendar_events"]
+        D["study_resources · calendar_events · teacher_assignments"]
     end
 
     SETNULL["users<br/><b>ON DELETE SET NULL</b>"]
@@ -373,8 +405,12 @@ flowchart TB
     MW -->|"inyecta institution_id<br/>del usuario autenticado"| SCOPE
     SCOPE -->|"filtra toda consulta<br/>y rellena la columna al crear"| CASCADE
 
+    SUPER["superadmin<br/><i>institution_id = NULL</i>"]
+    SUPER -.->|"nunca se vincula tenant_id:<br/>TenantScoped lo rechaza"| MW
+
     style SETNULL stroke-width:3px
     style INST stroke-width:3px
+    style SUPER stroke-width:3px,stroke-dasharray: 5 5
 ```
 
 **El aislamiento vive en dos capas, y esa redundancia es deliberada.** `TenantScoped` filtra
@@ -382,6 +418,18 @@ en la aplicación — si detecta contexto HTTP sin `institution_id`, lanza `Runt
 vez de devolver datos de más. Las claves foráneas lo respaldan en la base: sin ellas era
 posible escribir un `institution_id` de una institución inexistente y romper el aislamiento
 por debajo del ORM.
+
+**El superadmin es la excepción, y por omisión en vez de por permiso.** Es el operador de la
+plataforma —da de alta centros y a sus administradores— y no pertenece a ninguna institución:
+su `institution_id` es `NULL`. Eso significa que `SetTenantFromAuth` nunca llega a vincular un
+`tenant_id`, así que **toda** consulta a un modelo con `TenantScoped` falla para él. No es una
+regla de autorización que un controlador nuevo pueda olvidarse de aplicar: aunque una ruta
+académica se abriera a su rol por descuido, la consulta no devolvería datos igualmente.
+
+Ese rol nació el 08/08/2026 para cerrar un fallo concreto: `GET /api/institutions` estaba
+abierto a cualquier `admin` y **no filtraba por institución**, de modo que el administrador de
+un centro listaba todos los centros del SaaS. Hoy el admin de institución no tiene ninguna
+ruta hacia `/api/institutions`; gestiona lo suyo por `/api/system/config`.
 
 ---
 
@@ -413,6 +461,14 @@ classDiagram
     class AcotaExamenAlEstudiante {
         <<trait>>
         +recorta la configuracion del examen al alumno
+    }
+    class AcotaAlDocente {
+        <<trait>>
+        +gruposDelDocente()
+        +materiasDelDocente()
+        +estudiantesDelDocente()
+        +docenteAlcanzaEstudiante()
+        +docenteAlcanzaGrupoEnMateria()
     }
 
     class Institution {
@@ -460,10 +516,17 @@ classDiagram
         +student()
         +subject()
     }
+    class TeacherAssignment {
+        +timestamp assigned_at
+        +teacher()
+        +group()
+        +subject()
+    }
 
     TenantScoped <|.. Student
     TenantScoped <|.. Subject
     TenantScoped <|.. Group
+    TenantScoped <|.. TeacherAssignment
 
     Institution "1" --> "0..*" User
     User "1" --> "0..1" Student
@@ -471,7 +534,20 @@ classDiagram
     Student "0..*" --> "0..*" Subject : student_subjects
     StudentSubject ..> Student
     StudentSubject ..> Subject
+
+    User "1" --> "0..*" TeacherAssignment : docente
+    TeacherAssignment ..> Group
+    TeacherAssignment ..> Subject
+    AcotaAlDocente ..> TeacherAssignment : unica fuente del alcance
 ```
+
+**`AcotaAlDocente` es el trait que hay que mirar si se añade un endpoint.** Resuelve «mis
+estudiantes» en un solo sitio, y existe precisamente porque la versión anterior de esa regla
+estaba copiada a mano en seis controladores —y **faltaba en otros cuatro**, que por eso
+servían el historial completo de cualquier alumno a cualquier docente—. Lo consumen
+`StudentController`, `StudentProgressController`, `ReportController`, `AnalyticsController`,
+`GroupController`, `StudentSubjectController`, `AiRecommendationController`, `ExamController`
+y `ReportStrategyService`.
 
 ### 3.2 Evaluación
 
@@ -896,24 +972,29 @@ el propio informe llama *pedagógico*. Fijado como prueba en
 
 ```mermaid
 flowchart LR
-    ADMIN(["Admin"])
+    SUPER(["Superadmin<br/><i>externo a los centros</i>"])
+    ADMIN(["Admin de institución"])
     DOCENTE(["Docente"])
     ALUMNO(["Estudiante"])
-    PARENT(["Acudiente<br/><i>reservado</i>"])
+
+    subgraph PLATAFORMA["Plataforma · solo superadmin"]
+        S1["Alta y baja de instituciones"]
+        S2["Gestionar administradores<br/>de cada institución"]
+    end
 
     subgraph GESTION["Gestión institucional · solo admin"]
-        U1["Gestionar instituciones"]
+        U1["Configurar su institución<br/><i>/system/config</i>"]
         U2["Dar de alta usuarios<br/>individual y masiva"]
         U3["Administrar catálogo de materias"]
-        U4["Configurar el sistema<br/><i>incl. nota de aprobación</i>"]
+        U4["Crear grupos y matricular<br/><i>membresía admin-only</i>"]
         U5["Promoción de fin de año<br/><i>reasignación masiva</i>"]
+        U21["Asignar docentes a<br/>grupo y materia"]
     end
 
     subgraph DOCENCIA["Docencia · admin y docente"]
         U6["Crear y publicar exámenes"]
         U7["Gestionar preguntas"]
-        U8["Asignar exámenes a grupos"]
-        U9["Gestionar grupos y matrículas"]
+        U8["Asignar exámenes a sus grupos"]
         U10["Calificar preguntas abiertas"]
         U11["Ver analíticas y reportes"]
         U12["Descargar estrategias del tutor"]
@@ -932,28 +1013,37 @@ flowchart LR
 
     COMUN["Iniciar sesión · recuperar contraseña · ver calendario"]
 
+    SUPER --> PLATAFORMA
     ADMIN --> GESTION
     ADMIN --> DOCENCIA
     DOCENTE --> DOCENCIA
     ALUMNO --> ESTUDIO
+    SUPER --> COMUN
     ADMIN --> COMUN
     DOCENTE --> COMUN
     ALUMNO --> COMUN
-    PARENT -.->|"sin superficie de API"| COMUN
 
-    U11 -.->|"acotado a sus exámenes"| DOCENTE
+    U11 -.->|"acotado a sus grupos asignados"| DOCENTE
     U12 -.->|"sin el historial de chat"| DOCENTE
+    U8 -.->|"403 fuera de su asignación"| DOCENTE
+    U21 -.->|"habilita todo lo del docente"| DOCENTE
 
-    style PARENT stroke-dasharray: 5 5
+    style SUPER stroke-width:3px
 ```
 
-**Dos precisiones que el informe no recoge:**
+**Tres precisiones que el informe no recoge:**
 
-- El enum `UserType` tiene **cuatro** roles, no tres. `parent` está reservado para un futuro
-  portal de acudientes y hoy **no tiene ninguna ruta**: conviene documentarlo como previsión
-  de diseño, no dejarlo sin mencionar.
-- El docente no es un admin recortado. Sobre sus propios exámenes puede todo; sobre los
-  ajenos, nada — ni resultados, ni recomendaciones, ni estrategias.
+- El enum `UserType` tiene **cuatro** roles, no tres, y el cuarto es **`superadmin`**, no el
+  `parent` que figuraba antes: ese se retiró el 08/08/2026 tras comprobar que no tenía rutas
+  ni una sola fila real. El superadmin es **externo a las instituciones** y su alcance se
+  agota en dos CRUD: instituciones y sus administradores.
+- El docente no es un admin recortado, **y su alcance no se lo da él**. Lo fija el
+  administrador en `teacher_assignments`; fuera de sus grupos asignados no ve nada — ni
+  estudiantes, ni resultados, ni recomendaciones, ni estrategias— y ni siquiera puede dirigir
+  un examen a un grupo ajeno. La membresía de los grupos también es admin-only, para que no
+  pueda ampliarse el alcance metiendo alumnos en un grupo suyo.
+- El administrador de institución **no ve el catálogo de instituciones**. Su propio centro lo
+  configura por `/api/system/config`.
 
 ---
 
@@ -965,14 +1055,15 @@ El proceso completo de un curso, desde la matrícula hasta la promoción del añ
 flowchart TB
     START(["Inicio de curso"])
 
-    A["Admin crea grupos del año<br/><i>llevan year: 7A-2026 ≠ 7A-2027</i>"]
-    B["Alta de estudiantes<br/><i>carga masiva o individual</i>"]
+    A["Admin crea las aulas del año<br/><i>llevan year: 7A-2026 ≠ 7A-2027</i>"]
+    A2["Admin asigna docentes<br/><i>teacher_assignments: grupo + materia</i>"]
+    B["Alta de estudiantes<br/><i>la carga masiva exige columna «aula»<br/>y matricula en group_students</i>"]
     C["Alumno activa su cuenta<br/><i>define contraseña</i>"]
     D["Matrícula en materias<br/><i>student_subjects</i>"]
 
     E["Docente crea examen diagnóstico<br/><i>draft</i>"]
     F["Añade preguntas y opciones"]
-    G["Asigna a grupos<br/><i>exam_targets</i>"]
+    G["Asigna a sus grupos<br/><i>exam_targets · 403 si no los tiene</i>"]
     H["Publica y activa"]
 
     I["Alumno presenta el examen"]
@@ -991,7 +1082,7 @@ flowchart TB
     T["Resetear progreso<br/><i>marca reset_at</i>"]
     END(["Curso siguiente"])
 
-    START --> A --> B --> C --> D
+    START --> A --> A2 --> B --> C --> D
     D --> E --> F --> G --> H
     H --> I --> J --> K
     K -->|sí| L --> M
@@ -1005,7 +1096,20 @@ flowchart TB
 
     style Q stroke-width:3px
     style T stroke-width:3px
+    style A2 stroke-width:3px
 ```
+
+**Los dos primeros pasos son nuevos y bloquean todo lo demás.** Sin `teacher_assignments` el
+docente no ve a ningún estudiante —la tabla nace vacía a propósito—, y sin la columna `aula`
+en la carga masiva el alumno queda con etiqueta de sección pero sin matrícula, que en la
+práctica lo hace invisible: no lo ve ningún docente, no recibe exámenes y no sale en informes.
+El aula tiene que existir antes: el archivo **no crea grupos**, para que un typo en el código
+no genere un aula fantasma con un alumno dentro.
+
+Un matiz del traslado: volver a subir la fila de un estudiante con otra aula lo **mueve**,
+cerrando la matrícula anterior con `left_at` en vez de borrarla. Es la única vía por la que un
+alumno cambia de aula, y cambia también qué docente pasa a ver su expediente — por eso la
+respuesta del bulk informa de `reasignados` aparte de `matriculados`.
 
 **El paso que menos se ve y más importa es el reseteo.** `recalcFromAttempts` promedia *todos*
 los intentos enviados y se dispara en cada entrega y en cada revisión de respuesta, así que
@@ -1024,12 +1128,12 @@ promovidos. Así no hace falta ningún parámetro de exclusión.
 
 | Figura del informe | Aquí | Estado |
 |---|---|---|
-| — *(no existe)* | §1 Modelo entidad-relación | **Nueva.** El informe no tiene ERD pese a tener 19 tablas y 47 FK |
-| — *(no existe)* | §2 Aislamiento multi-tenant | **Nueva.** Es la decisión de arquitectura más transversal del sistema |
-| Figura 2 · Diagrama de clases | §3 | Rehacer: faltan `AiChatSession` y `StudentSubject` |
+| — *(no existe)* | §1 Modelo entidad-relación | **Nueva.** El informe no tiene ERD pese a tener 20 tablas y 51 FK |
+| — *(no existe)* | §2 Aislamiento multi-tenant | **Nueva.** Es la decisión de arquitectura más transversal del sistema, y ahora incluye la frontera superadmin/institución |
+| Figura 2 · Diagrama de clases | §3 | Rehacer: faltan `AiChatSession`, `StudentSubject` y `TeacherAssignment` |
 | Figura 7 y 8 · Arquitectura | §4 | Rehacer: el informe describe Node.js y Next.js, que no existen |
 | Figura 6 · Flujo de autenticación | §5 | Rehacer: es Sanctum con tokens opacos, no JWT |
 | Figura 4 · Flujo de examen | §6 | Rehacer: añadir pausa/reanudación y adecuación curricular |
 | Figura 10 · Flujo de ChatBot | §7 | Rehacer: añadir modos, validación de salida y frontera de privacidad |
-| Figura 9 · Casos de uso | §8 | Rehacer: son cuatro roles, no tres |
-| Figura 3 · Diagrama de proceso | §9 | Rehacer: añadir el ciclo completo con repitentes |
+| Figura 9 · Casos de uso | §8 | Rehacer: son cuatro roles, no tres, y el cuarto es `superadmin` — externo a los centros — no el `parent` retirado |
+| Figura 3 · Diagrama de proceso | §9 | Rehacer: añadir el ciclo completo con repitentes, la asignación de docentes y el aula obligatoria en la carga masiva |

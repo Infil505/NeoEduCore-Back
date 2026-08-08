@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
 use App\Models\AI\AiChatSession;
 use App\Models\AI\AiRecommendation;
@@ -17,6 +18,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ReportController extends Controller
 {
+    use AcotaAlDocente;
+
     private const RESULTS_PER_PAGE = 50;
 
     public function __construct(
@@ -98,9 +101,9 @@ class ReportController extends Controller
     /**
      * Export CSV: historial completo de un estudiante.
      */
-    public function exportStudentHistoryCsv(string $student_user_id): StreamedResponse
+    public function exportStudentHistoryCsv(string $student_user_id, Request $request): StreamedResponse
     {
-        return $this->exports->studentHistoryCsv($this->findStudent($student_user_id));
+        return $this->exports->studentHistoryCsv($this->findStudent($student_user_id, $request->user()));
     }
 
     /**
@@ -117,7 +120,7 @@ class ReportController extends Controller
 
         return response()->json([
             'data' => $this->metrics->studentSummary(
-                $this->findStudent($student_user_id),
+                $this->findStudent($student_user_id, $request->user()),
                 (int) ($validated['points'] ?? ReportMetricsService::DEFAULT_TREND_POINTS),
             ),
         ]);
@@ -128,7 +131,7 @@ class ReportController extends Controller
      */
     public function studentHistory(string $student_user_id, Request $request)
     {
-        $student = $this->findStudent($student_user_id);
+        $student = $this->findStudent($student_user_id, $request->user());
 
         $paginator = ExamAttempt::query()
             ->where('student_user_id', $student_user_id)
@@ -182,14 +185,16 @@ class ReportController extends Controller
     /**
      * Estrategias del tutor de un estudiante, para el docente.
      *
-     * El alcance lo aplica `ReportStrategyService`: un docente solo ve las
-     * recomendaciones nacidas de exámenes que él creó.
+     * Doble filtro, y son distintos: `findStudent()` decide si el docente puede
+     * mirar a este alumno (asignación al grupo), y `ReportStrategyService`
+     * decide qué recomendaciones de las suyas le corresponden (materias que
+     * imparte).
      */
     public function studentStrategies(string $student_user_id, Request $request)
     {
         return response()->json([
             'data' => $this->strategies->studentStrategies(
-                $this->findStudent($student_user_id),
+                $this->findStudent($student_user_id, $request->user()),
                 $request->user(),
                 $this->strategyFilters($request),
             ),
@@ -209,10 +214,25 @@ class ReportController extends Controller
      * El scope de institución (`TenantScoped`) ya impide leer el historial de un
      * estudiante de otro centro: fuera de la institución del usuario, el
      * `firstOrFail()` devuelve 404.
+     *
+     * Dentro del centro no impedía nada: hasta ahora **cualquier docente podía
+     * leer el historial completo, el resumen y las estrategias de cualquier
+     * alumno de la institución**, porque ninguno de los cuatro endpoints que
+     * pasan por aquí comprobaba nada más. El alcance por asignación se aplica en
+     * este punto único para que no vuelva a quedarse fuera de uno de ellos.
+     *
+     * `$viewer` es obligatorio a propósito: si fuera opcional, un endpoint nuevo
+     * podría olvidarlo y volver al agujero anterior sin que nada fallara.
      */
-    private function findStudent(string $student_user_id): Student
+    private function findStudent(string $student_user_id, object $viewer): Student
     {
-        return Student::with('user')->where('user_id', $student_user_id)->firstOrFail();
+        $student = Student::with('user')->where('user_id', $student_user_id)->firstOrFail();
+
+        if ($this->esDocente($viewer) && !$this->docenteAlcanzaEstudiante($viewer, $student_user_id)) {
+            abort(403, 'No autorizado: no estás asignado a ningún grupo de este estudiante.');
+        }
+
+        return $student;
     }
 
     /**

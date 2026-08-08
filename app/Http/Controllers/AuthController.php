@@ -32,7 +32,7 @@ class AuthController extends Controller
                     new OA\Property(property: 'email', type: 'string', format: 'email'),
                     new OA\Property(property: 'password', type: 'string', format: 'password'),
                     new OA\Property(property: 'password_confirmation', type: 'string', format: 'password'),
-                    new OA\Property(property: 'user_type', type: 'string', enum: ['admin', 'teacher', 'student', 'parent'], nullable: true),
+                    new OA\Property(property: 'user_type', type: 'string', enum: ['admin', 'teacher', 'student'], nullable: true),
                 ]
             )
         ),
@@ -56,12 +56,12 @@ class AuthController extends Controller
             ],
 
             // El admin puede fijar el rol explícitamente; si no, se infiere por email.
-            'user_type' => ['nullable', Rule::in([
-                UserType::Admin->value,
-                UserType::Teacher->value,
-                UserType::Student->value,
-                UserType::Parent->value,
-            ])],
+            //
+            // `superadmin` NO está en la lista y no puede estarlo: esta ruta crea
+            // usuarios dentro de la institución del admin autenticado, y el
+            // superadmin es externo a toda institución. Permitirlo dejaría que
+            // cualquier admin de centro se fabricase un operador de plataforma.
+            'user_type' => ['nullable', Rule::in(UserType::rolesDeInstitucion())],
         ]);
 
         $email = strtolower($data['email']);
@@ -243,10 +243,8 @@ class AuthController extends Controller
             return UserType::Teacher->value;
         }
 
-        // Nota: el rol `parent` queda RESERVADO para un futuro portal de acudientes,
-        // pero NO se infiere por email: hoy no tiene rutas, así que un usuario parent
-        // recibiría 403 en todo. Si se necesita, el admin puede crearlo explícitamente
-        // pasando user_type=parent en /register.
+        // El rol `parent` se retiró el 08/08/2026: llevaba desde el diseño
+        // original sin rutas, sin controladores y sin ninguna fila real.
         return UserType::Student->value;
     }
 }

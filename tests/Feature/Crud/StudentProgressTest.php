@@ -90,14 +90,12 @@ class StudentProgressTest extends TestCase
             'institution_id' => $institution->id,
         ]);
 
-        // El teacher debe tener un examen asignado a un grupo donde está el estudiante
+        // El docente necesita estar ASIGNADO al grupo donde está el estudiante.
+        // Antes bastaba con haberle dirigido un examen, que era la vía por la
+        // que un docente podía ampliarse el alcance solo.
         $group = Group::factory()->create(['institution_id' => $institution->id]);
-        \Illuminate\Support\Facades\DB::table('group_students')->insert([
-            'student_user_id' => $studentUser->id,
-            'group_id'        => $group->id,
-            'institution_id'  => $institution->id,
-            'joined_at'       => now(),
-        ]);
+        $this->asignarDocente($teacher, $group->id, $subject->id);
+        $this->matricularEnGrupo($studentUser->id, $group->id, $institution->id);
 
         $exam = Exam::factory()->create([
             'institution_id'        => $institution->id,

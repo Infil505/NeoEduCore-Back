@@ -41,9 +41,9 @@ class GroupStudentsTest extends TestCase
         })->all();
     }
 
-    public function test_teacher_can_add_students_to_a_group(): void
+    public function test_admin_can_add_students_to_a_group(): void
     {
-        $this->signInTeacher(['institution_id' => $this->institution->id]);
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
 
         $group = Group::factory()->create(['institution_id' => $this->institution->id]);
         $ids   = $this->estudiantes(3);
@@ -68,7 +68,7 @@ class GroupStudentsTest extends TestCase
 
     public function test_adding_the_same_student_twice_is_idempotent(): void
     {
-        $this->signInTeacher(['institution_id' => $this->institution->id]);
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
 
         $group = Group::factory()->create(['institution_id' => $this->institution->id]);
         $ids   = $this->estudiantes(1);
@@ -85,7 +85,7 @@ class GroupStudentsTest extends TestCase
 
     public function test_remove_is_a_logical_delete_and_recounts(): void
     {
-        $this->signInTeacher(['institution_id' => $this->institution->id]);
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
 
         $group = Group::factory()->create(['institution_id' => $this->institution->id]);
         $ids   = $this->estudiantes(2);
@@ -112,7 +112,7 @@ class GroupStudentsTest extends TestCase
 
     public function test_readding_a_removed_student_reopens_the_membership(): void
     {
-        $this->signInTeacher(['institution_id' => $this->institution->id]);
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
 
         $group = Group::factory()->create(['institution_id' => $this->institution->id]);
         $ids   = $this->estudiantes(1);
@@ -131,7 +131,7 @@ class GroupStudentsTest extends TestCase
 
     public function test_students_from_another_institution_are_ignored(): void
     {
-        $this->signInTeacher(['institution_id' => $this->institution->id]);
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
 
         $group = Group::factory()->create(['institution_id' => $this->institution->id]);
 
@@ -161,9 +161,36 @@ class GroupStudentsTest extends TestCase
         ])->assertForbidden();
     }
 
-    public function test_student_user_ids_is_required(): void
+    /**
+     * La membresía de grupo es admin-only. Si un docente pudiera darla de alta,
+     * ampliaría su propio alcance por el otro extremo de la cadena: metería a
+     * cualquier alumno de la institución en un grupo suyo y pasaría a ver sus
+     * datos sin que ningún admin lo hubiera decidido.
+     */
+    public function test_teacher_cannot_manage_group_membership(): void
     {
         $this->signInTeacher(['institution_id' => $this->institution->id]);
+
+        $group = Group::factory()->create(['institution_id' => $this->institution->id]);
+        $ids   = $this->estudiantes(1);
+
+        $this->postJson("/api/groups/{$group->id}/students", [
+            'student_user_ids' => $ids,
+        ])->assertForbidden();
+
+        $this->deleteJson("/api/groups/{$group->id}/students", [
+            'student_user_ids' => $ids,
+        ])->assertForbidden();
+
+        $this->assertDatabaseMissing('group_students', [
+            'group_id'        => $group->id,
+            'student_user_id' => $ids[0],
+        ]);
+    }
+
+    public function test_student_user_ids_is_required(): void
+    {
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
 
         $group = Group::factory()->create(['institution_id' => $this->institution->id]);
 

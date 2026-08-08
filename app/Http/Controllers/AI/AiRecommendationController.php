@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\AI;
 
+use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
 use App\Models\AI\AiRecommendation;
 use App\Models\Students\Student;
@@ -10,6 +11,8 @@ use Illuminate\Validation\Rule;
 
 class AiRecommendationController extends Controller
 {
+    use AcotaAlDocente;
+
     /**
      * Listar recomendaciones
      * - Admin/Teacher: puede filtrar por student_user_id
@@ -35,15 +38,19 @@ class AiRecommendationController extends Controller
             $query->where('student_user_id', $user->id);
         }
 
-        // 👨‍🏫 Docente: solo las nacidas de exámenes que él creó.
+        // 👨‍🏫 Docente: solo sus estudiantes (grupo asignado) y solo sus materias.
         //
-        // `show()` ya aplicaba esta regla, pero `index()` no: un docente podía
-        // listar el `recommendation_text` de CUALQUIER alumno de la institución,
-        // incluidos exámenes ajenos. Las dos vías tienen que decir lo mismo, y
-        // la restrictiva es la correcta — son textos generados por IA sobre el
-        // desempeño de menores.
-        if ($user->user_type->value === 'teacher') {
-            $query->whereHas('exam', fn ($q) => $q->where('created_by_teacher_id', $user->id));
+        // `show()` ya aplicaba una regla y `index()` no: un docente podía listar
+        // el `recommendation_text` de CUALQUIER alumno de la institución. Las
+        // dos vías tienen que decir lo mismo, y la restrictiva es la correcta —
+        // son textos generados por IA sobre el desempeño de menores.
+        //
+        // La regla ya no es «exámenes que yo creé» sino la asignación del admin,
+        // que no se puede ampliar uno mismo. De paso deja de perder las
+        // recomendaciones sin `exam_id`, que antes no veía nadie más que admin.
+        if ($this->esDocente($user)) {
+            $this->acotarAEstudiantesDelDocente($query, $user);
+            $query->whereIn('subject_id', $this->materiasDelDocente($user->id));
         }
 
         // 👨‍🏫 Admin / Teacher
@@ -80,10 +87,15 @@ class AiRecommendationController extends Controller
             return response()->json(['message' => 'No autorizado'], 403);
         }
 
-        // Teacher: solo puede ver recomendaciones vinculadas a sus propios exámenes
-        if ($user->user_type->value === 'teacher') {
-            $aiRecommendation->loadMissing('exam');
-            if ($aiRecommendation->exam === null || $aiRecommendation->exam->created_by_teacher_id !== $user->id) {
+        // Docente: el alumno tiene que ser de un grupo suyo y la recomendación,
+        // de una materia que imparte. Misma regla que `index()`.
+        if ($this->esDocente($user)) {
+            $alcanzaAlumno  = $this->docenteAlcanzaEstudiante($user, $aiRecommendation->student_user_id);
+            $imparteMateria = $this->materiasDelDocente($user->id)
+                ->where('subject_id', $aiRecommendation->subject_id)
+                ->exists();
+
+            if (!$alcanzaAlumno || !$imparteMateria) {
                 return response()->json(['message' => 'No autorizado'], 403);
             }
         }

@@ -309,16 +309,19 @@ El índice de figuras [56-65] lista diez figuras: mapa conceptual, diagrama de c
 
 ### 9.3 🟠 Entidades del sistema ausentes del informe
 
-Las nueve relaciones de §3.4 corresponden a dos entidades que el informe no menciona:
+Las nueve relaciones de §3.4 corresponden a dos entidades que el informe no menciona, a las que se suma una tercera añadida después:
 
 | Entidad | Tabla | Qué es | Por qué falta |
 |---|---|---|---|
 | **`AiChatSession`** | `ai_chat_sessions` | Sesión del tutor IA conversacional: historial de mensajes en `jsonb`, vinculada a estudiante, materia y examen | Añadida el 29/04/2026, después del diseño original |
 | **`StudentSubject`** | `student_subjects` | Matrícula estudiante↔materia, con `enrolled_at` y unicidad `(student_user_id, subject_id)` | Añadida el 09/05/2026 |
+| **`TeacherAssignment`** | `teacher_assignments` | Asignación docente↔grupo↔materia. Es la **única** fuente de la relación docente-estudiante | Añadida el 08/08/2026 al corregir el hallazgo de §9.8.5 |
 
-Ambas son funcionalidad central del sistema entregado —el tutor IA es el diferenciador del proyecto— así que su ausencia del modelo documentado es una omisión de peso.
+Las tres son funcionalidad central del sistema entregado —el tutor IA es el diferenciador del proyecto— así que su ausencia del modelo documentado es una omisión de peso.
 
-**Acción:** incorporarlas al diagrama de clases [653] y al modelo de datos nuevo (§9.2).
+La tercera pesa distinto que las otras dos: `AiChatSession` y `StudentSubject` faltan porque son **posteriores** al diseño. `TeacherAssignment` cubre una relación que el informe **sí da por supuesta** al hablar de que el docente consulta a *sus* estudiantes, pero que el modelo nunca llegó a declarar. Ver §9.8.5 para lo que el sistema hacía mientras tanto.
+
+**Acción:** incorporar las tres al diagrama de clases [653] y al modelo de datos nuevo (§9.2).
 
 ### 9.4 🟡 Decisiones de diseño que conviene justificar, no ocultar
 
@@ -343,11 +346,30 @@ Prueba de carga ejecutada el 03/08/2026 (k6 + base local desechable). Detalle en
 
 **Acción:** el informe puede ahora **respaldar los tres requisitos con datos**, que es mucho más sólido que afirmarlos sin medir. Para el segundo conviene precisar la redacción: está validado el comportamiento de escalado y la ausencia de errores bajo saturación, no la cifra exacta de 200 sobre la infraestructura final.
 
-### 9.6 🟡 Roles: el informe menciona tres, el sistema tiene cuatro
+### 9.6 🟠 Roles: el informe menciona tres, el sistema tiene cuatro — y no son los que decía
 
-[664] dice *«Asignar roles con diferentes permisos (admin, docente, estudiante)»*. El enum `UserType` tiene **cuatro**: `admin`, `teacher`, `student` y **`parent`**.
+[664] dice *«Asignar roles con diferentes permisos (admin, docente, estudiante)»*. El enum `UserType` tiene **cuatro**, pero el cuarto cambió el 08/08/2026:
 
-`parent` está reservado para un futuro portal de acudientes y **hoy no tiene superficie de API** (decisión documentada el 26/06/2026). Conviene mencionarlo así explícitamente, como previsión de diseño, en vez de dejarlo sin documentar.
+| | Antes | Ahora |
+|---|---|---|
+| Cuarto rol | `parent` — reservado, sin rutas, sin filas | `superadmin` — operador de la plataforma |
+
+**Por qué se retiró `parent`.** Llevaba desde el diseño original como previsión de un portal de acudientes que no se construyó: sin rutas, sin controladores y **sin una sola fila en producción** (verificado antes de migrar). Documentarlo como «previsión de diseño» era describir una intención, no el sistema.
+
+**Por qué entró `superadmin`, que es lo que interesa al informe.** Cubría un fallo real de aislamiento multi-tenant: `GET /api/institutions` estaba bajo `role:admin` y **no filtraba por institución**, así que el administrador de un centro listaba **todos los centros del SaaS** con su código, dirección, teléfono y correo. El modelo del informe supone que un administrador administra *su* institución, pero el sistema le daba el catálogo entero.
+
+La corrección separa dos figuras que estaban colapsadas en una:
+
+| Rol | Alcance | `institution_id` |
+|---|---|---|
+| **`superadmin`** | CRUD de instituciones y de sus administradores. Nada más | **`NULL`** — externo a toda institución |
+| **`admin`** | Su propio centro: usuarios, grupos, materias, exámenes, asignaciones | el de su centro |
+
+**El detalle defendible en el informe:** el aislamiento no descansa en una comprobación de permisos, sino en la **ausencia de institución**. El superadmin no tiene `institution_id`, así que `SetTenantFromAuth` nunca vincula un `tenant_id`, y todos los modelos con `TenantScoped` lo exigen. Aunque una ruta académica se abriera a su rol por descuido, la consulta fallaría igualmente. Es defensa en profundidad y no una regla que se pueda olvidar en un controlador nuevo — que es exactamente el patrón de fallo descrito en §9.8.3 y §9.8.5.
+
+Consecuencia operativa a declarar: **ninguna ruta de la API crea un superadmin.** Se da de alta con `php artisan superadmin:create`, así que exige acceso al servidor. Un administrador de centro tampoco puede fabricarse uno: `/register` solo acepta roles de institución.
+
+**Acción:** corregir [664] para nombrar los cuatro roles reales y describir la frontera superadmin/admin, que es una decisión de arquitectura multi-tenant, no un detalle de implementación.
 
 ### 9.7 ✅ Lo que el informe sí describe correctamente
 
@@ -474,13 +496,51 @@ El informe exige *«La API debe documentarse con OpenAPI»* (RNF de mantenibilid
 
 **Resuelto el 05/08/2026 invirtiendo el flujo.** En vez de anotar 97 endpoints a mano —más de 2.000 líneas de atributos dentro de los controladores, que además se desincronizan en cuanto alguien toca una ruta—, el documento se **deriva de las rutas reales** con `php artisan openapi:generate`, el mismo patrón que ya usaba la colección de Postman. De cada ruta se deducen método, path, parámetros, si exige token, **qué roles la pueden usar** (leyendo el middleware) y los códigos de respuesta que se siguen de eso.
 
-Cobertura resultante: **103/103 endpoints, 74 paths, 16 módulos.** Los metadatos que no se pueden deducir de una ruta —nombre del módulo, cuerpo de ejemplo, si es pública— viven en `App\Support\ApiSpec`, **compartidos con el generador de Postman** para que los dos no se contradigan.
+Cobertura resultante: **103/103 endpoints, 74 paths, 16 módulos** (al 08/08/2026, **107/107 endpoints, 77 paths, 17 módulos**, tras las rutas de asignación de docentes de §9.8.5 — el generador las recogió solas, que es la ventaja de derivarlo de las rutas). Los metadatos que no se pueden deducir de una ruta —nombre del módulo, cuerpo de ejemplo, si es pública— viven en `App\Support\ApiSpec`, **compartidos con el generador de Postman** para que los dos no se contradigan.
 
 Limitación honesta, que conviene declarar en el informe en vez de ocultar: **no hay esquema detallado de la respuesta 200**. Se documenta la superficie de la API (qué existe, quién puede llamarlo, qué devuelve como código), no la forma exacta de cada payload. Para eso está la colección de Postman, con cuerpos de ejemplo reales.
 
 **Corregido de paso:** el `securityScheme` declaraba `bearerFormat: 'JWT'`. Sanctum emite tokens **opacos** contra `personal_access_tokens`. La documentación generada estaba respaldando el mismo error que §9.1 nº 4 señala en el informe.
 
 ⚠️ **No ejecutar `php artisan l5-swagger:generate`**: sobrescribiría el fichero con los 6 endpoints anotados. L5-Swagger se conserva solo para servir la interfaz en `/api/documentation`. Avisado en `config/l5-swagger.php` y en el `README.md`.
+
+### 9.8.5 🔴 La relación docente↔estudiante no existía como tal — corregido el 08/08/2026
+
+**El hallazgo.** El sistema no tenía ninguna tabla que relacionara a un docente con sus estudiantes. El vínculo se **derivaba** de la autoría del examen, en cuatro saltos:
+
+```
+users(teacher) → exams.created_by_teacher_id → exam_targets → groups → group_students → students
+```
+
+«Mis estudiantes» eran, literalmente, *los de cualquier grupo al que yo hubiera dirigido un examen*. Y `ExamController::store()` solo validaba que el grupo perteneciera a la institución —nunca que fuera del docente, entre otras cosas porque esa noción no existía en el esquema—.
+
+**La consecuencia, verificada.** Un docente podía **concederse acceso a sí mismo**: bastaba crear un examen en estado `draft` —que ningún alumno llega a ver— dirigido a cualquier grupo del centro para pasar a leer el progreso, los informes, las analíticas individuales y las recomendaciones de IA de ese alumnado. Ninguna de las consultas de alcance filtraba por estado del examen, así que el borrador servía igual. Sin aprobación de nadie y sin rastro visible.
+
+**Y en cuatro endpoints no había ni siquiera esa comprobación.** `reports/students/{id}/history`, `/summary`, `/strategies` y `analytics/students/{id}` resolvían el estudiante con un `firstOrFail()` acotado solo por institución: **cualquier docente leía el historial completo de cualquier alumno del centro**, sin necesidad de crear nada. Es el mismo patrón que §9.8.3 describe —el middleware de rol da acceso a la ruta y el estrechamiento posterior queda a criterio de cada controlador— reaparecido por tercera vez.
+
+**La corrección: invertir la dirección de la relación.** Se añade `teacher_assignments (teacher_user_id, group_id, subject_id)`, que el **administrador** crea y el docente no puede tocar. El alcance pasa a leerse de ahí:
+
+```
+teacher_assignments → groups → group_students (left_at IS NULL) → students
+```
+
+| Antes | Ahora |
+|---|---|
+| El docente definía su alcance creando exámenes | El admin lo define; el docente no puede ampliarlo |
+| Grupo objetivo: cualquiera de la institución | Solo aquellos donde tiene asignación **en esa materia** (403 si no) |
+| Alcance por materia: inexistente | Dar Matemáticas en 7-A no da acceso a los datos de Lengua |
+| Membresía del grupo: gestionable por el docente | Admin-only, para cerrar la misma vía por el otro extremo |
+
+Dos decisiones que conviene declarar en el informe porque tienen efectos visibles:
+
+- **La tabla nace vacía.** Al desplegar, ningún docente ve estudiantes hasta que el admin cargue las asignaciones. Se descartó derivarlas de los `exam_targets` existentes justamente porque eso replicaría el acceso que se quiere revisar.
+- **El acceso sigue a la matrícula activa** (`left_at IS NULL`). Un alumno que cambia de sección deja de ser visible para el docente de la anterior, incluido su historial pasado. Es lo contrario de lo que hace `Exam::scopeVisibleTo()`, y a propósito: allí la pregunta es «¿puede presentar este examen?» y aquí «¿quién puede ver sus datos?».
+
+**Centralización.** Igual que §9.8.3 con `Exam::scopeVisibleTo()`, la regla vive en **un solo sitio** —el trait `AcotaAlDocente`— en lugar de repetida a mano en cada controlador, que es lo que permitió que cuatro endpoints se quedaran sin ella. En `ReportController::findStudent()` el parámetro del usuario es **obligatorio**, para que un endpoint nuevo no pueda omitirlo en silencio.
+
+**Cobertura añadida:** `TeacherAssignmentsTest` (18 casos), incluidos el borrador dirigido a un grupo ajeno, el grupo correcto con materia ajena, la retirada de la asignación y la baja del grupo. Suite completa: **327 pruebas en verde**.
+
+**Lo aprovechable para el informe.** Es el tercer hallazgo de la misma familia, y el más ilustrativo: los dos anteriores eran *campos de más en una respuesta*; este era **una relación que el modelo de datos nunca llegó a tener**, sustituida por una inferencia que resultaba ser auto-otorgable. Muestra que la ausencia de una entidad en el modelo no es solo una omisión documental: el sistema la sustituye por lo que tenga a mano, y lo que tenía a mano era controlable por la parte a la que había que limitar.
 
 ### 9.9 Resumen accionable
 
@@ -492,10 +552,11 @@ Limitación honesta, que conviene declarar en el informe en vez de ocultar: **no
 | 🟢 4 | ~~Exportación a PDF~~ — **backend resuelto** el 05/08/2026: `summary` con las series de barras/líneas/pastel + CSV individual. Falta que el frontend arme el PDF | **Alcance** | [215], [734-735] |
 | 🟢 10 | ~~Descargar las estrategias del tutor en PDF~~ — **backend resuelto** el 05/08/2026: endpoints de estrategias con el chat excluido por diseño (§9.8.2). Falta que el frontend arme el PDF | **Alcance** | [740] |
 | 🟠 5 | Añadir figura de modelo de datos y diccionario de datos | Contenido nuevo | Índice de figuras + cap. IV |
-| 🟠 6 | Incorporar `AiChatSession` y `StudentSubject` al diagrama de clases | Contenido nuevo | [653] |
+| 🟠 6 | Incorporar `AiChatSession`, `StudentSubject` y `TeacherAssignment` al diagrama de clases | Contenido nuevo | [653] |
+| 🔴 11 | Describir la relación docente↔estudiante vía asignación al grupo (§9.8.5). El informe la da por supuesta sin declararla, y el sistema la resolvía de una forma que resultó auto-otorgable | Redacción + **Contenido nuevo** | Cap. IV + [653] |
 | 🟡 7 | Justificar las 2 decisiones de diseño de §4 | Redacción | Capítulo IV |
 | 🟡 8 | Medir o matizar los 3 requisitos de rendimiento | **Medición** | [695-697] |
-| 🟡 9 | Documentar el rol `parent` como previsión de diseño | Redacción | [664] |
+| 🟠 9 | Nombrar los cuatro roles reales y describir la frontera **superadmin/admin** (§9.6). El rol `parent` ya no existe; el cuarto es el operador de la plataforma | Redacción | [664] |
 
 **Siete de diez se resuelven reescribiendo texto.** Las tres que no:
 
@@ -542,7 +603,7 @@ Se listan solo las que **no** están ya recogidas en §9.1 (stack tecnológico) 
 | 8 | [222] | «modelos **GPT-4** (variante ligera y de menor coste del sistema GPT-4 de OpenAI)» | `gpt-4o-mini`, que es variante de **GPT-4o**, no de GPT-4 | Nombrar el modelo exacto |
 | 9 | [758] | «Los tokens de sesión deben expirar tras **60 minutos** de inactividad» | `SANCTUM_TOKEN_EXPIRATION_MINUTES` = **12 h** | Aquí conviene **no** aplicar el criterio general: son cuentas de menores, posiblemente en equipos compartidos del centro. Es más defendible bajar la variable que relajar el requisito |
 | 10 | [771] | «La API debe documentarse con **OpenAPI 5.0**» | Esa versión **no existe**: la especificación va por 3.x, y lo generado es 3.0 | Corregir la versión |
-| 11 | [720] | «Asignar roles con diferentes permisos (**admin, docente, estudiante**)» | El enum `UserType` tiene **cuatro**: se suma `parent`, reservado y sin superficie de API | Documentar `parent` como previsión de diseño (§9.6) |
+| 11 | [720] | «Asignar roles con diferentes permisos (**admin, docente, estudiante**)» | El enum `UserType` tiene **cuatro**: se suma **`superadmin`**, externo a las instituciones. El `parent` que había en su lugar se retiró el 08/08/2026 | Nombrar los cuatro y describir la frontera superadmin/admin (§9.6) |
 
 ### 10.3 ⚠️ Los números de párrafo de la §9 están desfasados
 

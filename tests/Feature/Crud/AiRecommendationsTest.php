@@ -3,6 +3,7 @@
 namespace Tests\Feature\Crud;
 
 use App\Models\AI\AiRecommendation;
+use App\Models\Academic\Group;
 use App\Models\Academic\Subject;
 use App\Models\Admin\User;
 use App\Models\Admin\Institution;
@@ -89,7 +90,12 @@ class AiRecommendationsTest extends TestCase
             'institution_id' => $institution->id,
         ]);
 
-        // El teacher debe ser dueño del examen vinculado a la recomendación
+        // El docente necesita asignación al grupo del alumno Y a la materia de
+        // la recomendación: son los dos filtros que aplica el controlador.
+        $group = Group::factory()->create(['institution_id' => $institution->id]);
+        $this->asignarDocente($teacher, $group->id, $subject->id);
+        $this->matricularEnGrupo($studentUser->id, $group->id, $institution->id);
+
         $exam = Exam::factory()->create([
             'institution_id'        => $institution->id,
             'created_by_teacher_id' => $teacher->id,

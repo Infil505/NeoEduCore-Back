@@ -59,6 +59,12 @@
         },
         {
             "name": "99 · Bulk"
+        },
+        {
+            "name": "99 · Institution-admins"
+        },
+        {
+            "name": "99 · Teacher-assignments"
         }
     ],
     "paths": {
@@ -1885,7 +1891,7 @@
                     "05 · Grupos"
                 ],
                 "summary": "Add students (GroupController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@addStudents`. **Roles permitidos:** admin, teacher.",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@addStudents`. **Roles permitidos:** admin.",
                 "operationId": "post_api_groups_group_students",
                 "parameters": [
                     {
@@ -1927,7 +1933,7 @@
                     "05 · Grupos"
                 ],
                 "summary": "Remove students (GroupController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@removeStudents`. **Roles permitidos:** admin, teacher.",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@removeStudents`. **Roles permitidos:** admin.",
                 "operationId": "delete_api_groups_group_students",
                 "parameters": [
                     {
@@ -1962,14 +1968,14 @@
                 ]
             }
         },
-        "/api/institutions": {
+        "/api/institution-admins": {
             "get": {
                 "tags": [
-                    "03 · Instituciones (admin)"
+                    "99 · Institution-admins"
                 ],
-                "summary": "Index (InstitutionController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionController@index`. **Roles permitidos:** admin.",
-                "operationId": "get_api_institutions",
+                "summary": "Index (InstitutionAdminController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionAdminController@index`. **Roles permitidos:** superadmin.",
+                "operationId": "get_api_institution_admins",
                 "responses": {
                     "200": {
                         "description": "Operación correcta"
@@ -1988,13 +1994,276 @@
                 ]
             }
         },
+        "/api/institution-admins/{institutionAdmin}": {
+            "get": {
+                "tags": [
+                    "99 · Institution-admins"
+                ],
+                "summary": "Show (InstitutionAdminController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionAdminController@show`. **Roles permitidos:** superadmin.",
+                "operationId": "get_api_institution_admins_institutionAdmin_",
+                "parameters": [
+                    {
+                        "name": "institutionAdmin",
+                        "in": "path",
+                        "required": true,
+                        "description": "institutionAdmin",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "99 · Institution-admins"
+                ],
+                "summary": "Update (InstitutionAdminController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionAdminController@update`. **Roles permitidos:** superadmin.",
+                "operationId": "put_api_institution_admins_institutionAdmin_",
+                "parameters": [
+                    {
+                        "name": "institutionAdmin",
+                        "in": "path",
+                        "required": true,
+                        "description": "institutionAdmin",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "99 · Institution-admins"
+                ],
+                "summary": "Destroy (InstitutionAdminController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionAdminController@destroy`. **Roles permitidos:** superadmin.",
+                "operationId": "delete_api_institution_admins_institutionAdmin_",
+                "parameters": [
+                    {
+                        "name": "institutionAdmin",
+                        "in": "path",
+                        "required": true,
+                        "description": "institutionAdmin",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/institution-admins/{institutionAdmin}/reset-password": {
+            "patch": {
+                "tags": [
+                    "99 · Institution-admins"
+                ],
+                "summary": "Reset password (InstitutionAdminController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionAdminController@resetPassword`. **Roles permitidos:** superadmin.",
+                "operationId": "patch_api_institution_admins_institutionAdmin_reset_password",
+                "parameters": [
+                    {
+                        "name": "institutionAdmin",
+                        "in": "path",
+                        "required": true,
+                        "description": "institutionAdmin",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/institution-admins/{institutionAdmin}/status": {
+            "patch": {
+                "tags": [
+                    "99 · Institution-admins"
+                ],
+                "summary": "Set status (InstitutionAdminController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionAdminController@setStatus`. **Roles permitidos:** superadmin.",
+                "operationId": "patch_api_institution_admins_institutionAdmin_status",
+                "parameters": [
+                    {
+                        "name": "institutionAdmin",
+                        "in": "path",
+                        "required": true,
+                        "description": "institutionAdmin",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/institutions": {
+            "get": {
+                "tags": [
+                    "03 · Instituciones (admin)"
+                ],
+                "summary": "Index (InstitutionController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionController@index`. **Roles permitidos:** superadmin.",
+                "operationId": "get_api_institutions",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "03 · Instituciones (admin)"
+                ],
+                "summary": "Store (InstitutionController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionController@store`. **Roles permitidos:** superadmin.",
+                "operationId": "post_api_institutions",
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
         "/api/institutions/{institution}": {
             "get": {
                 "tags": [
                     "03 · Instituciones (admin)"
                 ],
                 "summary": "Show (InstitutionController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionController@show`. **Roles permitidos:** admin.",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionController@show`. **Roles permitidos:** superadmin.",
                 "operationId": "get_api_institutions_institution_",
                 "parameters": [
                     {
@@ -2033,7 +2302,7 @@
                     "03 · Instituciones (admin)"
                 ],
                 "summary": "Update (InstitutionController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionController@update`. **Roles permitidos:** admin.",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionController@update`. **Roles permitidos:** superadmin.",
                 "operationId": "put_api_institutions_institution_",
                 "parameters": [
                     {
@@ -2086,6 +2355,89 @@
                         "sanctum": []
                     }
                 ]
+            },
+            "delete": {
+                "tags": [
+                    "03 · Instituciones (admin)"
+                ],
+                "summary": "Destroy (InstitutionController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionController@destroy`. **Roles permitidos:** superadmin.",
+                "operationId": "delete_api_institutions_institution_",
+                "parameters": [
+                    {
+                        "name": "institution",
+                        "in": "path",
+                        "required": true,
+                        "description": "institution_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/institutions/{institution}/admins": {
+            "post": {
+                "tags": [
+                    "03 · Instituciones (admin)"
+                ],
+                "summary": "Store (InstitutionAdminController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionAdminController@store`. **Roles permitidos:** superadmin.",
+                "operationId": "post_api_institutions_institution_admins",
+                "parameters": [
+                    {
+                        "name": "institution",
+                        "in": "path",
+                        "required": true,
+                        "description": "institution_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
             }
         },
         "/api/institutions/{institution}/toggle": {
@@ -2094,7 +2446,7 @@
                     "03 · Instituciones (admin)"
                 ],
                 "summary": "Toggle status (InstitutionController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionController@toggleStatus`. **Roles permitidos:** admin.",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\InstitutionController@toggleStatus`. **Roles permitidos:** superadmin.",
                 "operationId": "patch_api_institutions_institution_toggle",
                 "parameters": [
                     {
@@ -4063,6 +4415,126 @@
                     },
                     "403": {
                         "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/teacher-assignments": {
+            "get": {
+                "tags": [
+                    "99 · Teacher-assignments"
+                ],
+                "summary": "Index (TeacherAssignmentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\TeacherAssignmentController@index`. **Roles permitidos:** admin.",
+                "operationId": "get_api_teacher_assignments",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "99 · Teacher-assignments"
+                ],
+                "summary": "Store (TeacherAssignmentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\TeacherAssignmentController@store`. **Roles permitidos:** admin.",
+                "operationId": "post_api_teacher_assignments",
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/teacher-assignments/bulk": {
+            "delete": {
+                "tags": [
+                    "99 · Teacher-assignments"
+                ],
+                "summary": "Destroy bulk (TeacherAssignmentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\TeacherAssignmentController@destroyBulk`. **Roles permitidos:** admin.",
+                "operationId": "delete_api_teacher_assignments_bulk",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/teacher-assignments/{teacherAssignment}": {
+            "delete": {
+                "tags": [
+                    "99 · Teacher-assignments"
+                ],
+                "summary": "Destroy (TeacherAssignmentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\TeacherAssignmentController@destroy`. **Roles permitidos:** admin.",
+                "operationId": "delete_api_teacher_assignments_teacherAssignment_",
+                "parameters": [
+                    {
+                        "name": "teacherAssignment",
+                        "in": "path",
+                        "required": true,
+                        "description": "teacherAssignment",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
                     }
                 },
                 "security": [

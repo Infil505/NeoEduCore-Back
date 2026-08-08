@@ -2,16 +2,17 @@
 
 namespace App\Http\Controllers\Students;
 
+use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
-use App\Models\Exams\Exam;
 use App\Models\Students\Student;
 use App\Models\Students\StudentProgress;
 use App\Models\Academic\Subject;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class StudentProgressController extends Controller
 {
+    use AcotaAlDocente;
+
     /**
      * Listar progreso
      * - Admin/Teacher: puede filtrar por student_user_id y subject_id
@@ -37,6 +38,11 @@ class StudentProgressController extends Controller
             if (!empty($data['student_user_id'])) {
                 $query->where('student_user_id', $data['student_user_id']);
             }
+
+            // Docente: solo los estudiantes de los grupos que tiene asignados.
+            // Sin esto, listar sin filtro devolvía el progreso de toda la
+            // institución.
+            $this->acotarAEstudiantesDelDocente($query, $user);
         }
 
         if (!empty($data['subject_id'])) {
@@ -100,20 +106,11 @@ class StudentProgressController extends Controller
         Student::where('user_id', $data['student_user_id'])->firstOrFail();
         Subject::where('id', $data['subject_id'])->firstOrFail();
 
-        // Teacher solo puede actualizar progreso de estudiantes en grupos de sus exámenes.
-        // Un JOIN reemplaza las ~53 queries anteriores (student groups + N exam groups).
-        if ($user->user_type->value === 'teacher') {
-            $authorized = DB::table('group_students as gs')
-                ->join('exam_targets as et', 'et.group_id', '=', 'gs.group_id')
-                ->join('exams', 'exams.id', '=', 'et.exam_id')
-                ->where('gs.student_user_id', $data['student_user_id'])
-                ->where('exams.created_by_teacher_id', $user->id)
-                ->where('exams.institution_id', app('tenant_id'))
-                ->exists();
-
-            if (!$authorized) {
-                return response()->json(['message' => 'No autorizado'], 403);
-            }
+        // Docente: solo estudiantes de los grupos que tiene asignados.
+        // Antes esto se derivaba de la autoría del examen, lo que permitía
+        // ampliarse el alcance creando un borrador dirigido a cualquier grupo.
+        if ($this->esDocente($user) && !$this->docenteAlcanzaEstudiante($user, $data['student_user_id'])) {
+            return $this->noAutorizadoPorAsignacion();
         }
 
         $progress = StudentProgress::updateOrCreate(
@@ -152,6 +149,10 @@ class StudentProgressController extends Controller
         if (!empty($data['subject_id'])) {
             $query->where('subject_id', $data['subject_id']);
         }
+
+        // Sin filtros, esto tocaba el progreso de toda la institución. El
+        // docente queda acotado a sus grupos asignados.
+        $this->acotarAEstudiantesDelDocente($query, $request->user());
 
         // Una sola query UPDATE en lugar de N toques individuales
         $count = $query->update(['updated_at' => now()]);

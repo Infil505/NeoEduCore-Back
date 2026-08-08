@@ -119,7 +119,10 @@ composer run dev                    # servidor + worker de cola + logs
 php artisan queue:work
 
 # Documentación
-php artisan openapi:generate        # OpenAPI (103 endpoints) → /api/documentation
+php artisan openapi:generate        # OpenAPI (116 endpoints) → /api/documentation
+
+# Crear el operador de la plataforma (no hay ruta de API que lo cree)
+php artisan superadmin:create --email=ops@ejemplo.com --name="Operaciones"
 php postman/generate_postman_collection.php   # colección de Postman desde route:list
 
 # Inspección
@@ -130,8 +133,10 @@ php artisan test --filter=QueryBudget
 php artisan config:clear && php artisan cache:clear && php artisan route:clear
 ```
 
-> `bootstrap/cache/packages.php` y `services.php` están versionados y se regeneran solos al
-> instalar dependencias; que aparezcan modificados tras un `composer install` es normal.
+> `bootstrap/cache/packages.php` y `services.php` **no** están versionados (`.gitignore` excluye
+> `/bootstrap/cache/*.php`). Laravel los regenera solo al instalar dependencias, así que no
+> aparecen en `git status` ni llegan en un `git pull`: no hay que hacer nada con ellos.
+> No confundir con `config/services.php`, que sí está versionado.
 
 ---
 
@@ -142,6 +147,32 @@ La carpeta `vendor/` no está presente. Ejecutar:
 ```bash
 composer install
 ```
+
+### `composer install` falla
+Antes de nada, leer el error: casi siempre indica una extensión de PHP que falta (ver `ext-gd` más
+abajo) o una versión de PHP por debajo de la que pide el proyecto (`^8.2`). Comprobar con:
+```bash
+php -v
+composer check-platform-reqs
+```
+Instalar la extensión que falte o actualizar PHP resuelve el problema sin tocar las dependencias, y
+es siempre la primera opción.
+
+Si aun así no arranca, como último recurso:
+```bash
+composer update
+```
+
+> ⚠️ `composer update` **no** es equivalente a `composer install`. Ignora el `composer.lock` y
+> resuelve versiones nuevas de todos los paquetes, con lo que se acaba trabajando sobre un conjunto
+> de dependencias distinto al que está probado y desplegado. Puede introducir fallos que no se ven
+> hasta ejecutar los tests o hasta producción. Si se usa:
+>
+> - ejecutar después `php artisan test` y confirmar que la suite sigue en verde;
+> - **no** commitear el `composer.lock` modificado salvo que la actualización sea intencionada y
+>   acordada — si se sube por accidente, la cambia para todo el equipo y para el despliegue.
+>
+> Para revertir el lock: `git checkout composer.lock && composer install`.
 
 ### `No application encryption key has been specified`
 Falta el `APP_KEY`. Ejecutar:

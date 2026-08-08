@@ -2,6 +2,7 @@
 
 namespace App\Services\Admin;
 
+use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Models\AI\AiRecommendation;
 use App\Models\Admin\User;
 use App\Models\Students\Student;
@@ -20,6 +21,8 @@ use App\Models\Students\Student;
  */
 class ReportStrategyService
 {
+    use AcotaAlDocente;
+
     /** Recomendaciones por categoría. Suficiente para un plan; el resto es ruido. */
     public const DEFAULT_LIMIT = 20;
 
@@ -106,16 +109,23 @@ class ReportStrategyService
      *
      * - **Estudiante**: solo lo suyo. Lo garantiza el controlador, que resuelve
      *   el estudiante a partir del usuario autenticado.
-     * - **Docente**: solo recomendaciones nacidas de exámenes que él creó. Es la
-     *   misma regla que ya aplicaba `AiRecommendationController::show()`. Nótese
-     *   que deja fuera las recomendaciones sin examen asociado (las que genera
-     *   `POST /ai/generate` sin `exam_id`).
+     * - **Docente**: solo las materias que imparte, según `teacher_assignments`.
+     *   Que el alumno sea suyo lo decide antes el controlador
+     *   (`ReportController::findStudent()`, por pertenencia al grupo); aquí se
+     *   estrecha por materia, que es la segunda mitad de la asignación: dar
+     *   Matemáticas en 7-A no da acceso a las recomendaciones de Lengua del
+     *   mismo alumno.
      * - **Admin**: todo lo de su institución; el scope de tenant ya lo acota.
+     *
+     * La regla anterior —recomendaciones de exámenes que él creó— tenía dos
+     * defectos: se ampliaba sola creando un examen dirigido a cualquier grupo, y
+     * dejaba fuera las recomendaciones sin `exam_id` (las de `POST /ai/generate`),
+     * que ahora sí entran si son de una materia suya.
      */
     private function scopeFor($query, User $viewer)
     {
         if ($viewer->user_type->value === 'teacher') {
-            $query->whereHas('exam', fn ($q) => $q->where('created_by_teacher_id', $viewer->id));
+            $query->whereIn('subject_id', $this->materiasDelDocente($viewer->id));
         }
 
         return $query;
