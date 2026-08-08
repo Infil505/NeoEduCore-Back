@@ -3,7 +3,7 @@
 --
 
 
--- Dumped from database version 17.6
+-- Dumped from database version 17.9
 -- Dumped by pg_dump version 17.9
 
 SET statement_timeout = 0;
@@ -157,10 +157,10 @@ CREATE TYPE public.user_status AS ENUM (
 --
 
 CREATE TYPE public.user_type AS ENUM (
+    'superadmin',
     'admin',
     'teacher',
-    'student',
-    'parent'
+    'student'
 );
 
 
@@ -658,6 +658,22 @@ CREATE TABLE public.subjects (
 
 
 --
+-- Name: teacher_assignments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.teacher_assignments (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    institution_id uuid NOT NULL,
+    teacher_user_id uuid NOT NULL,
+    group_id uuid NOT NULL,
+    subject_id uuid NOT NULL,
+    assigned_at timestamp(0) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone
+);
+
+
+--
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -932,6 +948,22 @@ ALTER TABLE ONLY public.study_resources
 
 ALTER TABLE ONLY public.subjects
     ADD CONSTRAINT subjects_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: teacher_assignments teacher_assignments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.teacher_assignments
+    ADD CONSTRAINT teacher_assignments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: teacher_assignments teacher_assignments_unico; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.teacher_assignments
+    ADD CONSTRAINT teacher_assignments_unico UNIQUE (teacher_user_id, group_id, subject_id);
 
 
 --
@@ -1216,6 +1248,27 @@ CREATE INDEX student_subjects_institution_id_index ON public.student_subjects US
 --
 
 CREATE UNIQUE INDEX subjects_institution_name_unique ON public.subjects USING btree (institution_id, lower(btrim((name)::text)));
+
+
+--
+-- Name: teacher_assignments_docente_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX teacher_assignments_docente_idx ON public.teacher_assignments USING btree (teacher_user_id, institution_id);
+
+
+--
+-- Name: teacher_assignments_grupo_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX teacher_assignments_grupo_idx ON public.teacher_assignments USING btree (group_id);
+
+
+--
+-- Name: teacher_assignments_institution_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX teacher_assignments_institution_id_index ON public.teacher_assignments USING btree (institution_id);
 
 
 --
@@ -1587,6 +1640,38 @@ ALTER TABLE ONLY public.subjects
 
 
 --
+-- Name: teacher_assignments teacher_assignments_group_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.teacher_assignments
+    ADD CONSTRAINT teacher_assignments_group_id_foreign FOREIGN KEY (group_id) REFERENCES public.groups(id) ON DELETE CASCADE;
+
+
+--
+-- Name: teacher_assignments teacher_assignments_institution_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.teacher_assignments
+    ADD CONSTRAINT teacher_assignments_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: teacher_assignments teacher_assignments_subject_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.teacher_assignments
+    ADD CONSTRAINT teacher_assignments_subject_id_foreign FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: teacher_assignments teacher_assignments_teacher_user_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.teacher_assignments
+    ADD CONSTRAINT teacher_assignments_teacher_user_id_foreign FOREIGN KEY (teacher_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: users users_institution_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1594,148 +1679,38 @@ ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE SET NULL;
 
 
+
 --
--- Name: ai_chat_sessions; Type: ROW SECURITY; Schema: public; Owner: -
+-- Row Level Security: activado sin politicas, que es el estado por defecto de
+-- Supabase. No lo crea ninguna migracion, asi que pg_dump contra una base local
+-- no lo reproduce y se perderia en cada regeneracion del esquema. Se conserva
+-- aqui para que el archivo siga describiendo la base real.
 --
 
 ALTER TABLE public.ai_chat_sessions ENABLE ROW LEVEL SECURITY;
-
---
--- Name: ai_recommendations; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.ai_recommendations ENABLE ROW LEVEL SECURITY;
-
---
--- Name: calendar_events; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.calendar_events ENABLE ROW LEVEL SECURITY;
-
---
--- Name: exam_attempts; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.exam_attempts ENABLE ROW LEVEL SECURITY;
-
---
--- Name: exam_targets; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.exam_targets ENABLE ROW LEVEL SECURITY;
-
---
--- Name: exams; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.exams ENABLE ROW LEVEL SECURITY;
-
---
--- Name: failed_jobs; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.failed_jobs ENABLE ROW LEVEL SECURITY;
-
---
--- Name: group_students; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.group_students ENABLE ROW LEVEL SECURITY;
-
---
--- Name: groups; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.groups ENABLE ROW LEVEL SECURITY;
-
---
--- Name: institutions; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.institutions ENABLE ROW LEVEL SECURITY;
-
---
--- Name: jobs; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
-
---
--- Name: migrations; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.migrations ENABLE ROW LEVEL SECURITY;
-
---
--- Name: password_reset_tokens; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.password_reset_tokens ENABLE ROW LEVEL SECURITY;
-
---
--- Name: personal_access_tokens; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.personal_access_tokens ENABLE ROW LEVEL SECURITY;
-
---
--- Name: question_options; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.question_options ENABLE ROW LEVEL SECURITY;
-
---
--- Name: questions; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.questions ENABLE ROW LEVEL SECURITY;
-
---
--- Name: student_answer_options; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.student_answer_options ENABLE ROW LEVEL SECURITY;
-
---
--- Name: student_answers; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.student_answers ENABLE ROW LEVEL SECURITY;
-
---
--- Name: student_progress; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.student_progress ENABLE ROW LEVEL SECURITY;
-
---
--- Name: student_subjects; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.student_subjects ENABLE ROW LEVEL SECURITY;
-
---
--- Name: students; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
-
---
--- Name: study_resources; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.study_resources ENABLE ROW LEVEL SECURITY;
-
---
--- Name: subjects; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.subjects ENABLE ROW LEVEL SECURITY;
-
---
--- Name: users; Type: ROW SECURITY; Schema: public; Owner: -
---
-
+ALTER TABLE public.teacher_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
 --

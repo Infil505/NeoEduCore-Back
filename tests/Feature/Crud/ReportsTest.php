@@ -110,6 +110,8 @@ class ReportsTest extends TestCase
             'institution_id' => $institution->id,
         ]);
 
+        $this->darAccesoDocenteA($teacher, $studentUser->id, $institution->id);
+
         $exam = Exam::factory()->create([
             'institution_id' => $institution->id,
             'created_by_teacher_id' => $teacher->id,
@@ -132,6 +134,7 @@ class ReportsTest extends TestCase
         $teacher = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $studentUser = $this->makeStudent($institution);
+        $this->darAccesoDocenteA($teacher, $studentUser->id, $institution->id);
 
         $exam = Exam::factory()->create([
             'institution_id' => $institution->id,
@@ -252,6 +255,7 @@ class ReportsTest extends TestCase
         $teacher = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $studentUser = $this->makeStudent($institution);
+        $this->darAccesoDocenteA($teacher, $studentUser->id, $institution->id);
 
         $exam = Exam::factory()->create([
             'institution_id' => $institution->id,
@@ -300,6 +304,7 @@ class ReportsTest extends TestCase
         $teacher = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $studentUser = $this->makeStudent($institution);
+        $this->darAccesoDocenteA($teacher, $studentUser->id, $institution->id);
 
         $exam = Exam::factory()->create([
             'institution_id' => $institution->id,

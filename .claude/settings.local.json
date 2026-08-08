@@ -199,7 +199,16 @@
       "Bash(node validar.mjs \"C:/Users/dsilv/DEV/TFG/Proyecto backend/NeoEduCore/docs/DIAGRAMAS.md\")",
       "Artifact",
       "Bash(grep -c '```mermaid' docs/DIAGRAMAS.md)",
-      "Bash(php -l app/Console/Commands/DiagramasHtml.php)"
+      "Bash(php -l app/Console/Commands/DiagramasHtml.php)",
+      "Bash(awk -F: '{s+=$2} END {print s}')",
+      "Read(//c/Program Files/PostgreSQL/**)",
+      "Bash(PG_DUMP_PATH=\"C:/Program Files/PostgreSQL/17/bin/pg_dump.exe\" php artisan --env=testing schema:dump-sql)",
+      "Bash(grep -v \"^-$\")",
+      "Bash(grep -v \"^--$\")",
+      "Bash(grep -n \"^use App\\\\\\\\\\\\\\\\Models\\\\\\\\\\\\\\\\Academic\\\\\\\\\\\\\\\\Group\" tests/Feature/Crud/AiRecommendationsTest.php)",
+      "Bash(grep -n \"^use App\\\\\\\\\\\\\\\\Models\\\\\\\\\\\\\\\\Academic\\\\\\\\\\\\\\\\Group\" tests/Feature/Crud/TutorStrategiesTest.php)",
+      "Bash(grep -n \"use App\\\\\\\\\\\\\\\\Models\\\\\\\\\\\\\\\\Academic\\\\\\\\\\\\\\\\Group\\\\|VALID_SECTIONS\\\\|GRADE_MIN\\\\|GRADE_MAX\" app/Http/Controllers/Students/StudentController.php)",
+      "Bash(php -l app/Http/Controllers/Students/StudentController.php)"
     ]
   }
 }

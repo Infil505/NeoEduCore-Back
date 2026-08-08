@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Academic;
 
+use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
 use App\Models\Academic\Group;
 use App\Models\Students\Student;
@@ -11,12 +12,19 @@ use Illuminate\Validation\Rule;
 
 class GroupController extends Controller
 {
+    use AcotaAlDocente;
+
     /**
      * Listar grupos
      */
     public function index(Request $request)
     {
         $query = Group::query()->orderByDesc('year')->orderBy('grade')->orderBy('section');
+
+        // Docente: solo los grupos que tiene asignados.
+        if ($this->esDocente($request->user())) {
+            $query->whereIn('id', $this->gruposDelDocente($request->user()->id));
+        }
 
         if ($request->filled('grade')) {
             $query->where('grade', (int) $request->input('grade'));
@@ -66,8 +74,17 @@ class GroupController extends Controller
     /**
      * Ver grupo + estudiantes activos
      */
-    public function show(Group $group)
+    public function show(Group $group, Request $request)
     {
+        // Este endpoint devuelve la lista nominal del grupo: es el que más
+        // directamente expone alumnado ajeno si no se acota.
+        if ($this->esDocente($request->user())
+            && !$this->gruposDelDocente($request->user()->id)->where('group_id', $group->id)->exists()) {
+            return response()->json([
+                'message' => 'No autorizado: no estás asignado a este grupo.',
+            ], 403);
+        }
+
         $students = $group->students()
             ->with('user')
             ->wherePivotNull('left_at')

@@ -603,6 +603,29 @@
                     ]
                 },
                 {
+                    "name": "POST /api/institutions",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/institutions",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "institutions"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
                     "name": "GET /api/institutions/{institution}",
                     "request": {
                         "method": "GET",
@@ -659,6 +682,55 @@
                                     "language": "json"
                                 }
                             }
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "DELETE /api/institutions/{institution}",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/institutions/{{institution_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "institutions",
+                                "{{institution_id}}"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "POST /api/institutions/{institution}/admins",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/institutions/{{institution_id}}/admins",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "institutions",
+                                "{{institution_id}}",
+                                "admins"
+                            ]
                         }
                     },
                     "response": []
@@ -3404,6 +3476,255 @@
                                 "api",
                                 "bulk",
                                 "reset-progress"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "99 · Institution-admins",
+            "item": [
+                {
+                    "name": "GET /api/institution-admins",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/institution-admins",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "institution-admins"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "GET /api/institution-admins/{institutionAdmin}",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/institution-admins/{{institutionAdmin}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "institution-admins",
+                                "{{institutionAdmin}}"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "PUT /api/institution-admins/{institutionAdmin}",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/institution-admins/{{institutionAdmin}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "institution-admins",
+                                "{{institutionAdmin}}"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "DELETE /api/institution-admins/{institutionAdmin}",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/institution-admins/{{institutionAdmin}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "institution-admins",
+                                "{{institutionAdmin}}"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "PATCH /api/institution-admins/{institutionAdmin}/reset-password",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/institution-admins/{{institutionAdmin}}/reset-password",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "institution-admins",
+                                "{{institutionAdmin}}",
+                                "reset-password"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "PATCH /api/institution-admins/{institutionAdmin}/status",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/institution-admins/{{institutionAdmin}}/status",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "institution-admins",
+                                "{{institutionAdmin}}",
+                                "status"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "99 · Teacher-assignments",
+            "item": [
+                {
+                    "name": "GET /api/teacher-assignments",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/teacher-assignments",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "teacher-assignments"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "POST /api/teacher-assignments",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/teacher-assignments",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "teacher-assignments"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "DELETE /api/teacher-assignments/bulk",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/teacher-assignments/bulk",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "teacher-assignments",
+                                "bulk"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "DELETE /api/teacher-assignments/{teacherAssignment}",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/teacher-assignments/{{teacherAssignment}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "teacher-assignments",
+                                "{{teacherAssignment}}"
                             ]
                         }
                     },

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Crud;
 
 use App\Models\Academic\Group;
+use App\Models\Academic\Subject;
 use App\Models\Admin\Institution;
 use Tests\TestCase;
 use Tests\Traits\ApiAuth;
@@ -50,15 +51,48 @@ class GroupsCrudTest extends TestCase
     public function test_show_group(): void
     {
         $institution = Institution::factory()->create();
-        $this->signInTeacher(['institution_id' => $institution->id]);
+        $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $group = Group::factory()->create([
             'institution_id' => $institution->id,
         ]);
 
+        // `show` devuelve la lista nominal del grupo, así que exige asignación.
+        $subject = Subject::factory()->create(['institution_id' => $institution->id]);
+        $this->asignarDocente($docente, $group->id, $subject->id);
+
         $res = $this->getJson("/api/groups/{$group->id}");
 
         $res->assertOk();
+    }
+
+    public function test_teacher_cannot_show_a_group_they_are_not_assigned_to(): void
+    {
+        $institution = Institution::factory()->create();
+        $this->signInTeacher(['institution_id' => $institution->id]);
+
+        $ajeno = Group::factory()->create(['institution_id' => $institution->id]);
+
+        $this->getJson("/api/groups/{$ajeno->id}")->assertForbidden();
+    }
+
+    public function test_teacher_index_only_lists_assigned_groups(): void
+    {
+        $institution = Institution::factory()->create();
+        $docente = $this->signInTeacher(['institution_id' => $institution->id]);
+
+        $mio   = Group::factory()->create(['institution_id' => $institution->id]);
+        $ajeno = Group::factory()->create(['institution_id' => $institution->id]);
+
+        $subject = Subject::factory()->create(['institution_id' => $institution->id]);
+        $this->asignarDocente($docente, $mio->id, $subject->id);
+
+        $res = $this->getJson('/api/groups')->assertOk();
+
+        $ids = collect($res->json('data.data'))->pluck('id')->all();
+
+        $this->assertContains($mio->id, $ids);
+        $this->assertNotContains($ajeno->id, $ids);
     }
 
     public function test_update_group(): void

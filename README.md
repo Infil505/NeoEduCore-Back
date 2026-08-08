@@ -119,7 +119,10 @@ composer run dev                    # servidor + worker de cola + logs
 php artisan queue:work
 
 # Documentación
-php artisan openapi:generate        # OpenAPI (103 endpoints) → /api/documentation
+php artisan openapi:generate        # OpenAPI (116 endpoints) → /api/documentation
+
+# Crear el operador de la plataforma (no hay ruta de API que lo cree)
+php artisan superadmin:create --email=ops@ejemplo.com --name="Operaciones"
 php postman/generate_postman_collection.php   # colección de Postman desde route:list
 
 # Inspección

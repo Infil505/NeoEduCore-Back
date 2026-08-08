@@ -45,4 +45,16 @@ class UserFactory extends Factory
     {
         return $this->state(fn () => ['user_type' => 'student']);
     }
+
+    /**
+     * Operador de la plataforma. Sin `institution_id` a propósito: es lo que lo
+     * deja fuera de los datos académicos de cualquier centro.
+     */
+    public function superAdmin(): static
+    {
+        return $this->state(fn () => [
+            'user_type'      => 'superadmin',
+            'institution_id' => null,
+        ]);
+    }
 }

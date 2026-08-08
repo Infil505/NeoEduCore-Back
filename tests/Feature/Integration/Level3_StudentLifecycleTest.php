@@ -30,12 +30,13 @@ class Level3_StudentLifecycleTest extends TestCase
     public function test_student_in_group_sees_active_exam_in_available(): void
     {
         $institution = Institution::factory()->create();
-        $teacher     = $this->signInTeacher(['institution_id' => $institution->id]);
+        $teacher     = $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $group = Group::factory()->create(['institution_id' => $institution->id]);
 
         $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
         Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
+        $this->darAccesoDocenteA($docente, $studentUser->id, $institution->id);
         $group->students()->attach($studentUser->id, ['joined_at' => now(), 'institution_id' => $institution->id]);
 
         $exam = Exam::factory()->active()->create([
@@ -56,13 +57,14 @@ class Level3_StudentLifecycleTest extends TestCase
     public function test_student_not_in_group_does_not_see_exam(): void
     {
         $institution = Institution::factory()->create();
-        $teacher     = $this->signInTeacher(['institution_id' => $institution->id]);
+        $teacher     = $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $group = Group::factory()->create(['institution_id' => $institution->id]);
 
         // Estudiante SIN grupo
         $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
         Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
+        $this->darAccesoDocenteA($docente, $studentUser->id, $institution->id);
 
         $exam = Exam::factory()->active()->create([
             'institution_id'        => $institution->id,
@@ -82,11 +84,12 @@ class Level3_StudentLifecycleTest extends TestCase
     public function test_inactive_exam_not_in_available(): void
     {
         $institution = Institution::factory()->create();
-        $teacher     = $this->signInTeacher(['institution_id' => $institution->id]);
+        $teacher     = $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $group = Group::factory()->create(['institution_id' => $institution->id]);
         $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
         Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
+        $this->darAccesoDocenteA($docente, $studentUser->id, $institution->id);
         $group->students()->attach($studentUser->id, ['joined_at' => now(), 'institution_id' => $institution->id]);
 
         // Examen en draft (no activo)
@@ -107,11 +110,12 @@ class Level3_StudentLifecycleTest extends TestCase
     public function test_exam_not_shown_when_max_attempts_reached(): void
     {
         $institution = Institution::factory()->create();
-        $teacher     = $this->signInTeacher(['institution_id' => $institution->id]);
+        $teacher     = $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $group = Group::factory()->create(['institution_id' => $institution->id]);
         $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
         Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
+        $this->darAccesoDocenteA($docente, $studentUser->id, $institution->id);
         $group->students()->attach($studentUser->id, ['joined_at' => now(), 'institution_id' => $institution->id]);
 
         $exam = Exam::factory()->active()->create([
@@ -142,11 +146,12 @@ class Level3_StudentLifecycleTest extends TestCase
     public function test_teacher_can_enroll_student_in_subject(): void
     {
         $institution = Institution::factory()->create();
-        $this->signInTeacher(['institution_id' => $institution->id]);
+        $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $subject     = Subject::factory()->create(['institution_id' => $institution->id]);
         $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
         Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
+        $this->darAccesoDocenteA($docente, $studentUser->id, $institution->id);
 
         $res = $this->postJson("/api/students/{$studentUser->id}/subjects", [
             'subject_id' => $subject->id,
@@ -162,11 +167,12 @@ class Level3_StudentLifecycleTest extends TestCase
     public function test_duplicate_enrollment_returns_409(): void
     {
         $institution = Institution::factory()->create();
-        $this->signInTeacher(['institution_id' => $institution->id]);
+        $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $subject     = Subject::factory()->create(['institution_id' => $institution->id]);
         $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
         $student     = Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
+        $this->darAccesoDocenteA($docente, $studentUser->id, $institution->id);
 
         StudentSubject::create([
             'institution_id'  => $institution->id,
@@ -185,11 +191,12 @@ class Level3_StudentLifecycleTest extends TestCase
     public function test_teacher_can_unenroll_student(): void
     {
         $institution = Institution::factory()->create();
-        $this->signInTeacher(['institution_id' => $institution->id]);
+        $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $subject     = Subject::factory()->create(['institution_id' => $institution->id]);
         $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
         $student     = Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
+        $this->darAccesoDocenteA($docente, $studentUser->id, $institution->id);
 
         StudentSubject::create([
             'institution_id'  => $institution->id,
@@ -210,11 +217,12 @@ class Level3_StudentLifecycleTest extends TestCase
     public function test_student_sees_their_own_subjects(): void
     {
         $institution = Institution::factory()->create();
-        $this->signInTeacher(['institution_id' => $institution->id]);
+        $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $subject     = Subject::factory()->create(['institution_id' => $institution->id]);
         $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
         $student     = Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
+        $this->darAccesoDocenteA($docente, $studentUser->id, $institution->id);
 
         StudentSubject::create([
             'institution_id'  => $institution->id,

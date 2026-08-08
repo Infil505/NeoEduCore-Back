@@ -5,6 +5,7 @@ namespace Tests\Feature\Crud;
 use App\Enums\AiRecommendationType;
 use App\Models\AI\AiChatSession;
 use App\Models\AI\AiRecommendation;
+use App\Models\Academic\Group;
 use App\Models\Academic\Subject;
 use App\Models\Admin\Institution;
 use App\Models\Admin\User;
@@ -131,7 +132,16 @@ class TutorStrategiesTest extends TestCase
         $res->assertSee('Practica fracciones equivalentes.');
     }
 
-    public function test_teacher_only_sees_strategies_from_their_own_exams(): void
+    /**
+     * La frontera del docente es su ASIGNACIÓN, no la autoría del examen.
+     *
+     * Dos consecuencias que este test fija:
+     * - dar Matemáticas en 7-A no da acceso a las recomendaciones de Lengua del
+     *   mismo alumno, aunque el alumno sí sea suyo;
+     * - dentro de su materia sí ve las recomendaciones que generó otro docente,
+     *   porque el criterio ya no es quién creó el examen.
+     */
+    public function test_teacher_only_sees_strategies_of_the_subjects_they_teach(): void
     {
         $institution = Institution::factory()->create();
         $teacher = $this->signInTeacher(['institution_id' => $institution->id]);
@@ -143,24 +153,27 @@ class TutorStrategiesTest extends TestCase
             'institution_id' => $institution->id,
         ]);
 
-        $subject = Subject::factory()->create(['institution_id' => $institution->id]);
+        $materiaPropia = Subject::factory()->create(['institution_id' => $institution->id]);
+        $materiaAjena  = Subject::factory()->create(['institution_id' => $institution->id]);
 
-        $examPropio = Exam::factory()->create([
-            'institution_id' => $institution->id,
-            'subject_id' => $subject->id,
-            'created_by_teacher_id' => $teacher->id,
-        ]);
-        $examAjeno = Exam::factory()->create([
-            'institution_id' => $institution->id,
-            'subject_id' => $subject->id,
-            'created_by_teacher_id' => $otroDocente->id,
-        ]);
+        // Asignado al grupo del alumno, pero solo en una de las dos materias.
+        $group = Group::factory()->create(['institution_id' => $institution->id]);
+        $this->asignarDocente($teacher, $group->id, $materiaPropia->id);
+        $this->matricularEnGrupo($studentUser->id, $group->id, $institution->id);
 
-        foreach ([[$examPropio, 'VISIBLE_EXAMEN_PROPIO'], [$examAjeno, 'OCULTO_EXAMEN_AJENO']] as [$exam, $texto]) {
+        // Ambos exámenes los crea OTRO docente: deja claro que la autoría ya no
+        // decide nada.
+        foreach ([[$materiaPropia, 'VISIBLE_MATERIA_PROPIA'], [$materiaAjena, 'OCULTO_MATERIA_AJENA']] as [$materia, $texto]) {
+            $exam = Exam::factory()->create([
+                'institution_id' => $institution->id,
+                'subject_id' => $materia->id,
+                'created_by_teacher_id' => $otroDocente->id,
+            ]);
+
             AiRecommendation::factory()->create([
                 'institution_id' => $institution->id,
                 'student_user_id' => $studentUser->id,
-                'subject_id' => $subject->id,
+                'subject_id' => $materia->id,
                 'exam_id' => $exam->id,
                 'recommendation_type' => 'weakness',
                 'recommendation_text' => $texto,
@@ -169,9 +182,27 @@ class TutorStrategiesTest extends TestCase
 
         $res = $this->getJson("/api/reports/students/{$studentUser->id}/strategies")->assertOk();
 
-        $res->assertSee('VISIBLE_EXAMEN_PROPIO');
-        $res->assertDontSee('OCULTO_EXAMEN_AJENO');
+        $res->assertSee('VISIBLE_MATERIA_PROPIA');
+        $res->assertDontSee('OCULTO_MATERIA_AJENA');
         $this->assertSame(1, $res->json('data.totals.total'));
+    }
+
+    /**
+     * Un docente sin asignación al grupo no pasa ni del control de acceso al
+     * estudiante: no llega a ver ninguna estrategia, ni siquiera vacías.
+     */
+    public function test_teacher_without_assignment_cannot_open_student_strategies(): void
+    {
+        $institution = Institution::factory()->create();
+        $this->signInTeacher(['institution_id' => $institution->id]);
+
+        $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
+        Student::factory()->create([
+            'user_id' => $studentUser->id,
+            'institution_id' => $institution->id,
+        ]);
+
+        $this->getJson("/api/reports/students/{$studentUser->id}/strategies")->assertForbidden();
     }
 
     public function test_admin_sees_every_strategy_of_the_institution(): void

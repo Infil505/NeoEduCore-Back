@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers\Students;
 
+use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
 use App\Enums\StudentStatus;
 use App\Enums\UserStatus;
 use App\Enums\UserType;
 use App\Enums\AdecuacionType;
 use App\Enums\LearningStyle;
+use App\Models\Academic\Group;
 use App\Models\Admin\User;
 use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
@@ -23,6 +25,8 @@ use OpenApi\Attributes as OA;
 
 class StudentController extends Controller
 {
+    use AcotaAlDocente;
+
     private const BULK_MAX_ROWS    = 5000;
     private const BULK_MAX_MB      = 5;
     private const VALID_SECTIONS   = ['A', 'B', 'C', 'D'];
@@ -31,16 +35,21 @@ class StudentController extends Controller
 
     // Columnas de PERFIL (tabla students) que se vuelcan al modelo Student.
     // institution_id se ignora por seguridad (lo asigna TenantScoped desde el tenant).
+    //
+    // `grade`, `section` y `group_code` NO están: desde el 08/08/2026 se derivan
+    // del aula. Si vinieran del archivo podrían contradecirla —«aula=11B2026,
+    // section=A»— y la ficha volvería a desviarse de la matrícula real, que es
+    // justo el problema que la columna `aula` viene a cerrar.
     private const ALLOWED_COLUMNS = [
-        'user_id', 'student_code', 'grade', 'section', 'status',
-        'birth_date', 'parent_name', 'parent_email', 'group_code', 'adecuacion_type',
+        'user_id', 'student_code', 'status',
+        'birth_date', 'parent_name', 'parent_email', 'adecuacion_type',
     ];
 
     // Columnas que muestra la plantilla. full_name/email son del USUARIO (tabla users)
     // y solo se usan para crear la cuenta; no se vuelcan al modelo Student.
     private const TEMPLATE_COLUMNS = [
-        'full_name', 'email', 'user_id', 'student_code', 'grade', 'section', 'status',
-        'birth_date', 'parent_name', 'parent_email', 'group_code', 'adecuacion_type',
+        'full_name', 'email', 'user_id', 'student_code', 'aula', 'status',
+        'birth_date', 'parent_name', 'parent_email', 'adecuacion_type',
     ];
 
     public function index(Request $request)
@@ -48,6 +57,10 @@ class StudentController extends Controller
         $query = Student::query()
             ->with('user')
             ->orderBy('student_code');
+
+        // Docente: solo el alumnado de los grupos que tiene asignados. Sin esto
+        // devolvía el padrón completo de la institución a cualquier docente.
+        $this->acotarAEstudiantesDelDocente($query, $request->user(), 'user_id');
 
         if ($request->filled('grade')) {
             $query->where('grade', (int) $request->input('grade'));
@@ -66,9 +79,13 @@ class StudentController extends Controller
         ]);
     }
 
-    public function show(string $student_user_id)
+    public function show(string $student_user_id, Request $request)
     {
         $student = Student::with('user')->where('user_id', $student_user_id)->firstOrFail();
+
+        if ($this->esDocente($request->user()) && !$this->docenteAlcanzaEstudiante($request->user(), $student_user_id)) {
+            return $this->noAutorizadoPorAsignacion();
+        }
 
         return response()->json([
             'data' => $student,
@@ -79,9 +96,13 @@ class StudentController extends Controller
     {
         $student = Student::where('user_id', $student_user_id)->firstOrFail();
 
+        if ($this->esDocente($request->user()) && !$this->docenteAlcanzaEstudiante($request->user(), $student_user_id)) {
+            return $this->noAutorizadoPorAsignacion();
+        }
+
         $data = $request->validate([
             'student_code'   => ['sometimes', 'string', 'max:40'],
-            'grade'          => ['sometimes', 'integer', 'between:6,12'],
+            'grade'          => ['sometimes', 'integer', 'between:' . self::GRADE_MIN . ',' . self::GRADE_MAX],
             'section'        => ['sometimes', 'string', Rule::in(self::VALID_SECTIONS)],
             'birth_date'     => ['nullable', 'date'],
             'parent_name'    => ['nullable', 'string', 'max:120'],
@@ -171,9 +192,37 @@ class StudentController extends Controller
             ], 422);
         }
 
+        // El aula es obligatoria. Sin ella, la carga dejaba estudiantes con una
+        // etiqueta de sección en la ficha pero sin matrícula en ningún grupo, y
+        // desde el modelo de asignaciones eso los vuelve invisibles: no los ve
+        // ningún docente, no reciben exámenes y no salen en informes.
+        if (!array_key_exists('aula', $firstRow)) {
+            return response()->json([
+                'message' => 'El archivo debe contener la columna "aula" con el código del grupo de cada estudiante '
+                    . '(por ejemplo 11B2026). Descargá la plantilla actualizada desde /api/students/bulk-upload/template.',
+            ], 422);
+        }
+
+        // Aulas de la institución indexadas por código en mayúsculas: una sola
+        // consulta en lugar de una por fila.
+        $aulasPorCodigo = Group::query()
+            ->whereNotNull('group_code')
+            ->get()
+            ->keyBy(fn ($g) => Str::upper(trim($g->group_code)));
+
+        if ($aulasPorCodigo->isEmpty()) {
+            return response()->json([
+                'message' => 'No hay ningún grupo con código definido en esta institución. '
+                    . 'Creá las aulas primero (POST /api/groups) antes de cargar estudiantes.',
+            ], 422);
+        }
+
         $created         = 0;
         $updated         = 0;
         $usersCreated    = 0;
+        $matriculados    = 0; // altas de matrícula (estudiante nuevo en su aula)
+        $reasignados     = 0; // cambios de aula sobre estudiantes que ya existían
+        $aulasTocadas    = []; // group_id → recuento de student_count al final
         $newUsers        = []; // usuarios creados → reciben enlace de contraseña tras el commit
         $errors          = [];
         $validAdeValues  = array_map(fn($c) => $c->value, AdecuacionType::cases());
@@ -183,8 +232,9 @@ class StudentController extends Controller
         $institutionId = $request->user()->institution_id;
 
         DB::transaction(function () use (
-            $rows, $validAdeValues, $validStatValues, $institutionId,
-            &$created, &$updated, &$errors, &$usersCreated, &$newUsers
+            $rows, $validAdeValues, $validStatValues, $institutionId, $aulasPorCodigo,
+            &$created, &$updated, &$errors, &$usersCreated, &$newUsers,
+            &$matriculados, &$reasignados, &$aulasTocadas
         ) {
             foreach ($rows as $idx => $row) {
                 $lineNumber = $idx + 2; // +2: encabezado en fila 1
@@ -211,23 +261,25 @@ class StudentController extends Controller
                     }
                 }
 
-                // --- section ---
-                if (!empty($row['section'])) {
-                    $row['section'] = strtoupper($row['section']);
-                    if (!in_array($row['section'], self::VALID_SECTIONS, true)) {
-                        $errors[] = "Fila {$lineNumber}: section inválida «{$row['section']}». Valores aceptados: " . implode(', ', self::VALID_SECTIONS) . '.';
-                        continue;
-                    }
+                // --- aula (obligatoria) ---
+                //
+                // El grupo tiene que existir ya: la carga masiva no crea aulas.
+                // Un typo en el código crearía un grupo fantasma con un alumno
+                // dentro, invisible para el docente que sí tiene asignada la
+                // buena. Las aulas las crea el admin con POST /api/groups.
+                $codigoAula = Str::upper(trim((string) ($row['aula'] ?? '')));
+
+                if ($codigoAula === '') {
+                    $errors[] = "Fila {$lineNumber}: «aula» es obligatoria. Indicá el código del grupo (por ejemplo 11B2026).";
+                    continue;
                 }
 
-                // --- grade ---
-                if (!empty($row['grade']) || $row['grade'] === '0') {
-                    $grade = (int) $row['grade'];
-                    if ($grade < self::GRADE_MIN || $grade > self::GRADE_MAX) {
-                        $errors[] = "Fila {$lineNumber}: grade inválido «{$row['grade']}». Debe ser un número entre " . self::GRADE_MIN . " y " . self::GRADE_MAX . '.';
-                        continue;
-                    }
-                    $row['grade'] = $grade;
+                $aula = $aulasPorCodigo->get($codigoAula);
+
+                if (!$aula) {
+                    $disponibles = $aulasPorCodigo->keys()->take(8)->implode(', ');
+                    $errors[] = "Fila {$lineNumber}: el aula «{$row['aula']}» no existe en tu institución. Aulas disponibles: {$disponibles}.";
+                    continue;
                 }
 
                 // --- parent_email ---
@@ -282,6 +334,33 @@ class StudentController extends Controller
                     }
                 }
 
+                // --- student_code único ---
+                //
+                // Se comprueba ANTES de crear la cuenta: si se hiciera después,
+                // una fila rechazada por código duplicado dejaría un usuario
+                // huérfano —sin perfil de estudiante, capaz de autenticarse y
+                // con el email ya consumido—.
+                //
+                // `withoutGlobalScope('tenant')` a propósito: la constraint
+                // `students_student_code_unique` es GLOBAL, no por institución.
+                // Con la comprobación acotada al tenant, un código ya usado por
+                // otro centro pasaba el filtro y reventaba contra la base — y en
+                // Postgres una violación de constraint aborta la transacción
+                // entera, así que se perdía el archivo completo informando de un
+                // solo error de fila. El mensaje no dice de quién es el código:
+                // eso revelaría datos de otra institución.
+                if (!empty($row['student_code'])) {
+                    $duplicateQuery = Student::withoutGlobalScope('tenant')
+                        ->where('student_code', $row['student_code']);
+                    if ($student) {
+                        $duplicateQuery->where('user_id', '!=', $student->user_id);
+                    }
+                    if ($duplicateQuery->exists()) {
+                        $errors[] = "Fila {$lineNumber}: student_code «{$row['student_code']}» ya está en uso.";
+                        continue;
+                    }
+                }
+
                 // --- Si no hay usuario ni estudiante: crear cuenta nueva (requiere email + full_name) ---
                 if (!$user && !$student) {
                     if (!$email) {
@@ -319,18 +398,6 @@ class StudentController extends Controller
                     $newUsers[] = $user;
                 }
 
-                // --- student_code único ---
-                if (!empty($row['student_code'])) {
-                    $duplicateQuery = Student::where('student_code', $row['student_code']);
-                    if ($student) {
-                        $duplicateQuery->where('user_id', '!=', $student->user_id);
-                    }
-                    if ($duplicateQuery->exists()) {
-                        $errors[] = "Fila {$lineNumber}: student_code «{$row['student_code']}» ya está en uso por otro estudiante.";
-                        continue;
-                    }
-                }
-
                 // institution_id nunca se toma del archivo — lo asigna TenantScoped.
                 // El user_id del perfil siempre proviene del usuario resuelto/creado.
                 $data = Arr::only($row, self::ALLOWED_COLUMNS);
@@ -339,6 +406,12 @@ class StudentController extends Controller
                 $data = array_filter($data, fn($v) => $v !== '' && $v !== null);
                 $data['user_id'] = $user?->id ?? $student->user_id;
 
+                // Los campos desnormalizados de la ficha salen del aula, nunca
+                // del archivo: así no pueden contradecir la matrícula.
+                $data['grade']      = $aula->grade;
+                $data['section']    = $aula->section;
+                $data['group_code'] = $aula->group_code;
+
                 try {
                     if ($student) {
                         // No reasignar la PK (user_id) al actualizar
@@ -346,8 +419,38 @@ class StudentController extends Controller
                         $student->save();
                         $updated++;
                     } else {
-                        Student::create($data);
+                        $student = Student::create($data);
                         $created++;
+                    }
+
+                    // --- Matrícula en el aula ---
+                    $studentUserId = $student->user_id;
+
+                    $aulaActual = DB::table('group_students')
+                        ->where('student_user_id', $studentUserId)
+                        ->whereNull('left_at')
+                        ->value('group_id');
+
+                    if ($aulaActual === $aula->id) {
+                        // Ya está donde debe: nada que hacer.
+                    } elseif ($aulaActual === null) {
+                        $this->abrirMatricula($studentUserId, $aula->id, $institutionId);
+                        $aulasTocadas[$aula->id] = true;
+                        $matriculados++;
+                    } else {
+                        // Cambio de aula. Solo puede ocurrir aquí, sobre un
+                        // estudiante que ya existía: la creación abre matrícula,
+                        // el traslado se hace actualizando su fila.
+                        DB::table('group_students')
+                            ->where('student_user_id', $studentUserId)
+                            ->whereNull('left_at')
+                            ->update(['left_at' => now()]);
+
+                        $this->abrirMatricula($studentUserId, $aula->id, $institutionId);
+
+                        $aulasTocadas[$aula->id]   = true;
+                        $aulasTocadas[$aulaActual] = true;
+                        $reasignados++;
                     }
                 } catch (\Exception $e) {
                     $errors[] = "Fila {$lineNumber}: error al guardar — " . $e->getMessage();
@@ -356,6 +459,18 @@ class StudentController extends Controller
                 unset($row, $data);
             }
         });
+
+        // Recuento de las aulas afectadas (RN-STU-012). Una sola pasada al
+        // final: durante el bucle el contador cambiaría en cada fila.
+        foreach (array_keys($aulasTocadas) as $groupId) {
+            DB::table('groups')->where('id', $groupId)->update([
+                'student_count' => DB::table('group_students')
+                    ->where('group_id', $groupId)
+                    ->whereNull('left_at')
+                    ->count(),
+                'updated_at' => now(),
+            ]);
+        }
 
         // Encolar el enlace de "establece tu contraseña" a los usuarios creados.
         // FUERA de la transacción: el envío real lo hace el worker; la request no se bloquea.
@@ -374,11 +489,39 @@ class StudentController extends Controller
             'created'        => $created,
             'updated'        => $updated,
             'users_created'  => $usersCreated,
+            // Matrícula: altas nuevas y traslados. Se informan por separado
+            // porque un traslado no anunciado es un cambio silencioso de a qué
+            // docente pasa a ver el expediente del estudiante.
+            'matriculados'   => $matriculados,
+            'reasignados'    => $reasignados,
+            'aulas_afectadas' => count($aulasTocadas),
             'emails_queued'  => $emailsQueued,
             'email_failures' => $emailFailures,
             'skipped'        => count($errors),
             'errors'         => $errors,
         ]);
+    }
+
+    /**
+     * Abre (o reabre) la matrícula de un estudiante en un aula.
+     *
+     * `upsert` con `left_at = NULL` en conflicto: si el estudiante ya estuvo en
+     * esa aula y se fue, se reactiva la fila original conservando su
+     * `joined_at`, igual que hace `GroupController::addStudents()`.
+     */
+    private function abrirMatricula(string $studentUserId, string $groupId, string $institutionId): void
+    {
+        DB::table('group_students')->upsert(
+            [[
+                'institution_id'  => $institutionId,
+                'group_id'        => $groupId,
+                'student_user_id' => $studentUserId,
+                'joined_at'       => now(),
+                'left_at'         => null,
+            ]],
+            ['group_id', 'student_user_id'],
+            ['left_at']
+        );
     }
 
     #[OA\Get(
@@ -407,30 +550,26 @@ class StudentController extends Controller
             '(Correo del estudiante — requerido para crear; recibe enlace para fijar contraseña)',
             '(UUID de usuario existente — opcional; si se indica NO se crea cuenta)',
             '(Código único, ej: EST-0001 — opcional)',
-            '(Número entero 6-12)',
-            '(A, B, C o D)',
+            '(OBLIGATORIO — código del aula ya creada, ej: 11B2026. El grado y la seccion se toman de ella)',
             '(active, inactive, suspended — default: active)',
             '(AAAA-MM-DD, ej: 2008-03-15)',
             '(Nombre completo del tutor)',
             '(Email del tutor)',
-            '(Código del grupo, ej: GRP-2024-10A)',
             '(acceso, contenido, evaluacion — o dejar vacío)',
         ];
 
         $examples = [
-            // Crear cuenta nueva (con email, sin user_id)
+            // Crear cuenta nueva (con email, sin user_id) y matricularla en su aula
             [
                 'María García Solano',
                 'maria.garcia@ejemplo.com',
                 '',
                 'EST-0001',
-                '10',
-                'A',
+                '10A2026',
                 'active',
                 '2008-03-15',
                 'Lucía Solano',
                 'lucia.solano@ejemplo.com',
-                'GRP-2024-10A',
                 '',
             ],
             [
@@ -438,28 +577,26 @@ class StudentController extends Controller
                 'carlos.lopez@ejemplo.com',
                 '',
                 'EST-0002',
-                '11',
-                'B',
+                '11B2026',
                 'active',
                 '2007-07-22',
                 'Pedro López',
                 'pedro.lopez@ejemplo.com',
-                '',
                 'acceso',
             ],
-            // Actualizar/crear perfil para un usuario que YA existe (con user_id)
+            // Estudiante que YA existe: esta fila lo ACTUALIZA. Si el aula es
+            // distinta de la actual, se le da de baja en la anterior y de alta
+            // en esta. Es la única vía por la que un alumno cambia de aula.
             [
                 '',
                 '',
                 'yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy',
                 'EST-0003',
-                '9',
-                'C',
+                '11B2026',
                 'inactive',
                 '2009-11-01',
                 'Ana Jiménez Castro',
                 'ana.jimenez@ejemplo.com',
-                'GRP-2024-9C',
                 'contenido',
             ],
         ];
@@ -483,6 +620,10 @@ class StudentController extends Controller
     public function setStatus(Request $request, string $student_user_id)
     {
         $student = Student::where('user_id', $student_user_id)->firstOrFail();
+
+        if ($this->esDocente($request->user()) && !$this->docenteAlcanzaEstudiante($request->user(), $student_user_id)) {
+            return $this->noAutorizadoPorAsignacion();
+        }
 
         $data = $request->validate([
             'status' => ['required', Rule::in([

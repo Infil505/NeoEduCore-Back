@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
 use App\Models\Academic\Subject;
 use App\Models\Exams\ExamAttempt;
@@ -12,6 +13,8 @@ use Illuminate\Http\Request;
 
 class AnalyticsController extends Controller
 {
+    use AcotaAlDocente;
+
     /**
      * Estadísticas generales de la institución.
      * GET /api/analytics/institution
@@ -83,6 +86,13 @@ class AnalyticsController extends Controller
         $student = Student::with(['user', 'progress.subject'])
             ->where('user_id', $student_user_id)
             ->firstOrFail();
+
+        // Este endpoint no comprobaba nada: cualquier docente sacaba la analítica
+        // individual —nota media, intentos, progreso por materia— de cualquier
+        // alumno de la institución.
+        if ($this->esDocente($request->user()) && !$this->docenteAlcanzaEstudiante($request->user(), $student_user_id)) {
+            return $this->noAutorizadoPorAsignacion();
+        }
 
         // Total y promedio calculados en BD para no cargar todos los intentos en memoria
         $stats = ExamAttempt::where('student_user_id', $student_user_id)

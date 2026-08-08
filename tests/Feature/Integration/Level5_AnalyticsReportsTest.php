@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Integration;
 
+use App\Models\Academic\Group;
 use App\Models\Academic\Subject;
 use App\Models\Admin\Institution;
 use App\Models\Admin\User;
@@ -35,6 +36,13 @@ class Level5_AnalyticsReportsTest extends TestCase
             'user_id'        => $studentUser->id,
             'institution_id' => $institution->id,
         ]);
+
+        // El docente alcanza al alumno por asignación al grupo, no por haber
+        // creado el examen. Se usa la materia del escenario para que también
+        // pase el filtro por materia de estrategias y recomendaciones.
+        $group = Group::factory()->create(['institution_id' => $institution->id]);
+        $this->asignarDocente($teacher, $group->id, $subject->id);
+        $this->matricularEnGrupo($studentUser->id, $group->id, $institution->id);
 
         $exam = Exam::factory()->create([
             'institution_id'        => $institution->id,

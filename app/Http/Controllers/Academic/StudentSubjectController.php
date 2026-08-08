@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Academic;
 
+use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
 use App\Models\Academic\Subject;
 use App\Models\Academic\StudentSubject;
@@ -10,6 +11,8 @@ use Illuminate\Http\Request;
 
 class StudentSubjectController extends Controller
 {
+    use AcotaAlDocente;
+
     /**
      * GET /api/students/{student_user_id}/subjects
      * Lista las materias en las que está inscrito un estudiante (admin/teacher).
@@ -17,6 +20,10 @@ class StudentSubjectController extends Controller
     public function index(string $studentUserId, Request $request)
     {
         $student = Student::where('user_id', $studentUserId)->firstOrFail();
+
+        if ($this->esDocente($request->user()) && !$this->docenteAlcanzaEstudiante($request->user(), $studentUserId)) {
+            return $this->noAutorizadoPorAsignacion();
+        }
 
         $subjects = $student->subjects()->get()->map(fn ($s) => [
             'subject_id'  => $s->id,
@@ -58,6 +65,10 @@ class StudentSubjectController extends Controller
         $student = Student::where('user_id', $studentUserId)->firstOrFail();
         $subject = Subject::findOrFail($data['subject_id']);
 
+        if ($this->esDocente($request->user()) && !$this->docenteAlcanzaEstudiante($request->user(), $studentUserId)) {
+            return $this->noAutorizadoPorAsignacion();
+        }
+
         $existing = StudentSubject::where('student_user_id', $studentUserId)
             ->where('subject_id', $subject->id)
             ->exists();
@@ -87,8 +98,12 @@ class StudentSubjectController extends Controller
      * DELETE /api/students/{student_user_id}/subjects/{subject}
      * Desinscribir a un estudiante de una materia (admin/teacher).
      */
-    public function unenroll(string $studentUserId, string $subjectId)
+    public function unenroll(string $studentUserId, string $subjectId, Request $request)
     {
+        if ($this->esDocente($request->user()) && !$this->docenteAlcanzaEstudiante($request->user(), $studentUserId)) {
+            return $this->noAutorizadoPorAsignacion();
+        }
+
         $deleted = StudentSubject::where('student_user_id', $studentUserId)
             ->where('subject_id', $subjectId)
             ->delete();

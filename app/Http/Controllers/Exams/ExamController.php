@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Exams;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Concerns\AcotaExamenAlEstudiante;
 use App\Http\Controllers\Concerns\RevelaRespuestas;
 use App\Enums\ExamStatus;
@@ -13,7 +14,62 @@ use Illuminate\Validation\Rule;
 
 class ExamController extends Controller
 {
-    use RevelaRespuestas, AcotaExamenAlEstudiante;
+    use RevelaRespuestas, AcotaExamenAlEstudiante, AcotaAlDocente;
+
+    /**
+     * Resuelve los grupos destino comprobando que el docente los tenga
+     * asignados **en la materia del examen**.
+     *
+     * Devuelve un array de ids válidos, o una respuesta 403 si alguno queda
+     * fuera de su asignación. El fallo es explícito y nombra el grupo: antes
+     * los ids no válidos se descartaban en silencio y el docente creía haber
+     * publicado un examen que no llegaba a nadie.
+     *
+     * Para admin no hay restricción de asignación, solo la de tenant.
+     *
+     * @return array<int,string>|\Illuminate\Http\JsonResponse
+     */
+    private function resolverGruposDestino(array $groupIds, string $subjectId, object $user)
+    {
+        // TenantScoped en Group descarta los de otra institución.
+        $grupos = Group::whereIn('id', $groupIds)->pluck('id')->all();
+
+        $fuera = array_diff($groupIds, $grupos);
+
+        if (!$this->esDocente($user)) {
+            if (!empty($fuera)) {
+                return response()->json([
+                    'message' => 'Algún grupo no existe en esta institución.',
+                    'grupos_invalidos' => array_values($fuera),
+                ], 422);
+            }
+
+            return $grupos;
+        }
+
+        $noAsignados = [];
+
+        foreach ($grupos as $grupoId) {
+            if (!$this->docenteAlcanzaGrupoEnMateria($user, $grupoId, $subjectId)) {
+                $noAsignados[] = $grupoId;
+            }
+        }
+
+        $noAsignados = array_merge($noAsignados, array_values($fuera));
+
+        if (!empty($noAsignados)) {
+            $nombres = Group::whereIn('id', $noAsignados)->pluck('name')->all();
+
+            return response()->json([
+                'message' => 'No estás asignado a ' . (empty($nombres)
+                    ? 'alguno de los grupos indicados'
+                    : implode(', ', $nombres)) . ' en esta materia.',
+                'grupos_no_asignados' => $noAsignados,
+            ], 403);
+        }
+
+        return $grupos;
+    }
 
     /**
      * Listar exámenes (filtrado por tenant vía TenantScoped)
@@ -77,6 +133,19 @@ class ExamController extends Controller
 
         $user = $request->user();
 
+        // Se valida ANTES de crear: si el docente apunta a un grupo que no
+        // tiene asignado, la petición se rechaza entera y no queda un examen
+        // huérfano en draft.
+        $grupos = [];
+
+        if (!empty($data['group_ids'])) {
+            $grupos = $this->resolverGruposDestino($data['group_ids'], $data['subject_id'], $user);
+
+            if ($grupos instanceof \Illuminate\Http\JsonResponse) {
+                return $grupos;
+            }
+        }
+
         $exam = Exam::create([
             'created_by_teacher_id' => $user->id,
 
@@ -97,10 +166,8 @@ class ExamController extends Controller
             'available_until' => $data['available_until'] ?? null,
         ]);
 
-        // Asignar grupos objetivo (validando que pertenecen al tenant por TenantScoped en Group)
-        if (!empty($data['group_ids'])) {
-            $groups = Group::whereIn('id', $data['group_ids'])->pluck('id')->all();
-            $exam->syncGroups($groups);
+        if (!empty($grupos)) {
+            $exam->syncGroups($grupos);
         }
 
         return response()->json([
@@ -167,15 +234,26 @@ class ExamController extends Controller
             'group_ids.*' => ['uuid'],
         ]);
 
+        // La materia puede venir cambiada en la misma petición; la asignación se
+        // comprueba contra la que va a quedar, no contra la que había.
+        $materiaFinal = $data['subject_id'] ?? $exam->subject_id;
+        $grupos = null;
+
+        if (array_key_exists('group_ids', $data)) {
+            $grupos = empty($data['group_ids'])
+                ? []
+                : $this->resolverGruposDestino($data['group_ids'], $materiaFinal, $user);
+
+            if ($grupos instanceof \Illuminate\Http\JsonResponse) {
+                return $grupos;
+            }
+        }
+
         $exam->fill($data);
         $exam->save();
 
-        if (array_key_exists('group_ids', $data)) {
-            $groups = empty($data['group_ids'])
-                ? []
-                : Group::whereIn('id', $data['group_ids'])->pluck('id')->all();
-
-            $exam->syncGroups($groups);
+        if ($grupos !== null) {
+            $exam->syncGroups($grupos);
         }
 
         return response()->json([

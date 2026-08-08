@@ -37,7 +37,7 @@ class StudentsCrudTest extends TestCase
     public function test_show_student(): void
     {
         $institution = Institution::factory()->create();
-        $this->signInTeacher(['institution_id' => $institution->id]);
+        $teacher = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $studentUser = User::factory()->student()->create([
             'institution_id' => $institution->id,
@@ -46,6 +46,8 @@ class StudentsCrudTest extends TestCase
             'user_id' => $studentUser->id,
             'institution_id' => $institution->id,
         ]);
+
+        $this->darAccesoDocenteA($teacher, $student->user_id, $institution->id);
 
         $res = $this->getJson("/api/students/{$student->user_id}");
 
@@ -56,7 +58,7 @@ class StudentsCrudTest extends TestCase
     public function test_update_student(): void
     {
         $institution = Institution::factory()->create();
-        $this->signInTeacher(['institution_id' => $institution->id]);
+        $teacher = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $studentUser = User::factory()->student()->create([
             'institution_id' => $institution->id,
@@ -65,6 +67,8 @@ class StudentsCrudTest extends TestCase
             'user_id' => $studentUser->id,
             'institution_id' => $institution->id,
         ]);
+
+        $this->darAccesoDocenteA($teacher, $student->user_id, $institution->id);
 
         $res = $this->putJson("/api/students/{$student->user_id}", [
             'full_name' => 'Juan Actualizado',
@@ -102,7 +106,7 @@ class StudentsCrudTest extends TestCase
     public function test_set_student_status(): void
     {
         $institution = Institution::factory()->create();
-        $this->signInTeacher(['institution_id' => $institution->id]);
+        $teacher = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $studentUser = User::factory()->student()->create([
             'institution_id' => $institution->id,
@@ -111,6 +115,8 @@ class StudentsCrudTest extends TestCase
             'user_id' => $studentUser->id,
             'institution_id' => $institution->id,
         ]);
+
+        $this->darAccesoDocenteA($teacher, $student->user_id, $institution->id);
 
         $res = $this->patchJson("/api/students/{$student->user_id}/status", [
             'status' => 'inactive',

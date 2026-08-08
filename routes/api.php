@@ -19,11 +19,13 @@ use App\Http\Controllers\Academic\CalendarEventController;
 use App\Http\Controllers\AI\AiRecommendationController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\InstitutionController;
+use App\Http\Controllers\Admin\InstitutionAdminController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\SystemConfigController;
 use App\Http\Controllers\Academic\StudentSubjectController;
 use App\Http\Controllers\Academic\BulkReassignmentController;
+use App\Http\Controllers\Academic\TeacherAssignmentController;
 
 /*
 |--------------------------------------------------------------------------
@@ -116,7 +118,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
 
     /*
-    | Lectura compartida — admin, teacher y student (no parent por ahora)
+    | Lectura compartida — admin, teacher y student (el superadmin queda fuera:
+    | es externo a las instituciones y no ve datos académicos de ninguna)
     | GET de catálogos y contenido educativo
     */
     Route::middleware('role:admin,teacher,student')->group(function () {
@@ -153,11 +156,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // OJO: las materias son admin-only en todas sus mutaciones, ver más abajo.
         Route::apiResource('groups', GroupController::class);
 
-        // Membresía de un grupo puntual (alta y baja lógica por lista de ids).
-        // Para mover estudiantes ENTRE grupos usar /bulk/reassign-group, que
-        // además cierra la membresía anterior y recuenta ambos grupos.
-        Route::post('/groups/{group}/students', [GroupController::class, 'addStudents']);
-        Route::delete('/groups/{group}/students', [GroupController::class, 'removeStudents']);
+        // OJO: la membresía de un grupo (alta y baja de estudiantes) es
+        // admin-only desde el modelo de asignaciones, ver más abajo.
 
         // Exámenes: mutaciones (lectura ya cubierta en shared)
         Route::post('/exams', [ExamController::class, 'store']);
@@ -223,7 +223,45 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     /*
     |--------------------------------------------------------------------------
-    | SOLO ADMIN — gestión de instituciones (SaaS)
+    | SOLO SUPERADMIN — el operador de la plataforma, externo a las instituciones
+    |--------------------------------------------------------------------------
+    |
+    | Dos competencias y ninguna más: dar de alta instituciones y darles su
+    | administrador. No tiene una sola ruta hacia datos académicos, y tampoco
+    | podría usarlas: al no pertenecer a ninguna institución nunca hay
+    | `tenant_id`, y los modelos con `TenantScoped` lo exigen.
+    |
+    | Antes `/institutions` vivía bajo `role:admin` sin filtrar por institución,
+    | así que el administrador de un centro listaba todos los del SaaS.
+    */
+    Route::middleware('role:superadmin')->group(function () {
+
+        Route::get('/institutions', [InstitutionController::class, 'index']);
+        Route::post('/institutions', [InstitutionController::class, 'store']);
+        Route::get('/institutions/{institution}', [InstitutionController::class, 'show']);
+        Route::put('/institutions/{institution}', [InstitutionController::class, 'update']);
+        Route::patch('/institutions/{institution}/toggle', [InstitutionController::class, 'toggleStatus']);
+
+        // ⚠️ Irreversible: arrastra en cascada TODOS los datos del centro
+        // (estudiantes, exámenes, intentos, resultados) y borra sus cuentas.
+        // Ver el docblock de `InstitutionController::destroy()`.
+        Route::delete('/institutions/{institution}', [InstitutionController::class, 'destroy']);
+
+        // Administradores de institución. El alta cuelga de la institución
+        // porque un admin no existe fuera de un centro.
+        Route::post('/institutions/{institution}/admins', [InstitutionAdminController::class, 'store']);
+
+        Route::get('/institution-admins', [InstitutionAdminController::class, 'index']);
+        Route::get('/institution-admins/{institutionAdmin}', [InstitutionAdminController::class, 'show']);
+        Route::put('/institution-admins/{institutionAdmin}', [InstitutionAdminController::class, 'update']);
+        Route::patch('/institution-admins/{institutionAdmin}/status', [InstitutionAdminController::class, 'setStatus']);
+        Route::patch('/institution-admins/{institutionAdmin}/reset-password', [InstitutionAdminController::class, 'resetPassword']);
+        Route::delete('/institution-admins/{institutionAdmin}', [InstitutionAdminController::class, 'destroy']);
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | SOLO ADMIN DE INSTITUCIÓN — gestión interna del centro
     |--------------------------------------------------------------------------
     */
     Route::middleware('role:admin')->group(function () {
@@ -240,11 +278,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::patch('/users/{user}/reset-password', [UserController::class, 'resetPassword']);
         Route::delete('/users/{user}', [UserController::class, 'destroy']);
 
-        Route::get('/institutions', [InstitutionController::class, 'index']);
-        Route::get('/institutions/{institution}', [InstitutionController::class, 'show']);
-        Route::put('/institutions/{institution}', [InstitutionController::class, 'update']);
-        Route::patch('/institutions/{institution}/toggle', [InstitutionController::class, 'toggleStatus']);
-
         // Catálogo de materias: define la oferta académica de la institución y
         // borrar una cascadea a exámenes → preguntas → intentos → respuestas,
         // por eso TODAS sus mutaciones quedan reservadas al administrador.
@@ -256,6 +289,27 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         // Configuración del sistema — solo admin puede editar
         Route::put('/system/config', [SystemConfigController::class, 'update']);
+
+        // Asignación docente → grupo → materia.
+        //
+        // Es la tabla de la que cuelga TODO el alcance de un docente («mis
+        // estudiantes», informes, progreso, recomendaciones). Solo el admin la
+        // toca: un docente que pudiera asignarse a sí mismo se concedería
+        // acceso a cualquier grupo de la institución, que es justo lo que este
+        // modelo viene a cerrar.
+        Route::get('/teacher-assignments', [TeacherAssignmentController::class, 'index']);
+        Route::post('/teacher-assignments', [TeacherAssignmentController::class, 'store']);
+        Route::delete('/teacher-assignments/bulk', [TeacherAssignmentController::class, 'destroyBulk']);
+        Route::delete('/teacher-assignments/{teacherAssignment}', [TeacherAssignmentController::class, 'destroy']);
+
+        // Membresía de un grupo puntual (alta y baja lógica por lista de ids).
+        // Admin-only por el mismo motivo: si un docente pudiera meter
+        // estudiantes en el grupo que tiene asignado, ampliaría su propio
+        // alcance por la otra punta de la cadena.
+        // Para mover estudiantes ENTRE grupos usar /bulk/reassign-group, que
+        // además cierra la membresía anterior y recuenta ambos grupos.
+        Route::post('/groups/{group}/students', [GroupController::class, 'addStudents']);
+        Route::delete('/groups/{group}/students', [GroupController::class, 'removeStudents']);
 
         // Reasignación masiva (promoción de fin de año, correcciones en bloque).
         // Toca membresías, contadores y campos denormalizados de cientos de
