@@ -154,7 +154,9 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 
 ### ✅ Exámenes — Creación y gestión
 - CRUD completo con máquina de estados: `draft → published → active → completed`
-- Asignación a grupos via `exam_targets`
+- **`PATCH /api/exams/{exam}/status`** — las transiciones. ⚠️ Esta ruta **faltaba hasta el 08/08/2026**: el método existía con todas sus reglas pero no lo llamaba nadie, así que ningún examen podía salir de `draft` y el alumnado nunca llegaba a ver ninguno. Ver §4, sesión del 08/08 (tarde), nº 9
+- Reglas de transición: solo `draft→published`, `published→{active, draft}` y `active→completed`; `completed` es terminal. No se publica sin preguntas ni se activa con la ventana expirada
+- Asignación a grupos via `exam_targets`. Un docente solo puede apuntar a grupos que tenga asignados **en la materia del examen** (403 con `grupos_no_asignados`), y la comprobación se repite al publicar o activar, que es cuando el examen llega al alumnado
 - Campos: `randomize_questions`, `duration_minutes`, `max_attempts`, `available_from/until`
 - Ruta: `/api/exams`
 
@@ -656,6 +658,8 @@ tener**, sustituida por una inferencia que resultaba ser auto-otorgable.
 | 6 | **`student_code` era único globalmente**: dos centros no podían numerar «EST-0001» cada uno | `UNIQUE (institution_id, student_code)` |
 | 7 | La comprobación de duplicados de `student_code` **no coincidía con la constraint**, y en PostgreSQL una violación aborta la transacción entera: se **perdía el archivo de carga masiva completo** informando de un solo error de fila | Comprobación alineada con la constraint, con test de regresión que verifica que el resto del archivo sí se guarda |
 | 8 | La cuenta se creaba **antes** de validar el `student_code`: una fila rechazada dejaba un usuario huérfano, sin perfil y con el correo consumido | Validación movida delante del alta |
+| 9 | 🔴 **`ExamController::setStatus()` no tenía ruta.** El método existía entero —transiciones, «no publicar sin preguntas», «no activar si la ventana expiró»— pero no lo llamaba nadie, y `update()` no acepta `status`. Ningún examen podía salir de `draft`; como `Exam::scopeVisibleTo()` exige `active` para el alumnado, **el flujo central del sistema era inalcanzable por API**. Los 12 tests que necesitan un examen activo lo creaban con `Exam::factory()`, saltándose el endpoint, y `ExamsCrudTest` mandaba `status` en el `PUT` y pasaba en verde porque solo comprobaba el título | `PATCH /api/exams/{exam}/status` + `ExamStatusTransitionsTest` (12 casos, uno de ellos contra `GET /exams` como alumno para probar que el examen le llega solo al activarse) |
+| 10 | Al publicar no se revalidaba la asignación: los grupos destino se fijan al crear el examen, pero es **al publicar** cuando llega al alumnado, y entre una cosa y otra el admin pudo retirarle el grupo al docente | `setStatus()` recomprueba `teacher_assignments` en las transiciones a `published` y `active` |
 
 **Lo defendible en el informe** es el patrón, no la lista: la ausencia de una entidad en el
 modelo de datos no es solo una omisión documental. El sistema la sustituye por lo que tenga a
@@ -1088,6 +1092,18 @@ completo está en la cabecera.*
 
 Definidos en `config/rate_limits.php`, ajustables por entorno. Los limitadores con
 nombre se registran en `AppServiceProvider::registrarLimitadores()`.
+
+> **Actualizado el 08/08/2026.** Hasta esa fecha solo cuatro de estos límites eran
+> configurables; los otros ocho estaban escritos a mano en `routes/api.php` como
+> `throttle:5,1`. Ahora los doce son limitadores con nombre que leen de config.
+>
+> **Un cambio de comportamiento que conviene conocer:** `throttle:N,1` daba a cada
+> ruta su propio contador, mientras que un limitador con nombre comparte cubo
+> entre las rutas que lo usan. `password` cubre ahora `forgot`, `reset` y `change`
+> con un solo cupo de 5/min, y `bulk-ops` cubre las tres reasignaciones masivas
+> con 10/min. Es lo deseable —quien ataca la recuperación de contraseña no debería
+> sumar 5+5+5— y en la práctica no colisiona, porque las rutas públicas cuentan
+> por IP y las autenticadas por usuario.
 
 | Ámbito | Límite | Clave |
 |---|---|---|

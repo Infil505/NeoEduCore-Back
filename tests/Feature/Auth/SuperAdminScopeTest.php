@@ -3,7 +3,6 @@
 namespace Tests\Feature\Auth;
 
 use App\Enums\UserType;
-use App\Models\Academic\Subject;
 use App\Models\Admin\Institution;
 use App\Models\Admin\User;
 use App\Models\Students\Student;

@@ -38,7 +38,7 @@ class StudyResourceController extends Controller
         }
 
         return response()->json([
-            'data' => $query->paginate(20),
+            'data' => $query->paginate(config('pagination.default')),
         ]);
     }
 

@@ -108,7 +108,7 @@ class AiTutorController extends Controller
         $sessions = AiChatSession::select('id', 'student_user_id', 'subject_id', 'exam_id', 'ended_at', 'created_at', 'updated_at')
             ->where('student_user_id', $user->id)
             ->orderBy('updated_at', 'desc')
-            ->paginate(10);
+            ->paginate(config('pagination.default'));
 
         return response()->json(['data' => $sessions]);
     }

@@ -96,7 +96,7 @@ class ExamController extends Controller
             $query->where('grade', (int) $request->input('grade'));
         }
 
-        $paginator = $query->paginate(20);
+        $paginator = $query->paginate(config('pagination.default'));
 
         $this->acotarExamenes($request->user(), $paginator->getCollection());
 
@@ -302,6 +302,27 @@ class ExamController extends Controller
             return response()->json([
                 'message' => 'No se puede publicar un examen sin preguntas',
             ], 409);
+        }
+
+        /*
+         | La asignación se vuelve a comprobar al publicar o activar, no solo al
+         | fijar los grupos: entre una cosa y otra el admin pudo retirarle el
+         | grupo al docente, y es **aquí** donde el examen pasa a estar delante
+         | del alumnado. Sin esto quedaba una vía para hacer llegar un examen a
+         | un grupo que ya no le corresponde.
+         */
+        if ($this->esDocente($user)
+            && in_array($next, [ExamStatus::Published->value, ExamStatus::Active->value], true)) {
+            $perdidos = $exam->groups()->pluck('groups.id')
+                ->reject(fn ($groupId) => $this->docenteAlcanzaGrupoEnMateria($user, $groupId, $exam->subject_id))
+                ->values();
+
+            if ($perdidos->isNotEmpty()) {
+                return response()->json([
+                    'message' => 'Ya no estás asignado a alguno de los grupos destino de este examen.',
+                    'grupos_no_asignados' => $perdidos->all(),
+                ], 403);
+            }
         }
 
         // No activar si la ventana ya expiró

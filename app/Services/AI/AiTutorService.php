@@ -37,10 +37,18 @@ use App\Services\AI\AiOutputValidator;
  */
 class AiTutorService
 {
-    private const MAX_HISTORY_MESSAGES = 20;
-    private const MAX_TOKENS = 600;
-    // Máximo de mensajes almacenados en JSONB — evita crecimiento ilimitado del campo
-    private const MAX_STORED_MESSAGES = 60;
+    /*
+     | Los parámetros de coste viven en `config/openai.php` (sección `tutor`),
+     | no aquí: son lo primero que hay que poder ajustar por entorno cuando
+     | sube la factura de OpenAI, y como constantes exigían desplegar.
+     |
+     | `history_messages` es el que más pesa: cada mensaje del historial viaja
+     | como contexto en todas las peticiones siguientes.
+     */
+    private function ajuste(string $clave): int|float
+    {
+        return config("openai.tutor.{$clave}");
+    }
 
     /**
      * TTL del contexto del estudiante (perfil + progreso) usado para armar el
@@ -51,7 +59,6 @@ class AiTutorService
      * 5 min es el retardo máximo con el que el tutor vería un progreso nuevo;
      * a cambio, una conversación de 20 turnos pasa de ~80 lecturas a ~4.
      */
-    private const CONTEXT_TTL = 300;
 
     public function chat(
         string $studentUserId,
@@ -69,7 +76,7 @@ class AiTutorService
         $session = $this->resolveSession($studentUserId, $sessionId, $subjectId, $examId);
 
         $history = collect($session->messages ?? [])
-            ->take(-self::MAX_HISTORY_MESSAGES)
+            ->take(-$this->ajuste('history_messages'))
             ->values()
             ->all();
 
@@ -94,7 +101,7 @@ class AiTutorService
             'reply'         => $reply,
             // El append + truncado ocurre en SQL; el resultado es determinista,
             // así que se calcula aquí en vez de releer la fila.
-            'message_count' => min($totalPrevio + count($nuevos), self::MAX_STORED_MESSAGES),
+            'message_count' => min($totalPrevio + count($nuevos), $this->ajuste('stored_messages')),
         ];
     }
 
@@ -107,7 +114,7 @@ class AiTutorService
      * con la longitud de la conversación.
      *
      * Ahora solo viaja el delta: PostgreSQL concatena con `||` y recorta a los
-     * últimos MAX_STORED_MESSAGES en la misma sentencia. Coste constante.
+     * últimos `openai.tutor.stored_messages` en la misma sentencia. Coste constante.
      */
     private function anexarMensajes(string $sessionId, array $nuevos): void
     {
@@ -128,18 +135,18 @@ class AiTutorService
                     ),
                     updated_at = ?
               WHERE id = ?",
-            [$delta, $delta, self::MAX_STORED_MESSAGES, now(), $sessionId]
+            [$delta, $delta, $this->ajuste('stored_messages'), now(), $sessionId]
         );
     }
 
     /**
-     * System prompt del estudiante, cacheado. Ver CONTEXT_TTL.
+     * System prompt del estudiante, cacheado. Ver `openai.tutor.context_ttl`.
      */
     private function systemPromptCacheado(string $studentUserId): string
     {
         return Cache::remember(
             "ai:tutor:prompt:{$studentUserId}",
-            self::CONTEXT_TTL,
+            $this->ajuste('context_ttl'),
             function () use ($studentUserId) {
                 $student = Student::with(['user', 'progress.subject'])
                     ->where('user_id', $studentUserId)
@@ -246,7 +253,7 @@ class AiTutorService
 
         try {
             $response = OpenAI::chat()->create([
-                'model'    => config('services.openai.model', 'gpt-4o-mini'),
+                'model'    => config('openai.model'),
                 'messages' => [
                     ['role' => 'system', 'content' => 'Eres un tutor educativo. Genera diagnósticos motivadores y accionables.'],
                     ['role' => 'user', 'content' => $prompt],
@@ -295,13 +302,13 @@ class AiTutorService
         // bloqueado y no puede atender a nadie más. Ver docs/ANALISIS_CONCURRENCIA.md.
         try {
             $response = OpenAI::chat()->create([
-                'model'    => config('services.openai.model', 'gpt-4o-mini'),
+                'model'    => config('openai.model'),
                 'messages' => array_merge(
                     [['role' => 'system', 'content' => $systemPrompt]],
                     $history
                 ),
-                'temperature' => $mode === 'practice' ? 0.5 : 0.7,
-                'max_tokens'  => $mode === 'practice' ? 800 : self::MAX_TOKENS,
+                'temperature' => $this->ajuste($mode === 'practice' ? 'temperature_practice' : 'temperature'),
+                'max_tokens'  => $this->ajuste($mode === 'practice' ? 'max_tokens_practice' : 'max_tokens'),
             ]);
 
             $text = trim((string) ($response->choices[0]->message->content ?? ''));

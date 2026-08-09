@@ -46,7 +46,7 @@ class CalendarEventController extends Controller
         }
 
         return response()->json([
-            'data' => $query->paginate(30),
+            'data' => $query->paginate(config('pagination.default')),
         ]);
     }
 

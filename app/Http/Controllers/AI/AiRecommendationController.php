@@ -71,7 +71,7 @@ class AiRecommendationController extends Controller
         }
 
         return response()->json([
-            'data' => $query->paginate(20),
+            'data' => $query->paginate(config('pagination.default')),
         ]);
     }
 
@@ -139,7 +139,7 @@ class AiRecommendationController extends Controller
         }
 
         return response()->json([
-            'data' => $query->paginate(15),
+            'data' => $query->paginate(config('pagination.default')),
         ]);
     }
 }

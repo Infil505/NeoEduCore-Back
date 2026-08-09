@@ -3,14 +3,11 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "dev": "php artisan serve"
+        "validar-diagramas": "node scripts/validar-diagramas.mjs"
     },
     "devDependencies": {
-        "@tailwindcss/vite": "^4.0.0",
-        "axios": "^1.11.0",
         "concurrently": "^9.0.1",
-        "laravel-vite-plugin": "^2.0.0",
-        "tailwindcss": "^4.0.0",
-        "vite": "^7.0.4"
+        "jsdom": "^29.1.1",
+        "mermaid": "^11.16.1"
     }
 }

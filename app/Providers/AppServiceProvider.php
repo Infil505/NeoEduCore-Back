@@ -212,5 +212,40 @@ class AppServiceProvider extends ServiceProvider
                     'message' => 'El tutor IA está saturado en este momento. Intenta de nuevo en un minuto.',
                 ], 429));
         });
+
+        /*
+        | Los que antes iban literales en `routes/api.php` como `throttle:5,1`.
+        |
+        | Se registran como limitadores con nombre —y no se deja el número en la
+        | ruta— porque `throttle:N,1` no admite leer de config: el valor se
+        | resuelve al construir la ruta y quedaría fijo igualmente.
+        |
+        | Todos cuentan por usuario autenticado y caen a la IP si no lo hay, que
+        | es lo correcto para los públicos (recuperación de contraseña).
+        */
+        $porUsuarioOIp = fn (Request $request) => $request->user()?->id ?: $request->ip();
+
+        $simples = [
+            'password'       => 'Demasiadas peticiones de contraseña. Espera un minuto.',
+            'password-verify' => 'Demasiadas verificaciones. Espera un minuto.',
+            'bulk-upload'    => 'Demasiadas cargas masivas seguidas. Espera un minuto.',
+            'bulk-ops'       => 'Demasiadas operaciones masivas seguidas. Espera un minuto.',
+            'ai-chat'        => 'Vas muy rápido con el tutor. Espera un momento.',
+            'ai-diagnosis'   => 'Demasiados diagnósticos seguidos. Espera un minuto.',
+            'ai-regenerate'  => 'Demasiadas regeneraciones seguidas. Espera un minuto.',
+            'ai-generate'    => 'Demasiadas generaciones seguidas. Espera un minuto.',
+        ];
+
+        foreach ($simples as $nombre => $mensaje) {
+            // El nombre del limitador usa guiones (así se escribe en la ruta);
+            // la clave de config usa guiones bajos.
+            $clave = str_replace('-', '_', $nombre);
+
+            RateLimiter::for($nombre, function (Request $request) use ($nombre, $clave, $mensaje, $porUsuarioOIp) {
+                return Limit::perMinute(config("rate_limits.{$clave}"))
+                    ->by($nombre . ':' . $porUsuarioOIp($request))
+                    ->response(fn () => response()->json(['message' => $mensaje], 429));
+            });
+        }
     }
 }

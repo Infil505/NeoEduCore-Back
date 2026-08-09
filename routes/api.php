@@ -57,11 +57,11 @@ Route::post('/auth/login', [AuthController::class, 'login'])
 */
 Route::prefix('password')->group(function () {
     Route::post('/forgot', [ForgotPasswordController::class, 'sendResetLink'])
-        ->middleware('throttle:5,1')->name('password.email');
+        ->middleware('throttle:password')->name('password.email');
     Route::post('/verify', [ForgotPasswordController::class, 'verifyToken'])
-        ->middleware('throttle:10,1')->name('password.verify');
+        ->middleware('throttle:password-verify')->name('password.verify');
     Route::post('/reset', [ForgotPasswordController::class, 'resetPassword'])
-        ->middleware('throttle:5,1')->name('password.reset');
+        ->middleware('throttle:password')->name('password.reset');
 });
 
 /*
@@ -77,7 +77,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/auth/me', [AuthController::class, 'me'])->name('me');
     Route::post('/auth/logout', [AuthController::class, 'logout'])->name('logout');
     Route::post('/password/change', [ForgotPasswordController::class, 'changePassword'])
-        ->middleware('throttle:5,1')->name('password.change');
+        ->middleware('throttle:password')->name('password.change');
 
     /*
     | Perfil propio del estudiante — solo student
@@ -96,7 +96,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/exams/{exam}/attempts/{attempt}', [ExamAttemptController::class, 'show']);
         Route::post('/exam-attempts/{attempt}/recommendations/regenerate',
             [ExamAttemptController::class, 'regenerateRecommendations']
-        )->middleware('throttle:5,1');
+        )->middleware('throttle:ai-regenerate');
         Route::get('/student-progress/me', [StudentProgressController::class, 'me']);
         Route::get('/ai-recommendations/me', [AiRecommendationController::class, 'myRecommendations']);
         Route::get('/students/me/available-exams', [StudentController::class, 'availableExams']);
@@ -110,9 +110,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Doble throttle: el primero acota al usuario, el segundo (de institución)
         // reserva workers para el flujo de examen. Ver bootstrap/app.php.
         Route::post('/ai/tutor/chat', [AiTutorController::class, 'chat'])
-            ->middleware(['throttle:30,1', 'throttle:ai-global']);
+            ->middleware(['throttle:ai-chat', 'throttle:ai-global']);
         Route::get('/ai/tutor/diagnosis', [AiTutorController::class, 'diagnosis'])
-            ->middleware(['throttle:10,1', 'throttle:ai-global']);
+            ->middleware(['throttle:ai-diagnosis', 'throttle:ai-global']);
         Route::patch('/ai/tutor/sessions/{sessionId}/end', [AiTutorController::class, 'endSession']);
         Route::get('/ai/tutor/sessions', [AiTutorController::class, 'sessions']);
     });
@@ -165,6 +165,16 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::patch('/exams/{exam}', [ExamController::class, 'update']);
         Route::delete('/exams/{exam}', [ExamController::class, 'destroy']);
 
+        // Transiciones de estado: draft → published → active → completed.
+        //
+        // ⚠️ Esta ruta FALTABA hasta el 08/08/2026. `setStatus()` existía entero
+        // —con sus reglas de transición— pero no lo llamaba nadie, y `update()`
+        // no acepta `status`. El efecto era que ningún examen podía salir de
+        // `draft`, y como `Exam::scopeVisibleTo()` exige `active` para el
+        // alumnado, **el flujo central del sistema era inalcanzable por API**.
+        // Los tests no lo detectaban porque activan los exámenes por factory.
+        Route::patch('/exams/{exam}/status', [ExamController::class, 'setStatus']);
+
         // Preguntas (CRUD)
         Route::post('/exams/{exam}/questions', [QuestionController::class, 'store']);
         Route::put('/questions/{question}', [QuestionController::class, 'update']);
@@ -194,7 +204,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // IA: generación manual de recomendaciones por docente
         // También llama a OpenAI → también entra en el presupuesto global de IA
         Route::post('/ai/generate', [AiController::class, 'generate'])
-            ->middleware(['throttle:20,1', 'throttle:ai-global']);
+            ->middleware(['throttle:ai-generate', 'throttle:ai-global']);
         Route::get('/ai-recommendations', [AiRecommendationController::class, 'index']);
         Route::get('/ai-recommendations/{aiRecommendation}', [AiRecommendationController::class, 'show']);
 
@@ -271,7 +281,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         // Carga masiva: crea cuentas de usuario, por eso es admin-only
         Route::get('/students/bulk-upload/template', [StudentController::class, 'bulkUploadTemplate']);
-        Route::post('/students/bulk-upload', [StudentController::class, 'bulkUpload'])->middleware('throttle:3,1');
+        Route::post('/students/bulk-upload', [StudentController::class, 'bulkUpload'])->middleware('throttle:bulk-upload');
 
         Route::put('/users/{user}', [UserController::class, 'update']);
         Route::patch('/users/{user}/status', [UserController::class, 'setStatus']);
@@ -315,11 +325,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Toca membresías, contadores y campos denormalizados de cientos de
         // filas de una vez, por eso es admin-only y va con throttle.
         Route::post('/bulk/reassign-group', [BulkReassignmentController::class, 'reassignGroup'])
-            ->middleware('throttle:10,1');
+            ->middleware('throttle:bulk-ops');
         Route::post('/bulk/reassign-subjects', [BulkReassignmentController::class, 'reassignSubjects'])
-            ->middleware('throttle:10,1');
+            ->middleware('throttle:bulk-ops');
         Route::post('/bulk/reset-progress', [BulkReassignmentController::class, 'resetProgress'])
-            ->middleware('throttle:10,1');
+            ->middleware('throttle:bulk-ops');
     });
 
     // Configuración del sistema — admin y teacher pueden leer

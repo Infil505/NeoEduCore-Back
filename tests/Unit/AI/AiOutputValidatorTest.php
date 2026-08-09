@@ -16,7 +16,9 @@ class AiOutputValidatorTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->validator = new AiOutputValidator();
+        // Umbrales explícitos: son justo lo que este test comprueba, y así la
+        // prueba sigue siendo unitaria (sin contenedor, sin config()).
+        $this->validator = new AiOutputValidator(minLength: 5, maxLength: 4000);
     }
 
     // --- No debe bloquear (falsos positivos que antes ocurrían) ------------

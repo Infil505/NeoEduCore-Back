@@ -209,8 +209,8 @@ de Postman: si se edita a mano, se pierde en la siguiente ejecución. Existe por
 columna de texto Mermaid encoge el SVG para que quepa, y un ERD o un diagrama de clases se
 vuelve ilegible; la página los saca del flujo y les da desplazamiento y zoom.</p>
 <p><strong>Validación.</strong> Los diagramas se comprueban con el parser real de Mermaid, sin navegador:</p>
-<pre><code class="language-bash">npm i mermaid jsdom
-node validar.mjs docs/DIAGRAMAS.md
+<pre><code class="language-bash">npm install                    # mermaid + jsdom, las unicas dependencias node del repo
+npm run validar-diagramas      # scripts/validar-diagramas.mjs
 </code></pre>
 <blockquote>
 <p>En Node 24 <code>globalThis.navigator</code> solo tiene <em>getter</em>, así que el JSDOM se inyecta con

@@ -12,7 +12,6 @@ use App\Enums\LearningStyle;
 use App\Models\Academic\Group;
 use App\Models\Admin\User;
 use App\Models\Exams\Exam;
-use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
 use App\Services\Auth\PasswordSetupService;
 use Illuminate\Http\Request;
@@ -27,11 +26,12 @@ class StudentController extends Controller
 {
     use AcotaAlDocente;
 
-    private const BULK_MAX_ROWS    = 5000;
-    private const BULK_MAX_MB      = 5;
-    private const VALID_SECTIONS   = ['A', 'B', 'C', 'D'];
-    private const GRADE_MIN        = 6;
-    private const GRADE_MAX        = 12;
+    /*
+     | Grados, secciones y limites de carga viven en `config/academic.php` y
+     | `config/bulk.php`. Salieron de aqui porque describen el sistema
+     | educativo de un pais concreto y la capacidad de un servidor concreto,
+     | no reglas del programa.
+     */
 
     // Columnas de PERFIL (tabla students) que se vuelcan al modelo Student.
     // institution_id se ignora por seguridad (lo asigna TenantScoped desde el tenant).
@@ -75,7 +75,7 @@ class StudentController extends Controller
         }
 
         return response()->json([
-            'data' => $query->paginate(20),
+            'data' => $query->paginate(config('pagination.default')),
         ]);
     }
 
@@ -110,8 +110,8 @@ class StudentController extends Controller
                     ->where('institution_id', $request->user()->institution_id)
                     ->ignore($student->user_id, 'user_id'),
             ],
-            'grade'          => ['sometimes', 'integer', 'between:' . self::GRADE_MIN . ',' . self::GRADE_MAX],
-            'section'        => ['sometimes', 'string', Rule::in(self::VALID_SECTIONS)],
+            'grade'          => ['sometimes', 'integer', 'between:' . config('academic.grade_min') . ',' . config('academic.grade_max')],
+            'section'        => ['sometimes', 'string', Rule::in(config('academic.sections'))],
             'birth_date'     => ['nullable', 'date'],
             'parent_name'    => ['nullable', 'string', 'max:120'],
             'parent_email'   => ['nullable', 'email', 'max:120'],
@@ -161,7 +161,7 @@ class StudentController extends Controller
     )]
     public function bulkUpload(Request $request, PasswordSetupService $passwordSetup)
     {
-        $maxKb = self::BULK_MAX_MB * 1024;
+        $maxKb = config('bulk.students.max_mb') * 1024;
 
         $request->validate([
             'file' => ['required', 'file', "mimes:csv,txt,xlsx", "max:{$maxKb}"],
@@ -182,9 +182,9 @@ class StudentController extends Controller
             return response()->json(['message' => 'El archivo no contiene filas de datos.'], 422);
         }
 
-        if ($totalRows > self::BULK_MAX_ROWS) {
+        if ($totalRows > config('bulk.students.max_rows')) {
             return response()->json([
-                'message' => "El archivo excede el límite de " . self::BULK_MAX_ROWS . " filas. Se encontraron {$totalRows} filas.",
+                'message' => "El archivo excede el límite de " . config('bulk.students.max_rows') . " filas. Se encontraron {$totalRows} filas.",
             ], 422);
         }
 

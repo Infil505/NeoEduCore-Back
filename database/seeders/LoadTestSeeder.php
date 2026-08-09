@@ -9,7 +9,6 @@ use App\Models\Admin\User;
 use App\Models\Exams\Exam;
 use App\Models\Exams\Question;
 use App\Models\Exams\QuestionOption;
-use App\Models\Students\Student;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;

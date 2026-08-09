@@ -59,4 +59,67 @@ return [
      */
     'ai_global' => (int) env('RATE_LIMIT_AI_GLOBAL_PER_MINUTE', 120),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Límites que estaban literales en las rutas
+    |--------------------------------------------------------------------------
+    |
+    | Hasta el 08/08/2026 estos doce `throttle:N,1` vivían escritos a mano en
+    | `routes/api.php`, mientras los cuatro de arriba ya eran configurables. La
+    | inconsistencia importaba: el fichero decía «viven aquí para poder
+    | ajustarlos por entorno sin desplegar» y la mayoría no cumplía esa promesa.
+    |
+    */
+
+    /*
+     | Correo de recuperación y cambio de contraseña. Bajo a propósito: cada
+     | petición encola un correo y consulta la base, y no hay ningún uso
+     | legítimo que necesite repetirlo.
+     */
+    'password' => (int) env('RATE_LIMIT_PASSWORD_PER_MINUTE', 5),
+
+    /*
+     | Verificación de token. Más holgado que el anterior porque no envía nada
+     | ni escribe: el frontend lo llama al abrir el formulario.
+     */
+    'password_verify' => (int) env('RATE_LIMIT_PASSWORD_VERIFY_PER_MINUTE', 10),
+
+    /*
+     | Carga masiva de estudiantes. El más restrictivo del sistema: cada
+     | petición puede procesar 5.000 filas dentro de una transacción.
+     */
+    'bulk_upload' => (int) env('RATE_LIMIT_BULK_UPLOAD_PER_MINUTE', 3),
+
+    /*
+     | Reasignaciones masivas y reseteo de progreso. Tocan cientos de filas y
+     | contadores denormalizados de una vez.
+     */
+    'bulk_ops' => (int) env('RATE_LIMIT_BULK_OPS_PER_MINUTE', 10),
+
+    /*
+     | Chat con el tutor, POR USUARIO. Se suma al presupuesto de institución
+     | (`ai_global`), que es el que de verdad protege el flujo de examen.
+     */
+    'ai_chat' => (int) env('RATE_LIMIT_AI_CHAT_PER_MINUTE', 30),
+
+    /*
+     | Diagnóstico del tutor: una sola llamada devuelve un análisis completo,
+     | así que cuesta bastante más que un turno de chat.
+     */
+    'ai_diagnosis' => (int) env('RATE_LIMIT_AI_DIAGNOSIS_PER_MINUTE', 10),
+
+    /*
+     | Regeneración de recomendaciones de un intento. Es la única vía por la que
+     | el alumnado dispara OpenAI a voluntad; el cupo por intento lo limita
+     | aparte `AiRecommendationService`.
+     */
+    'ai_regenerate' => (int) env('RATE_LIMIT_AI_REGENERATE_PER_MINUTE', 5),
+
+    /*
+     | Generación manual de recomendaciones por parte del docente
+     | (`POST /ai/generate`). También llama a OpenAI, así que entra además en el
+     | presupuesto global de institución.
+     */
+    'ai_generate' => (int) env('RATE_LIMIT_AI_GENERATE_PER_MINUTE', 20),
+
 ];

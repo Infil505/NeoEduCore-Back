@@ -4,8 +4,27 @@ namespace App\Services\AI;
 
 class AiOutputValidator
 {
-    private const MAX_LENGTH = 4000;
-    private const MIN_LENGTH = 5;
+    /**
+     * Umbrales de longitud aceptable de una respuesta del tutor.
+     *
+     * Por defecto salen de `config/openai.php` (sección `output`), pero se
+     * pueden inyectar: esta clase no depende de nada del framework y sus
+     * pruebas son unitarias de verdad —sin base de datos ni contenedor—, así
+     * que leer `config()` a ciegas las rompería. Inyectarlos también deja los
+     * valores a la vista en el test, que es lo que allí se está comprobando.
+     */
+    public function __construct(
+        private ?int $minLength = null,
+        private ?int $maxLength = null,
+    ) {
+    }
+
+    private function limite(string $clave): int
+    {
+        $inyectado = $clave === 'min_length' ? $this->minLength : $this->maxLength;
+
+        return $inyectado ?? (int) config("openai.output.{$clave}");
+    }
 
     /** Lo que queda en el texto donde había un enlace fuera de la lista blanca. */
     public const URL_BLOQUEADA = '[enlace no permitido]';
@@ -29,11 +48,11 @@ class AiOutputValidator
     {
         $text = trim($text);
 
-        if (strlen($text) < self::MIN_LENGTH) {
+        if (strlen($text) < $this->limite('min_length')) {
             return 'La respuesta del modelo es demasiado corta.';
         }
 
-        if (strlen($text) > self::MAX_LENGTH) {
+        if (strlen($text) > $this->limite('max_length')) {
             return 'La respuesta del modelo excede el tamaño máximo permitido.';
         }
 
@@ -50,8 +69,8 @@ class AiOutputValidator
     {
         $text = $this->sanitizeUrls(trim($text));
 
-        if (strlen($text) > self::MAX_LENGTH) {
-            $text = mb_substr($text, 0, self::MAX_LENGTH);
+        if (strlen($text) > $this->limite('max_length')) {
+            $text = mb_substr($text, 0, $this->limite('max_length'));
         }
 
         return $text;

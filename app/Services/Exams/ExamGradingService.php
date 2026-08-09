@@ -15,7 +15,6 @@ class ExamGradingService
      * sentencia; con 12 columnas, 500 filas son 6000 parámetros. Un examen
      * normal cabe de sobra en un solo lote.
      */
-    private const TAMANO_LOTE = 500;
 
     /**
      * Corrige un intento y persiste las respuestas.
@@ -125,11 +124,11 @@ class ExamGradingService
         }
 
         // Las respuestas van primero: student_answer_options tiene FK contra ellas.
-        foreach (array_chunk($filasRespuestas, self::TAMANO_LOTE) as $lote) {
+        foreach (array_chunk($filasRespuestas, config('bulk.insert_batch_size')) as $lote) {
             DB::table('student_answers')->insert($lote);
         }
 
-        foreach (array_chunk($filasOpciones, self::TAMANO_LOTE) as $lote) {
+        foreach (array_chunk($filasOpciones, config('bulk.insert_batch_size')) as $lote) {
             DB::table('student_answer_options')->insert($lote);
         }
 

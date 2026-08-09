@@ -44,7 +44,7 @@ class SubjectController extends Controller
         }
 
         return response()->json([
-            'data' => $query->paginate((int) $request->input('per_page', 20)),
+            'data' => $query->paginate((int) $request->input('per_page', config('pagination.default'))),
         ]);
     }
 

@@ -30,8 +30,8 @@ vuelve ilegible; la página los saca del flujo y les da desplazamiento y zoom.
 **Validación.** Los diagramas se comprueban con el parser real de Mermaid, sin navegador:
 
 ```bash
-npm i mermaid jsdom
-node validar.mjs docs/DIAGRAMAS.md
+npm install                    # mermaid + jsdom, las unicas dependencias node del repo
+npm run validar-diagramas      # scripts/validar-diagramas.mjs
 ```
 
 > En Node 24 `globalThis.navigator` solo tiene *getter*, así que el JSDOM se inyecta con
