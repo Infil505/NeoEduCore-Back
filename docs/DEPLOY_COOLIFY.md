@@ -80,6 +80,60 @@ OPENAI_REQUEST_TIMEOUT=15     # sin esto rige el default de 30 s y un worker
 BCRYPT_ROUNDS=10
 ```
 
+### Opcionales — todas tienen un valor por defecto sensato
+
+Añadidas el 08/08/2026 al sacar del código los valores operativos. **No hace falta
+definirlas**: si se omiten rige el defecto, que es exactamente el comportamiento
+anterior. Se listan porque son lo que un operador querrá tocar sin desplegar.
+
+```
+# --- Coste del tutor IA -----------------------------------------------------
+# Lo primero que se ajusta si sube la factura. OPENAI_HISTORY_MESSAGES es el que
+# más pesa: cada mensaje del historial viaja como contexto en TODAS las
+# peticiones siguientes, así que su efecto sobre el gasto es multiplicativo.
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_MAX_TOKENS=600
+OPENAI_HISTORY_MESSAGES=20
+OPENAI_STORED_MESSAGES=60
+OPENAI_CONTEXT_TTL=300
+
+# --- Límites de peticiones por minuto ---------------------------------------
+# Dependen de CACHE_STORE: con `array` dejan de ser globales bajo Octane.
+RATE_LIMIT_PASSWORD_PER_MINUTE=5
+RATE_LIMIT_BULK_UPLOAD_PER_MINUTE=3
+RATE_LIMIT_BULK_OPS_PER_MINUTE=10
+RATE_LIMIT_AI_CHAT_PER_MINUTE=30
+RATE_LIMIT_AI_GENERATE_PER_MINUTE=20
+
+# --- Capacidad --------------------------------------------------------------
+# Subirlos no es gratis: la carga masiva procesa el archivo entero dentro de una
+# transacción, así que el coste es memoria del worker y duración del bloqueo.
+BULK_MAX_ROWS=5000
+BULK_MAX_MB=5
+PAGINATION_DEFAULT=20
+PAGINATION_REPORTS=50
+
+# --- Dominio académico ------------------------------------------------------
+# Grados 6-12 y secciones A-D son la estructura de secundaria de COSTA RICA.
+# Solo hay que tocarlos para otro país o un centro con más secciones.
+ACADEMIC_GRADE_MIN=6
+ACADEMIC_GRADE_MAX=12
+ACADEMIC_SECTIONS=A,B,C,D
+EXAM_GRACE_SECONDS=30
+
+# ⚠️ NO son un parámetro de rendimiento: son TIEMPO ADICIONAL AL QUE UN
+# ESTUDIANTE TIENE DERECHO por su adecuación curricular. Bajarlos por error
+# reduce ese derecho en silencio y el sistema no lo va a cuestionar.
+EXAM_ADECUACION_ACCESO=1.25
+EXAM_ADECUACION_EVALUACION=1.50
+```
+
+> ⚠️ **`APP_URL` no es opcional aunque lo parezca.** Todos los enlaces de correo
+> —activación de cuenta y recuperación de contraseña— se arman con `url()`, es
+> decir con `APP_URL`. Con el valor por defecto (`http://localhost`) los correos
+> salen con enlaces inservibles y el fallo no da ningún error: el correo llega,
+> pero el enlace no lleva a ninguna parte.
+
 ## 7. Presupuesto de conexiones a Supabase
 - El **session pooler (5432)** mantiene una conexión por worker. Con Octane, el contenedor usa pocas (worker threads comparten). Sumá: app + worker dedicado ≤ límite del plan Supabase.
 - Si en producción escalás a varias instancias, vigilá ese total. El transaction pooler (6543) NO sirve aquí (rompe prepared statements con PDO — ver E9 en ESTADO_Y_PENDIENTES.md).
@@ -87,7 +141,11 @@ BCRYPT_ROUNDS=10
 ## 8. Notas
 - `BCRYPT_ROUNDS=10` solo para el evento/piloto si esperás muchos logins a la vez; podés volver a 12 después.
 - La imagen NO incluye `.env` (lo inyecta Coolify) ni `vendor` (se instala en el build).
-- Primer admin: `php artisan db:seed` (una vez) o crearlo manualmente; luego el admin da de alta al resto vía `/register`.
+- **Primer arranque, en este orden** (desde el 08/08/2026 el alta cambió):
+  1. `php artisan superadmin:create --send-setup-link --email=... --name="..."` — es el operador de la plataforma y **ninguna ruta de API lo crea**. Sin él nadie puede dar de alta instituciones.
+  2. El superadmin crea la institución (`POST /api/institutions`) y su administrador (`POST /api/institutions/{id}/admins`).
+  3. El admin del centro da de alta docentes y estudiantes, crea los grupos y **asigna los docentes** (`POST /api/teacher-assignments`). ⚠️ La tabla nace vacía a propósito: hasta que existan asignaciones, **ningún docente ve a ningún estudiante**.
+- La carga masiva de estudiantes exige la columna **`aula`** con el `group_code` de un grupo ya creado: el archivo no crea aulas. Bajar la plantilla actualizada de `/api/students/bulk-upload/template`.
 
 ## 9. Si se pone Cloudflare delante
 

@@ -231,7 +231,8 @@
       "Bash(pkill -f \"artisan.*serve.*8123\")",
       "Bash(curl -s -H \"Accept: application/json\" -H \"Content-Type: application/json\" -X POST -d '{\"email\":\"dsilvagadea@gmail.com\",\"password\":\"NeoAdmin2026\"}' http://127.0.0.1:8124/api/auth/login -w \"\\\\nHTTP %{http_code}\\\\n\")",
       "Read(//c/tmp/**)",
-      "Bash(curl -s -H 'Accept: application/json' -H 'Authorization: Bearer __TRACKED_VAR__' http://127.0.0.1:8124/api/institutions -w '\\\\nHTTP %{http_code}\\\\n')"
+      "Bash(curl -s -H 'Accept: application/json' -H 'Authorization: Bearer __TRACKED_VAR__' http://127.0.0.1:8124/api/institutions -w '\\\\nHTTP %{http_code}\\\\n')",
+      "Bash(grep -n \"^### \\\\|institution\\\\|exams\\\\`\\\\|/api/exams\")"
     ]
   }
 }

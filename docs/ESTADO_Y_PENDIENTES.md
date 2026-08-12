@@ -1,7 +1,8 @@
 # NeoEduCore — Estado del proyecto y pendientes
 **Última actualización:** 8 de agosto de 2026  
 **Rama activa:** Darwin  
-**Tests:** 305 pasando / 0 fallando
+**Tests:** 375 pasando / 0 fallando  
+**Endpoints:** 117
 
 ---
 
@@ -641,7 +642,7 @@ las columnas a `questions` (y llevarlas al ERD nuevo) o recortar la promesa en [
 ### Sesión 08/08/2026 (tarde) — Permisos: la relación docente↔estudiante, los roles y la matrícula
 
 > Origen: explicar al usuario cómo estaba modelada la asignación estudiante-profesor. No era
-> una auditoría — el hallazgo salió de leer el código para responder. Suite: **357/357**
+> una auditoría — el hallazgo salió de leer el código para responder. Suite: **375/375**
 > (antes 305). Tres migraciones aplicadas a producción (lotes 17, 18 y 19).
 
 **Es el quinto hallazgo de seguridad por rol de la serie, y el más de fondo:** los anteriores
@@ -937,7 +938,8 @@ La migración ya es idempotente ante eso, pero el comando correcto para regenera
 | GET/POST/PUT/DELETE | `/api/groups` | CRUD grupos (`apiResource`) |
 | POST | `/api/groups/{group}/students` | Alta de estudiantes en el grupo (body: `student_user_ids[]`). Idempotente; reabre membresías cerradas |
 | DELETE | `/api/groups/{group}/students` | Baja **lógica** del grupo (body: `student_user_ids[]`) — marca `left_at`, conserva historial |
-| POST/PUT/DELETE | `/api/exams` | Mutaciones de exámenes |
+| POST/PUT/DELETE | `/api/exams` | Mutaciones de exámenes. Los `group_ids` exigen asignación **en la materia** del examen (403) |
+| PATCH | `/api/exams/{exam}/status` | Transiciones `draft→published→active→completed`. Revalida la asignación al publicar/activar |
 | POST/PUT/DELETE | `/api/exams/{exam}/questions` | Mutaciones de preguntas |
 | PUT/DELETE | `/api/questions/{question}` | Update/delete pregunta |
 | GET | `/api/exam-attempts/{attempt}/answers` | Ver respuestas de intento |
@@ -977,19 +979,43 @@ La migración ya es idempotente ante eso, pero el comando correcto para regenera
 | POST | `/api/students/{id}/subjects` | Inscribir estudiante a materia |
 | DELETE | `/api/students/{id}/subjects/{subject}` | Desinscribir estudiante de materia |
 
-### Autenticados — Solo Admin
+### Autenticados — Solo SUPERADMIN (operador de plataforma, externo a los centros)
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| GET | `/api/institutions` | Lista instituciones |
-| GET/PUT | `/api/institutions/{id}` | Ver/editar institución |
+| GET | `/api/institutions` | Lista instituciones (filtros: `q`, `is_active`) |
+| POST | `/api/institutions` | Alta de institución |
+| GET | `/api/institutions/{id}` | Ver institución + recuento de cuentas por rol |
+| PUT | `/api/institutions/{id}` | Editar institución |
 | PATCH | `/api/institutions/{id}/toggle` | Activar/desactivar institución |
+| DELETE | `/api/institutions/{id}` | ⚠️ **Irreversible**: cascada a las 18 tablas del centro + borra sus cuentas |
+| POST | `/api/institutions/{institution}/admins` | Crear administrador del centro (nace inactivo, recibe enlace) |
+| GET | `/api/institution-admins` | Lista administradores (filtros: `institution_id`, `status`, `q`) |
+| GET/PUT | `/api/institution-admins/{id}` | Ver/editar administrador (404 si no es `user_type=admin`) |
+| PATCH | `/api/institution-admins/{id}/status` | Activar/suspender administrador |
+| PATCH | `/api/institution-admins/{id}/reset-password` | Enviar enlace de contraseña |
+| DELETE | `/api/institution-admins/{id}` | Eliminar (409 si es el único del centro) |
+
+> El superadmin **no tiene ninguna otra ruta**, y tampoco podría usarla: sin `institution_id` nunca hay `tenant_id` y `TenantScoped` rechaza la consulta. Se crea solo por consola (`php artisan superadmin:create`).
+
+### Autenticados — Solo Admin de institución
+| Método | Ruta | Descripción |
+|--------|------|-------------|
 | POST | `/api/subjects` | Crear materia — nombre único por institución (ignora mayúsculas/espacios) |
 | PUT/PATCH | `/api/subjects/{subject}` | Renombrar materia — misma regla de unicidad |
 | DELETE | `/api/subjects/{subject}` | Eliminar materia — **cascadea** a exámenes → preguntas → intentos → respuestas |
-| POST | `/api/bulk/reassign-group` | Reasignación masiva de grupo (`throttle:10,1`) |
-| POST | `/api/bulk/reassign-subjects` | Reasignación masiva de materias (`throttle:10,1`) |
-| POST | `/api/bulk/reset-progress` | Reseteo de progreso para repitentes (`throttle:10,1`) |
-| PUT | `/api/system/config` | Editar configuración (incl. `passing_percentage`) |
+| GET | `/api/teacher-assignments` | Lista asignaciones docente→grupo→materia (filtros: `teacher_user_id`, `group_id`, `subject_id`) |
+| POST | `/api/teacher-assignments` | Asignar docente: crea el producto **grupo × materia**; idempotente |
+| DELETE | `/api/teacher-assignments/bulk` | Retirar todas las de un docente (opcionalmente en un grupo) |
+| DELETE | `/api/teacher-assignments/{id}` | Retirar una asignación |
+| POST | `/api/groups/{group}/students` | Matricular estudiantes — **admin-only** desde el 08/08/2026 |
+| DELETE | `/api/groups/{group}/students` | Baja lógica (`left_at`) — **admin-only** |
+| POST | `/api/students/bulk-upload` | Carga masiva — exige columna **`aula`** (`throttle:bulk-upload`) |
+| POST | `/api/bulk/reassign-group` | Reasignación masiva de grupo (`throttle:bulk-ops`) |
+| POST | `/api/bulk/reassign-subjects` | Reasignación masiva de materias (`throttle:bulk-ops`) |
+| POST | `/api/bulk/reset-progress` | Reseteo de progreso para repitentes (`throttle:bulk-ops`) |
+| PUT | `/api/system/config` | Editar configuración de **su** institución (incl. `passing_percentage`) |
+
+> El admin de institución **no tiene acceso a `/api/institutions`** (403 en todas sus rutas, incluida la de su propio centro). Su institución la configura por `GET`/`PUT /api/system/config`.
 
 #### Reasignación masiva — contrato
 
