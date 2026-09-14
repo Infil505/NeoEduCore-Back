@@ -20,6 +20,7 @@ use App\Http\Controllers\AI\AiRecommendationController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\InstitutionController;
 use App\Http\Controllers\Admin\InstitutionAdminController;
+use App\Http\Controllers\Admin\PlatformMetricsController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\SystemConfigController;
@@ -272,6 +273,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Administradores de institución. El alta cuelga de la institución
         // porque un admin no existe fuera de un centro.
         Route::post('/institutions/{institution}/admins', [InstitutionAdminController::class, 'store']);
+
+        // Métricas de plataforma del tutor IA (D5): hace medible el criterio de
+        // [173] («>75 % de mensajes que superen validación»). Solo agregados —
+        // ni un identificador de alumno sale de aquí.
+        Route::get('/platform/ai-tutor-metrics', [PlatformMetricsController::class, 'aiTutor']);
 
         Route::get('/institution-admins', [InstitutionAdminController::class, 'index']);
         Route::get('/institution-admins/{institutionAdmin}', [InstitutionAdminController::class, 'show']);

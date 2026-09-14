@@ -10,7 +10,8 @@ tests/
 │   ├── Auth/
 │   │   ├── AuthSessionTest.php           (GET /auth/me, POST /auth/logout)
 │   │   ├── LoginRegisterTest.php         (Register, Login)
-│   │   └── PasswordResetTest.php         (Password reset & change)
+│   │   ├── PasswordResetTest.php         (Password reset & change)
+│   │   └── SesionInactivaTest.php        (D3: caducidad por inactividad)
 │   ├── Crud/
 │   │   ├── StudentsCrudTest.php          (All student endpoints)
 │   │   ├── GroupsCrudTest.php            (All group endpoints)
@@ -25,11 +26,14 @@ tests/
 │   │   ├── UsersTest.php                 (User management endpoints)
 │   │   ├── InstitutionsTest.php          (Institution endpoints)
 │   │   ├── AiRecommendationsTest.php     (AI recommendation endpoints)
-│   │   └── ReportsTest.php               (Report endpoints)
+│   │   ├── ReportsTest.php               (Report endpoints)
+│   │   └── ReportExportsTest.php         (B1/S4: XLSX y neutralización de fórmulas)
 │   ├── Academic/
 │   │   ├── BulkReassignmentTest.php      (Reasignación masiva: grupo y materias)
 │   │   ├── ResetProgressTest.php         (Reseteo de progreso para repitentes)
-│   │   └── GroupStudentsTest.php         (Alta/baja de estudiantes en un grupo)
+│   │   ├── GroupStudentsTest.php         (Alta/baja de estudiantes en un grupo)
+│   │   ├── CurricularMetadataTest.php    (D2: tema/indicador/dificultad y materia del recurso)
+│   │   └── TopicMasteryTest.php          (D2: dominio por tema y reporte al docente)
 │   ├── Exams/
 │   │   └── AnswerLeakTest.php            (El alumno no ve la respuesta antes de entregar)
 │   ├── Db/
@@ -45,7 +49,10 @@ tests/
 │   │   ├── Level6_SystemConfigTest.php   (Configuración del sistema)
 │   │   └── Level7_AcademicCycleTest.php  (Ciclo de fin de año end-to-end)
 │   ├── AI/
-│   │   └── AiTutorEfficiencyTest.php     (Caché de contexto, JSONB incremental, límite global)
+│   │   ├── AiTutorEfficiencyTest.php     (Caché de contexto, JSONB incremental, límite global)
+│   │   ├── AiTutorPrivacyTest.php        (Nada identificativo viaja a OpenAI)
+│   │   ├── AiRecommendationsQueueTest.php (D1: análisis de IA diferido a la cola)
+│   │   └── AiTutorIncidentsTest.php      (D4/D5: aviso de IA y registro de incidencias)
 │   ├── Perf/
 │   │   └── QueryBudgetTest.php           (Presupuesto de queries / guardia anti-N+1)
 │   └── Routes/
@@ -57,7 +64,7 @@ tests/
 └── TestCase.php                          (Base test class)
 ```
 
-**Total: 265 tests, 944 assertions**
+**Total: 422 tests, 1427 assertions** (13/09/2026)
 
 ## Ejecución
 
@@ -211,6 +218,29 @@ php artisan test --verbose
 - ✅ El cupo de regeneraciones es por intento (`attempt_id`), no por examen+materia
 - ✅ El recurso sugerido corresponde al grado del alumno
 
+### Caducidad de sesión por inactividad — `SesionInactivaTest` (6 tests)
+Decisión D3. Los dos casos que importan son opuestos y están los dos.
+- ✅ Token sin usar más de una hora → 401
+- ✅ Token usado hace 59 min → sigue valiendo
+- ✅ **Sesión de 5 h pero activa → no caduca** (es el examen largo)
+- ✅ Token recién emitido sin `last_used_at` → vale
+- ✅ El tope absoluto de 12 h manda aunque se acabe de usar
+- ✅ Con `inactivity_minutes = 0` la comprobación queda desactivada
+
+### Aviso de IA e incidencias — `AiTutorIncidentsTest` (10 tests)
+Decisiones D4 y D5. El que más importa es el cuarto: la tabla de incidencias no
+puede acabar guardando el dato personal que motivó el bloqueo.
+- ✅ El chat devuelve `ai_notice`
+- ✅ El diagnóstico también
+- ✅ Un bloqueo por PII deja fila, con tipo, etapa, alumno e institución
+- ✅ **La incidencia no guarda el texto que la provocó**
+- ✅ Un enlace fuera de la lista blanca se registra aunque la respuesta sí se entregue
+- ✅ Un fallo de OpenAI se registra como `model_error`
+- ✅ El superadmin ve agregados, y ni el id ni el nombre del alumno
+- ✅ Sin mensajes la tasa es 100 %, y los tipos sin incidencias salen en 0
+- ✅ 403 para el admin de un centro
+- ✅ 403 para el docente
+
 ### Metadatos curriculares — `CurricularMetadataTest` (8 tests)
 Decisión D2: `questions` gana tema, indicador y dificultad; `study_resources` gana materia.
 - ✅ Crear pregunta con `topic`, `indicator` y `difficulty`
@@ -308,7 +338,7 @@ el arreglo** (neutralizando `Exam::scopeVisibleTo`).
 - ✅ Level 5 — Analíticas y reportes (9 tests): institution/subjects/student analytics, CSV, historial, tutor usage
 - ✅ Level 6 — Configuración del sistema (8 tests): lectura/escritura config, validaciones, roles
 
-**Total: 265 tests, 944 assertions**
+**Total: 422 tests, 1427 assertions** (13/09/2026)
 
 ## Helpers de Autenticación
 

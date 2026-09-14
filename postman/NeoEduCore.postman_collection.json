@@ -3760,6 +3760,35 @@
             ]
         },
         {
+            "name": "99 · Platform",
+            "item": [
+                {
+                    "name": "GET /api/platform/ai-tutor-metrics",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/platform/ai-tutor-metrics",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "platform",
+                                "ai-tutor-metrics"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
             "name": "99 · Teacher-assignments",
             "item": [
                 {

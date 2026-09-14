@@ -45,6 +45,29 @@ CREATE TYPE public.ai_generation_source AS ENUM (
 
 
 --
+-- Name: ai_incident_stage; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.ai_incident_stage AS ENUM (
+    'chat',
+    'diagnosis'
+);
+
+
+--
+-- Name: ai_incident_type; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.ai_incident_type AS ENUM (
+    'pii',
+    'too_short',
+    'too_long',
+    'blocked_url',
+    'model_error'
+);
+
+
+--
 -- Name: ai_recommendation_type; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -224,6 +247,21 @@ CREATE TABLE public.ai_recommendations (
     updated_at timestamp(0) without time zone,
     attempt_id uuid,
     generated_by public.ai_generation_source DEFAULT 'heuristic'::public.ai_generation_source NOT NULL
+);
+
+
+--
+-- Name: ai_tutor_incidents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ai_tutor_incidents (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    institution_id uuid NOT NULL,
+    student_user_id uuid,
+    session_id uuid,
+    occurred_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    type public.ai_incident_type NOT NULL,
+    stage public.ai_incident_stage NOT NULL
 );
 
 
@@ -773,6 +811,14 @@ ALTER TABLE ONLY public.ai_recommendations
 
 
 --
+-- Name: ai_tutor_incidents ai_tutor_incidents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_tutor_incidents
+    ADD CONSTRAINT ai_tutor_incidents_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: calendar_events calendar_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1040,6 +1086,20 @@ CREATE INDEX ai_chat_sessions_student_user_id_updated_at_index ON public.ai_chat
 --
 
 CREATE INDEX ai_recommendations_attempt_id_index ON public.ai_recommendations USING btree (attempt_id);
+
+
+--
+-- Name: ai_tutor_incidents_institution_occurred_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ai_tutor_incidents_institution_occurred_index ON public.ai_tutor_incidents USING btree (institution_id, occurred_at);
+
+
+--
+-- Name: ai_tutor_incidents_type_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ai_tutor_incidents_type_index ON public.ai_tutor_incidents USING btree (type);
 
 
 --
@@ -1395,6 +1455,30 @@ ALTER TABLE ONLY public.ai_recommendations
 
 
 --
+-- Name: ai_tutor_incidents ai_tutor_incidents_institution_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_tutor_incidents
+    ADD CONSTRAINT ai_tutor_incidents_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ai_tutor_incidents ai_tutor_incidents_session_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_tutor_incidents
+    ADD CONSTRAINT ai_tutor_incidents_session_id_foreign FOREIGN KEY (session_id) REFERENCES public.ai_chat_sessions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: ai_tutor_incidents ai_tutor_incidents_student_user_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_tutor_incidents
+    ADD CONSTRAINT ai_tutor_incidents_student_user_id_foreign FOREIGN KEY (student_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
 -- Name: calendar_events calendar_events_created_by_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1747,41 +1831,159 @@ ALTER TABLE ONLY public.users
 
 
 --
--- PostgreSQL database dump complete
---
-
-
---
--- Row Level Security: activado sin politicas, que es el estado por defecto de
--- Supabase. No lo crea ninguna migracion, asi que pg_dump contra una base local
--- no lo reproduce y se perderia en cada regeneracion del esquema. Se conserva
--- aqui para que el archivo siga describiendo la base real.
+-- Name: ai_chat_sessions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.ai_chat_sessions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: ai_recommendations; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.ai_recommendations ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: ai_tutor_incidents; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.ai_tutor_incidents ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: calendar_events; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.calendar_events ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: exam_attempts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.exam_attempts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: exam_targets; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.exam_targets ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: exams; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.exams ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: failed_jobs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.failed_jobs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: group_students; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.group_students ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: groups; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.groups ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: institutions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.institutions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: jobs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: migrations; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.migrations ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: password_reset_tokens; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.password_reset_tokens ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: personal_access_tokens; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.personal_access_tokens ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: question_options; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.question_options ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: questions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.questions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: student_answer_options; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.student_answer_options ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: student_answers; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.student_answers ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: student_progress; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.student_progress ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: student_subjects; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.student_subjects ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: students; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: study_resources; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.study_resources ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: subjects; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.subjects ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: teacher_assignments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.teacher_assignments ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: users; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
 --

@@ -10,6 +10,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Sanctum\PersonalAccessToken;
+use Laravel\Sanctum\Sanctum;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -30,6 +32,59 @@ class AppServiceProvider extends ServiceProvider
         $this->registrarLimitadores();
         $this->avisarSiLaCacheAnulaLosLimites();
         $this->limitarDuracionDeConsultas();
+        $this->caducarSesionesInactivas();
+    }
+
+    /**
+     * Caduca los tokens que llevan demasiado tiempo sin usarse (decisión D3).
+     *
+     * `sanctum.expiration` no sirve para esto: cuenta desde que se emitió el
+     * token, así que para cumplir «60 minutos de **inactividad**» ([758]) habría
+     * que bajarla a 60 y entonces un examen de hasta 300 minutos expulsaría al
+     * alumno a media prueba. Lo que hace falta es mirar `last_used_at`, que
+     * Sanctum ya mantiene en `personal_access_tokens`.
+     *
+     * **Va por `authenticateAccessTokensUsing()` y no por un middleware**, y el
+     * motivo es de orden de ejecución: el guard actualiza `last_used_at` a
+     * `now()` justo después de validar el token, así que un middleware posterior
+     * leería siempre un token recién usado y no caducaría ninguno. Este callback
+     * corre **antes** de esa actualización (`Sanctum\Guard::__invoke`). Además
+     * cubre toda la aplicación sin tener que acordarse de añadirlo a ninguna
+     * ruta nueva.
+     *
+     * El token caducado no se borra: deja de autenticar y ya. Limpiarlos es
+     * trabajo de una tarea programada (`sanctum:prune-expired`), no del camino
+     * caliente de cada petición.
+     */
+    private function caducarSesionesInactivas(): void
+    {
+        Sanctum::authenticateAccessTokensUsing(
+            function (PersonalAccessToken $token, bool $esValido): bool {
+                if (! $esValido) {
+                    return false;
+                }
+
+                // El límite se lee en cada comprobación y no al arrancar: si se
+                // leyera aquí fuera, el callback quedaría registrado con el valor
+                // del arranque y cambiarlo después —en un test, o recargando la
+                // configuración— no tendría efecto.
+                $minutos = (int) config('sanctum.inactivity_minutes');
+
+                if ($minutos <= 0) {
+                    return true; // comprobación desactivada
+                }
+
+                // Un token recién emitido no tiene `last_used_at`: se cuenta
+                // desde su creación, que es cuando empezó la sesión.
+                $ultimoUso = $token->last_used_at ?? $token->created_at;
+
+                if ($ultimoUso === null) {
+                    return true;
+                }
+
+                return $ultimoUso->gt(now()->subMinutes($minutos));
+            }
+        );
     }
 
     /**

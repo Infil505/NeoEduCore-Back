@@ -95,6 +95,23 @@ return [
 
         // Vigencia (segundos) del prompt de sistema cacheado por estudiante.
         'context_ttl' => (int) env('OPENAI_CONTEXT_TTL', 300),
+
+        /*
+         | Aviso de que quien responde es una IA ([397], decisión D4).
+         |
+         | Viaja en la respuesta de `POST /ai/tutor/chat` y de
+         | `GET /ai/tutor/diagnosis`, en vez de quedar como un rótulo fijo del
+         | frontend: el compromiso es del sistema, y así el día que haya una app
+         | móvil o un segundo cliente no hay que acordarse de repetirlo.
+         |
+         | Está en configuración porque es texto que se ajusta —es para menores
+         | de primaria— sin tocar código.
+         */
+        'notice' => env(
+            'OPENAI_TUTOR_NOTICE',
+            'Esta respuesta la escribió un asistente de inteligencia artificial. '
+            . 'Puede equivocarse: si algo no te cuadra, preguntale a tu docente.'
+        ),
     ],
 
     /*

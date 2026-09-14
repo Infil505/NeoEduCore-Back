@@ -1,12 +1,39 @@
 # NeoEduCore — Estado del proyecto y pendientes
 **Última actualización:** 13 de septiembre de 2026  
 **Rama activa:** Darwin  
-**Tests:** 405 pasando / 0 fallando  
-**Endpoints:** 121
+**Tests:** 422 pasando / 0 fallando  
+**Endpoints:** 122
 
 > ☑️ **Control de avance:** todo lo abierto de este documento está resumido como checklist
 > marcable en [`CHECKLIST_PENDIENTES.md`](CHECKLIST_PENDIENTES.md). Al cerrar algo, marcarlo
 > allí y actualizar aquí la sección correspondiente.
+
+> ### Qué cambió el 13/09/2026
+>
+> Diez tareas cerradas en una sesión, incluidas **las ocho decisiones** que bloqueaban al
+> resto. De 375 tests y 117 endpoints se pasó a **422 y 122**, con **cuatro migraciones
+> nuevas ya aplicadas** en la base remota.
+>
+> | | Qué se decidió | Dónde está |
+> |---|---|---|
+> | **B1** | Reportes también en XLSX, con el dataset compartido con el CSV | [§2 Reportes](#-reportes) |
+> | **S4** | Inyección de fórmulas en los exportados: confirmada y corregida | [§2 Reportes](#-reportes) |
+> | **D1** | La IA de las recomendaciones se difiere a la cola, disparada **al consultar resultados** | [§2 Recomendaciones IA](#-recomendaciones-ia) |
+> | **D2** | Se añaden tema, indicador y dificultad a los ítems, y materia a los recursos | [§2 Metadatos curriculares](#-metadatos-curriculares-y-dominio-por-tema) |
+> | **D4** | El aviso de IA viaja en la respuesta (`ai_notice`), no lo pone el frontend | [§2 Aviso de IA e incidencias](#-aviso-de-ia-e-incidencias-del-tutor) |
+> | **D5** | Tabla de incidencias + métrica de plataforma para el superadmin | [§2 Aviso de IA e incidencias](#-aviso-de-ia-e-incidencias-del-tutor) |
+> | **D3** | Caducidad por **inactividad** (60 min), no por expiración absoluta | §9.3 |
+> | **D6** | El reset del admin sigue sin activar, pero la respuesta lo advierte | §8 |
+> | **D7** | `max_attempts` se queda visible al alumno: confirma «intento 2 de 3» | — |
+> | **D8** | RLS formalizado en migración: 26 tablas, y el volcado ya no lo pierde | §5 |
+>
+> **El patrón de las cuatro decisiones fue el mismo: construir lo prometido en vez de
+> recortar la promesa.** Es lo contrario de lo que venía haciéndose —ver la nota nueva en
+> la cabecera de `ANALISIS_MODELO_DATOS_TFG.md`— y tiene una consecuencia que conviene no
+> perder de vista: **el sistema depende ahora del worker de cola**. Sin `queue:work`
+> (P1) ningún alumno pasa de las recomendaciones de plantilla.
+>
+> **Ya no queda ninguna decisión bloqueante abierta:** D1–D8 están todas cerradas. Lo siguiente es S1 (revisión de seguridad por rol) y P1–P2 (despliegue), en ese orden.
 
 ---
 
@@ -199,6 +226,53 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 - **List** `GET /api/exam-attempts/{attempt}/answers`
 - **Review** `PATCH /api/student-answers/{answer}/review` — revisión manual de SA/Essay
 - `review_status` es ENUM PostgreSQL nativo: `auto_graded` | `needs_review` | `reviewed`
+
+---
+
+### ✅ Aviso de IA e incidencias del tutor
+
+Decisiones **D4** y **D5** (13/09/2026). Salen del mismo sitio del informe.
+
+**D4 — aviso de IA ([397]).** `POST /ai/tutor/chat` y `GET /ai/tutor/diagnosis`
+devuelven `ai_notice` con el texto del aviso. **Va en la respuesta y no como rótulo
+fijo del frontend** porque el compromiso de [397] es del sistema: el día que haya una
+app móvil o un segundo cliente, nadie tiene que acordarse de repetirlo. El texto vive
+en `openai.tutor.notice` (`OPENAI_TUTOR_NOTICE`) porque es para alumnado de primaria y
+el tono se ajusta sin desplegar.
+
+**D5 — incidencias ([173]).** Los bloqueos del tutor dejaban solo un `Log::warning`:
+no había tabla ni contador, así que el criterio «más del 75 % de los mensajes deben
+superar la validación» **no se podía calcular**. Ahora cada bloqueo escribe una fila en
+`ai_tutor_incidents`.
+
+| Tipo | Qué pasó | ¿Cuenta para el 75 %? |
+|---|---|---|
+| `pii` | la respuesta traía algo que parecía un contacto | sí |
+| `too_short` / `too_long` | respuesta vacía o desbocada | sí |
+| `blocked_url` | enlace fuera de la lista blanca; **la respuesta sí se entrega**, sin el enlace | no |
+| `model_error` | OpenAI no respondió | no — eso es disponibilidad, no calidad del contenido |
+
+⚠️ **La tabla NO guarda el texto que provocó la incidencia.** Es la decisión importante
+del diseño: un registro de bloqueos por datos personales que almacenara el dato personal
+sería exactamente el fallo que pretende evitar. Se guarda el tipo, la etapa (`chat` o
+`diagnosis`) y el centro. Hay un test que lo comprueba.
+
+`student_user_id` sí se guarda —el centro necesita poder auditar su propio caso— pero
+**ningún endpoint lo expone**.
+
+**Métrica: `GET /platform/ai-tutor-metrics`, solo superadministrador.** Devuelve la
+ventana consultada, totales, `validation_pass_rate` frente al umbral de 75, desglose por
+tipo, por etapa, por institución y serie diaria. Filtros: `?from=`, `?to=`,
+`?institution_id=`. Solo agregados: ni un identificador de alumno sale de ahí, la misma
+frontera que `tutor-usage` aplica al docente.
+
+Dos detalles de implementación que conviene no perder:
+
+- `AiChatSession` lleva `TenantScoped` y **el superadministrador no tiene tenant**, así
+  que el controlador usa `withoutGlobalScope('tenant')` explícitamente. Es la excepción
+  legítima, no un descuido: sin ella el propio scope lanzaría excepción.
+- **Sin mensajes, la tasa es 100 %.** Un sistema que no ha respondido nada no ha
+  incumplido nada; devolver 0 pintaría de rojo a un centro recién creado.
 
 ---
 
@@ -605,9 +679,9 @@ el tutor IA es el diferenciador del TFG.
 | 3 | [173] «prohibirá datos personales» · [394] anonimización, Ley 8968, menores | El `full_name` del alumno viajaba en cada prompt a OpenAI | ✅ Corregido (H2) |
 | 4 | [173] materiales externos «mediante una lista blanca» | La lista blanca no cubría el texto libre del chat | ✅ Corregido (H2) |
 | 5 | [173] docentes con «solo métricas agregadas» y «reportes anónimos» | `tutor-usage` devolvía al docente un top 10 de alumnos **con nombre** | ✅ Corregido (H5) |
-| 6 | [173] «registrará incidencias» + criterio «>75 % de mensajes que superen validación» | Solo `Log::warning`. Sin tabla, sin contador: **el criterio no es medible** | 🔴 Abierto — ya en §9.3 |
+| 6 | [173] «registrará incidencias» + criterio «>75 % de mensajes que superen validación» | Tabla `ai_tutor_incidents` y métrica de plataforma para el superadmin | ✅ Resuelto el 13/09/2026 (D5) |
 | 7 | [171] ítems con «tema, indicador y dificultad» · [222] «indicadores curriculares» | `questions` tiene `topic`, `indicator` y `difficulty`; el diagnóstico y el reporte al docente agregan por tema | ✅ Resuelto el 13/09/2026 (D2) |
-| 8 | [397] el sistema avisa de que la sugerencia viene de un modelo automatizado | La respuesta del chat es `{session_id, reply, message_count}`: no hay campo de aviso | 🟡 Abierto — contrato con el frontend |
+| 8 | [397] el sistema avisa de que la sugerencia viene de un modelo automatizado | `ai_notice` viaja en la respuesta del chat y del diagnóstico | ✅ Resuelto el 13/09/2026 (D4) |
 | 9 | [173] recomendaciones «breves (2–4 oraciones)» | System prompt: «máximo 4 párrafos», 600 tokens (800 en práctica) | 🟡 Redacción |
 | 10 | [222] «modelos GPT-4 (variante ligera)» | `gpt-4o-mini`, que es variante de GPT-4o, no de GPT-4 | 🟡 Redacción |
 
@@ -616,9 +690,10 @@ el tutor IA es el diferenciador del TFG.
 > código — están recogidos como correcciones concretas en `ANALISIS_MODELO_DATOS_TFG.md`
 > §10.2. Quedan dos que **no** conviene resolver así:
 >
-> - **nº 8 (aviso de IA).** [397] promete algo razonable y barato de cumplir. O viaja en la
->   respuesta del chat, o el informe lo atribuye explícitamente a la interfaz; hoy no lo
->   dice ninguno de los dos, que es la única opción mala.
+> - **nº 8 (aviso de IA).** Resuelto el 13/09/2026 (D4): viaja en la respuesta, como campo
+>   `ai_notice`. Se eligió el sistema y no el frontend porque el compromiso de [397] es del
+>   sistema: el día que haya una app móvil o un segundo cliente, nadie tiene que acordarse
+>   de repetir el rótulo. El texto vive en `openai.tutor.notice`, ajustable por entorno.
 > - **Expiración de sesión** (§9.3): el informe pide 60 min y hay 12 h. Son cuentas de
 >   menores en equipos posiblemente compartidos del centro. Aquí es más defendible bajar
 >   la variable que relajar el requisito escrito.
@@ -961,8 +1036,8 @@ La migración ya es idempotente ante eso, pero el comando correcto para regenera
 - [x] ~~**Validar empíricamente el modelo de concurrencia**~~ → **Ejecutado 03/08/2026 (G11).** Prueba de carga con k6 contra base local desechable. Validado: coste por petición plano, throughput escala ×6,6 de 1 a 8 workers, saturación limpia sin errores 5xx, BD no es el cuello. Resultados en `ANALISIS_CONCURRENCIA.md` §6.
 - [ ] **Medir el RTT real desde el contenedor desplegado.** Es lo único que no se puede medir desde desarrollo (desde el portátil son ~152 ms) y es el parámetro que domina todo el modelo. `psql "$DATABASE_URL" -c '\timing on' -c 'SELECT 1;'` desde producción. Ver `ANALISIS_CONCURRENCIA.md` §6.5.
 
-- [ ] **Detección de drift esquema↔migraciones no automatizada.** El drift de `tokenable_id` (G3) vivió meses sin detectarse porque `SchemaIntegrityTest` corre sobre `01_schema.sql`, no contra las migraciones. El chequeo real hay que hacerlo a mano: BD limpia → `php artisan migrate` apuntando ahí → `php artisan schema:dump-sql --output=<tmp>` → `git diff --no-index` contra el artefacto. Si aparece algo más que el `ENABLE ROW LEVEL SECURITY` y la línea de versión de `pg_dump`, hay drift. **Pendiente:** empaquetarlo como comando `schema:check-drift` para poder correrlo en CI. **No regenerar `01_schema.sql` a ciegas:** se perdería el RLS que pone Supabase.
-- [ ] **`ENABLE ROW LEVEL SECURITY` fuera de las migraciones.** Lo aplica Supabase sobre las 24 tablas y no está en el historial de migraciones, así que un despliegue en un PostgreSQL que no sea Supabase no lo tendrá. Hoy no es un problema (el rol de la app es dueño de las tablas y las bypassa, y el aislamiento real lo da `TenantScoped`), pero conviene decidir si se formaliza en una migración.
+- [ ] **Detección de drift esquema↔migraciones no automatizada.** El drift de `tokenable_id` (G3) vivió meses sin detectarse porque `SchemaIntegrityTest` corre sobre `01_schema.sql`, no contra las migraciones. El chequeo real hay que hacerlo a mano: BD limpia → `php artisan migrate` apuntando ahí → `php artisan schema:dump-sql --output=<tmp>` → `git diff --no-index` contra el artefacto. Si aparece algo más que la línea de versión de `pg_dump`, hay drift. **Pendiente:** empaquetarlo como comando `schema:check-drift` para poder correrlo en CI. *(Desde D8 el `ENABLE ROW LEVEL SECURITY` ya está en las migraciones, así que dejó de ser una excepción esperada en esta comparación.)*
+- [x] ~~**`ENABLE ROW LEVEL SECURITY` fuera de las migraciones**~~ → **Resuelto el 13/09/2026 (D8).** La migración `2026_09_13_000004` lo declara sobre **26 tablas** (las 20 de dominio, incluida la nueva `ai_tutor_incidents`, más las 5 del framework y `institutions`). Es idempotente, así que en Supabase —donde ya estaba— no cambió nada; verificado tras aplicarla: la app sigue leyendo con normalidad. **Efecto colateral que quita una trampa:** `schema:dump-sql` ya recoge el RLS desde la propia base, así que dejó de haber que repegar el bloque a mano tras cada regeneración.
 
 ---
 
@@ -1070,6 +1145,7 @@ La migración ya es idempotente ante eso, pero el comando correcto para regenera
 | GET | `/api/reports/students/{id}/history.xlsx` | XLSX del historial (mismo dataset y permisos que el CSV) |
 | GET | `/api/reports/students/{id}/summary` | Agregados del estudiante para gráficos |
 | GET | `/api/reports/topics` | Temas a reforzar, agregados y sin nombres (docente: sus grupos; admin: la institución) |
+| GET | `/api/platform/ai-tutor-metrics` | Métricas del tutor IA — **solo superadmin**, solo agregados (D5) |
 | GET | `/api/reports/students/{id}/strategies` | Estrategias del tutor (acotado a exámenes propios) |
 | GET | `/api/reports/ai/tutor-usage` | Métricas de uso del tutor — el top nominal de alumnos **solo lo ve el admin** |
 | GET | `/api/system/config` | Configuración de la institución |
@@ -1321,11 +1397,22 @@ Reglas que sostienen el flujo:
 - **Solo se activa desde `inactive`.** Un reset sobre una cuenta `suspended` cambia la contraseña pero **no la reactiva**.
 - La columna `users.status` pasó a `DEFAULT 'inactive'` (migración `2026_08_07_000001`) para que la base no contradiga la regla. **No modifica filas existentes.**
 
-Sigue pendiente de decisión: `PATCH /users/{id}/reset-password` (un admin fija la
-contraseña de otro) **no activa** la cuenta. Es coherente con «la activa su
-dueño», pero deja una trampa de soporte: el admin cambia la contraseña, el
-usuario sigue sin poder entrar y no es evidente por qué. Se resuelve con
-`PATCH /users/{id}/status`.
+**Decidido el 13/09/2026 (D6): `PATCH /users/{id}/reset-password` sigue sin activar
+la cuenta, pero ahora la respuesta lo dice.** La regla no se toca —activar exige que
+el titular defina contraseña desde el enlace, porque eso prueba que controla el
+buzón, y eso un administrador no puede acreditarlo en su nombre—; lo que se corrige
+es la trampa de soporte. La respuesta devuelve:
+
+```json
+{
+  "message": "Contraseña actualizada y tokens revocados, pero la cuenta sigue sin activarse: …",
+  "data": { "status": "inactive", "can_sign_in": false, "activation_needed": true }
+}
+```
+
+Con eso el administrador sabe, en el momento, que tiene que enviarle el enlace de
+activación en vez de entregar una contraseña que no sirve. Si hace falta forzarlo de
+todos modos, sigue estando `PATCH /users/{id}/status`.
 
 ---
 
@@ -1344,7 +1431,7 @@ usuario sigue sin poder entrar y no es evidente por qué. Se resuelve con
 | Entregable | Prioridad | Nota |
 |---|---|---|
 | Mockups / prototipo visual (Figma) — Sprint 1 | ALTA | Sin prototipo entregado |
-| **Banco de ítems**: mínimo 60 preguntas reales con metadatos (tema, indicador, dificultad) | ALTA | Los seeders traen muy pocas |
+| **Banco de ítems**: mínimo 60 preguntas reales con metadatos (tema, indicador, dificultad) | ALTA | Los seeders traen muy pocas. **Desbloqueado el 13/09/2026 (D2)**: `questions` ya tiene `topic`, `indicator` y `difficulty` donde guardarlos |
 | Acta del taller de co-diseño con docentes | ALTA | Entregable de Fase 1 |
 | Piloto con usuarios reales (docentes y estudiantes) | ALTA | Fase de validación; condiciona los cap. 7 y 8 del informe |
 | Rúbricas para preguntas abiertas | MEDIA | Fase 2 |
@@ -1375,10 +1462,10 @@ Reverificadas contra el código el 05/08/2026:
 
 | Brecha | Gravedad | Evidencia |
 |---|---|---|
-| **Expiración de sesión: el informe exige 60 min, el sistema tiene 12 h** | ALTA | `config/sanctum.php`: `'expiration' => env('SANCTUM_TOKEN_EXPIRATION_MINUTES', 60 * 12)`. Es una discrepancia con el requisito no funcional de seguridad del informe: o se ajusta la variable, o se corrige el informe |
-| **Log de incidentes del tutor IA** | ALTA | No existe tabla ni servicio: los bloqueos por PII o por enlace fuera de la lista blanca solo dejan `Log::warning` en `AiTutorService` y `AiRecommendationService`. El informe [173] promete que «registrará incidencias» y fija como criterios de éxito «cero incidentes de PII» y «más del 75 % de mensajes que superen validación» — **el segundo no es calculable**: no se persiste ni el total validado ni el bloqueado. O se añade el contador, o se retira el criterio del informe |
+| ~~**Expiración de sesión: el informe exige 60 min, el sistema tiene 12 h**~~ | ~~ALTA~~ ✅ | **Resuelto el 13/09/2026 (D3).** No bajando la expiración absoluta —que habría echado al alumno a mitad de un examen de hasta 300 min— sino midiendo la **inactividad** real sobre `last_used_at`, que es lo que [758] pide. `SANCTUM_TOKEN_INACTIVITY_MINUTES=60` con el tope absoluto en 12 h |
+| ~~**Log de incidentes del tutor IA**~~ | ~~ALTA~~ ✅ | **Resuelto el 13/09/2026 (D5).** Tabla `ai_tutor_incidents` y `GET /platform/ai-tutor-metrics` para el superadmin: el criterio del 75 % de [173] pasó de no calculable a número que se mira. Detalle en [§2 Aviso de IA e incidencias](#-aviso-de-ia-e-incidencias-del-tutor). **Nota:** cubre el tutor (chat y diagnóstico); las recomendaciones post-examen no registran incidencia, su rastro es `ai_recommendations.generated_by` |
 | **Backups cifrados de la BD** | ALTA | Sin script ni documentación. Requisito no funcional de seguridad |
-| **Documentación OpenAPI** | ~~ALTA~~ ✅ | Resuelto el 05/08/2026: `php artisan openapi:generate` produce los **103 endpoints** desde las rutas reales. Antes había 6 anotados a mano. No se edita a mano y no se desincroniza |
+| **Documentación OpenAPI** | ~~ALTA~~ ✅ | Resuelto el 05/08/2026: `php artisan openapi:generate` produce el documento desde las rutas reales — eran 103 endpoints entonces, **122 al 13/09/2026**. Antes había 6 anotados a mano. No se edita a mano y no se desincroniza |
 | **Medición de cobertura ≥70%** | ALTA | El TFG la exige; no hay reporte generado. `php artisan test --coverage --min=70` (requiere Xdebug o PCOV) |
 | **HTTPS/TLS documentado** | MEDIA | Lo resuelve Coolify, pero debe quedar escrito en `DEPLOY_COOLIFY.md` |
 | **Monitoreo y alertas de caída** | MEDIA | Requisito no funcional de disponibilidad; sin Sentry ni equivalente |

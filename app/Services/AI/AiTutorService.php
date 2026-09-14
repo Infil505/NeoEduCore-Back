@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use OpenAI\Laravel\Facades\OpenAI;
 use App\Services\AI\AiOutputValidator;
+use App\Enums\AiIncidentStage;
+use App\Enums\AiIncidentType;
 use App\Services\Academic\TopicMasteryService;
 
 /**
@@ -89,7 +91,7 @@ class AiTutorService
 
         $history[] = ['role' => 'user', 'content' => $userContent];
 
-        $reply = $this->callOpenAi($systemPrompt, $history, $mode);
+        $reply = $this->callOpenAi($systemPrompt, $history, $mode, $studentUserId, $session->id);
 
         $nuevos = [
             ['role' => 'user',      'content' => $message, 'mode' => $mode, 'created_at' => now()->toISOString()],
@@ -103,6 +105,9 @@ class AiTutorService
         return [
             'session_id'    => $session->id,
             'reply'         => $reply,
+            // [397]: el sistema avisa de que esto lo escribió un modelo. Viaja
+            // con la respuesta, no como rótulo del frontend — ver D4.
+            'ai_notice'     => (string) config('openai.tutor.notice'),
             // El append + truncado ocurre en SQL; el resultado es determinista,
             // así que se calcula aquí en vez de releer la fila.
             'message_count' => min($totalPrevio + count($nuevos), $this->ajuste('stored_messages')),
@@ -277,20 +282,26 @@ class AiTutorService
 
             $text = trim((string) ($response->choices[0]->message->content ?? ''));
 
-            if ($text === '') {
+            // Coherencia con chat(): el diagnóstico pasa por el mismo filtro y
+            // sus bloqueos cuentan igual para el criterio de [173].
+            $validator = new AiOutputValidator();
+            $motivo    = $validator->motivo($text);
+
+            if ($motivo !== null) {
+                $this->anotarIncidencia($motivo, AiIncidentStage::Diagnosis, $studentUserId);
+
                 return $this->fallbackDiagnosis($name, $progressLines, $temasLines);
             }
 
-            // Coherencia con chat(): el diagnóstico también pasa por el filtro PII/longitud.
-            $validator = new AiOutputValidator();
-            if ($validator->validate($text) !== null) {
-                Log::warning('AiTutorService: diagnóstico bloqueado por validación PII/longitud');
-                return $this->fallbackDiagnosis($name, $progressLines, $temasLines);
+            if ($validator->contarUrlsBloqueadas($text) > 0) {
+                $this->anotarIncidencia(AiIncidentType::BlockedUrl, AiIncidentStage::Diagnosis, $studentUserId);
             }
 
             return $validator->sanitize($text);
         } catch (\Throwable $e) {
             Log::warning('AiTutorService: diagnosis OpenAI error', ['error' => $e->getMessage()]);
+            $this->anotarIncidencia(AiIncidentType::ModelError, AiIncidentStage::Diagnosis, $studentUserId);
+
             return $this->fallbackDiagnosis($name, $progressLines, $temasLines);
         }
     }
@@ -308,7 +319,13 @@ class AiTutorService
         };
     }
 
-    private function callOpenAi(string $systemPrompt, array $history, string $mode = 'ask'): string
+    private function callOpenAi(
+        string $systemPrompt,
+        array $history,
+        string $mode = 'ask',
+        ?string $studentUserId = null,
+        ?string $sessionId = null
+    ): string
     {
         // El timeout sale de OPENAI_REQUEST_TIMEOUT (config/openai.php, default
         // 30 s). Acótalo: mientras dura la llamada el worker de Octane está
@@ -326,21 +343,51 @@ class AiTutorService
 
             $text = trim((string) ($response->choices[0]->message->content ?? ''));
 
-            if ($text === '') {
+            $validator = new AiOutputValidator();
+            $motivo    = $validator->motivo($text);
+
+            if ($motivo !== null) {
+                $this->anotarIncidencia($motivo, AiIncidentStage::Chat, $studentUserId, $sessionId);
+
                 return $this->fallbackReply();
             }
 
-            $validator = new AiOutputValidator();
-            if ($validator->validate($text) !== null) {
-                Log::warning('AiTutorService: output bloqueado por validación PII/longitud');
-                return $this->fallbackReply();
+            // El enlace fuera de lista blanca no tumba la respuesta —se sustituye
+            // por el aviso— pero sí es una incidencia: sin contarla, nadie sabría
+            // cuántas veces el tutor intenta mandar a los críos fuera del catálogo.
+            $bloqueadas = $validator->contarUrlsBloqueadas($text);
+
+            if ($bloqueadas > 0) {
+                $this->anotarIncidencia(AiIncidentType::BlockedUrl, AiIncidentStage::Chat, $studentUserId, $sessionId);
             }
 
             return $validator->sanitize($text);
         } catch (\Throwable $e) {
             Log::warning('AiTutorService: OpenAI error', ['error' => $e->getMessage()]);
+            $this->anotarIncidencia(AiIncidentType::ModelError, AiIncidentStage::Chat, $studentUserId, $sessionId);
+
             return $this->fallbackReply();
         }
+    }
+
+    /**
+     * Registra la incidencia (D5) sin dejar que su fallo tumbe la conversación.
+     *
+     * Se envuelve aquí y no dentro del logger porque este camino corre en medio
+     * de una respuesta al alumno: pase lo que pase con la estadística, él tiene
+     * que recibir su mensaje de reserva.
+     */
+    private function anotarIncidencia(
+        AiIncidentType $tipo,
+        AiIncidentStage $etapa,
+        ?string $studentUserId,
+        ?string $sessionId = null
+    ): void {
+        if ($studentUserId === null) {
+            return;
+        }
+
+        app(AiIncidentLogger::class)->registrar($tipo, $etapa, $studentUserId, $sessionId);
     }
 
     private function buildSystemPrompt(Student $student): string

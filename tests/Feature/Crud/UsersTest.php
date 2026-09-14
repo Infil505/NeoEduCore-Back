@@ -89,6 +89,7 @@ class UsersTest extends TestCase
 
         $teacher = User::factory()->teacher()->create([
             'institution_id' => $institution->id,
+            'status'         => 'active',
         ]);
 
         $res = $this->patchJson("/api/users/{$teacher->id}/reset-password", [
@@ -97,5 +98,41 @@ class UsersTest extends TestCase
         ]);
 
         $res->assertOk();
+        $res->assertJsonPath('data.can_sign_in', true);
+        $res->assertJsonPath('data.activation_needed', false);
+    }
+
+    /**
+     * Decisión D6. El reset del administrador **no activa la cuenta**: activar
+     * exige que el titular defina contraseña desde el enlace que recibe por
+     * correo, porque eso prueba que controla ese buzón.
+     *
+     * Lo que se comprueba aquí es que la respuesta lo **diga**. Antes devolvía
+     * un escueto «contraseña actualizada» y el administrador entregaba una
+     * contraseña con la que no se podía entrar, sin que nada lo advirtiera.
+     */
+    public function test_el_reset_no_activa_la_cuenta_y_la_respuesta_lo_advierte(): void
+    {
+        $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
+
+        $teacher = User::factory()->teacher()->create([
+            'institution_id' => $institution->id,
+            'status'         => 'inactive',
+        ]);
+
+        $res = $this->patchJson("/api/users/{$teacher->id}/reset-password", [
+            'password'              => 'NewPassword123!',
+            'password_confirmation' => 'NewPassword123!',
+        ]);
+
+        $res->assertOk();
+        $res->assertJsonPath('data.status', 'inactive');
+        $res->assertJsonPath('data.can_sign_in', false);
+        $res->assertJsonPath('data.activation_needed', true);
+        $this->assertStringContainsString('sigue sin activarse', $res->json('message'));
+
+        // Y sigue sin poder entrar, que es lo que el aviso anuncia.
+        $this->assertDatabaseHas('users', ['id' => $teacher->id, 'status' => 'inactive']);
     }
 }

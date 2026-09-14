@@ -1,7 +1,34 @@
 # NeoEduCore — Checklist de pendientes
 
-**Creada:** 10 de septiembre de 2026
-**Base:** estado registrado al 08/08/2026 (último commit `7851f21`, 11/08/2026) — 375 tests, 117 endpoints
+**Creada:** 10 de septiembre de 2026 · **última actualización:** 13 de septiembre de 2026
+**Base:** estado registrado al 08/08/2026 (375 tests, 117 endpoints)
+**Ahora:** 422 tests, 122 endpoints, 4 migraciones nuevas aplicadas
+
+## Avance al 13/09/2026
+
+| Cerrado | Qué se hizo |
+|---|---|
+| **B1** | Reportes en XLSX, dataset compartido con el CSV |
+| **S4** | Inyección de fórmulas en los exportados: confirmada y corregida |
+| **D1** | IA de recomendaciones a la cola, disparada al consultar resultados |
+| **D2** | Tema, indicador y dificultad en los ítems; materia en los recursos |
+| **D4** | Aviso de IA (`ai_notice`) en la respuesta del tutor |
+| **D5** | Tabla de incidencias + métrica de plataforma para el superadmin |
+| **D3** | Caducidad por **inactividad** (60 min), no por expiración absoluta |
+| **D6** | El reset del admin sigue sin activar, pero la respuesta lo advierte |
+| **D7** | `max_attempts` se queda visible al alumno (sin cambios de código) |
+| **D8** | RLS formalizado en migración: 26 tablas |
+
+**Ya no queda ninguna decisión bloqueante: D1–D8 están cerradas.** Arrastran cerradas
+**K1–K6** y **K9**, e **I-11**; queda desbloqueado **E2** (banco de ítems).
+
+**Lo siguiente, por orden:** **S1** (revisión de seguridad por rol), que ahora cubre
+bastante más superficie que el 10/09 — hay 5 endpoints nuevos y 4 tablas nuevas. Y
+luego **P1–P2**, que dejaron de ser solo despliegue:
+
+- **sin worker de cola, D1 no funciona** (los intentos se quedan en `preparing`);
+- hay que fijar en Coolify `QUEUE_CONNECTION=database` y **las dos** variables de sesión
+  de D3.
 
 > **Cómo usarla.** Marcar `[x]` al terminar y añadir la fecha al final de la línea
 > (`— ✅ 12/09/2026`). Si una tarea se descarta, marcarla igual y escribir por qué
@@ -14,17 +41,24 @@
 > también figure allí, actualizar los dos sitios.
 >
 > 📊 Hay una copia en Excel, [`CHECKLIST_PENDIENTES.xlsx`](CHECKLIST_PENDIENTES.xlsx), con el
-> estado en un desplegable y una hoja de resumen que calcula el avance. Se generó desde
-> este fichero el 10/09/2026, pero **las dos copias no se sincronizan**: conviene marcar
-> el avance en una sola.
+> estado en un desplegable y una hoja de resumen que calcula el avance. **Las dos copias se
+> mantienen a mano, no se sincronizan solas** (decisión del 13/09/2026: se marcan las dos).
+> El Excel se edita **en sitio**, nunca regenerándolo desde este fichero, o se pierden la
+> hoja de resumen y el desplegable. Las filas nuevas van dentro del rango `2:327`, que es
+> el que abarcan las fórmulas y la validación.
 >
 > ⚠️ Lo que depende de producción (despliegue, contraseña del superadmin, asignaciones)
 > figura como pendiente según el último registro. **Verificarlo antes de empezar**: pudo
 > cambiar sin quedar anotado.
+>
+> 🗄️ **Las migraciones sí están aplicadas.** Las cuatro del 13/09 se aplicaron en la base
+> remota de Supabase, que hace de ambiente de pruebas. Lo que falta desplegar
+> es el **código** (P1): las columnas existen, pero nada las usa hasta que el servidor
+> corra la versión nueva.
 
-**Orden sugerido:** Decisiones D1–D3 → Seguridad S1 → Producción P1–P4 → Mediciones →
-Informe. Frontend y entregables pueden avanzar en paralelo, salvo E2 (banco de ítems), que
-espera a D2.
+**Orden sugerido:** ~~Decisiones D1–D3~~ → **Seguridad S1** → Producción P1–P4 →
+Mediciones → Informe. Frontend y entregables pueden avanzar en paralelo; E2 ya no espera
+a nada.
 
 ---
 
@@ -62,25 +96,40 @@ Primero decidir, después ejecutar. Al tomar la decisión, anotar **qué se elig
   - **Desbloquea E2** (banco de 60 ítems) y cierra **K2**, **K3** y **K4**.
   - ⚠️ Queda vivo que los temas dependen de que el profesorado los escriba, y que la agregación no cubre sinónimos ni tildes. Si el piloto (E4) muestra dispersión, la salida es el catálogo.
   - Fuente: `ESTADO_Y_PENDIENTES.md` §2 Metadatos curriculares · §3.6 nº 7
-- [ ] 🔴 **D3 · Expiración de sesión: 60 min (informe) vs. 12 h (sistema)**
-  - `config/sanctum.php:50` → `SANCTUM_TOKEN_EXPIRATION_MINUTES`, 720 por defecto.
-  - Recomendado: bajar la variable (cuentas de menores en equipos compartidos) en vez de relajar el requisito.
-  - Si se baja: ajustar `.env.example` y fijarlo en Coolify (P2).
+- [ ] 🟡 **D2a · Vigilar la dispersión de temas en el piloto** (lo deja abierto D2)
+  - `topic` es opcional y texto libre: un centro que no etiquete ítems no verá nada por tema —ni en el diagnóstico ni en `/reports/topics`— y **no habrá ningún error que lo avise**.
+  - La agregación tolera mayúsculas y espacios, **no sinónimos ni tildes**: «Fracciones» y «Fracciones equivalentes» siguen siendo dos temas.
+  - Si el piloto (E4) muestra dispersión, la salida es el catálogo de temas por materia que se descartó en D2 por coste.
+  - Fuente: `ESTADO_Y_PENDIENTES.md`, pendientes abiertos del 13/09/2026
+- [x] 🔴 **D3 · Expiración de sesión** — ✅ 13/09/2026 · **inactividad real de 60 min, no expiración absoluta**
+  - **Bajar `SANCTUM_TOKEN_EXPIRATION_MINUTES` a 60 habría sido un error.** Esa variable es expiración **absoluta desde que se emite el token**, y un examen admite hasta 300 minutos (`duration_minutes`): habría expulsado al alumno a mitad de la prueba, costándole el intento. El informe [758] no pide eso, pide 60 minutos **de inactividad**.
+  - Implementado sobre `last_used_at`, que Sanctum ya mantiene: `SANCTUM_TOKEN_INACTIVITY_MINUTES=60`, con el tope absoluto donde estaba (12 h).
+  - Va por `Sanctum::authenticateAccessTokensUsing()` y **no por un middleware**: el guard actualiza `last_used_at` justo después de validar, así que un middleware posterior no caducaría nunca a nadie.
+  - ⚠️ **Para P2:** hay que fijar en Coolify las **dos** variables, `SANCTUM_TOKEN_EXPIRATION_MINUTES=720` y `SANCTUM_TOKEN_INACTIVITY_MINUTES=60`.
+  - Cierra **K9** y **I-11**.
   - Fuente: `ESTADO_Y_PENDIENTES.md` §9.3 · `ANALISIS_MODELO_DATOS_TFG.md` §10.2 nº 9
-- [ ] 🟡 **D4 · Aviso de «esta respuesta la genera una IA» ([397])**
-  - Campo en la respuesta de `POST /ai/tutor/chat` (hoy `{session_id, reply, message_count}`) **o** el informe lo atribuye a la interfaz.
-  - Fuente: `ESTADO_Y_PENDIENTES.md` §3.6 nº 8
-- [ ] 🟡 **D5 · Registro de incidencias del tutor IA**
-  - Hoy los bloqueos por PII o enlace no permitido solo dejan `Log::warning`.
-  - Crear tabla/contador **o** retirar del informe el criterio «>75 % de mensajes que superen validación».
-  - Fuente: `ESTADO_Y_PENDIENTES.md` §9.3 · §3.6 nº 6
-- [ ] **D6 · `PATCH /users/{id}/reset-password` no activa la cuenta**
-  - Coherente con «la activa su dueño», pero confunde a soporte. ¿Se deja, se activa o se documenta?
+- [x] 🟡 **D4 · Aviso de «esta respuesta la genera una IA» ([397])** — ✅ 13/09/2026 · **campo en la respuesta**
+  - `ai_notice` viaja en `POST /ai/tutor/chat` y en `GET /ai/tutor/diagnosis`. Se eligió el sistema y no el rótulo del frontend porque el compromiso de [397] es del sistema: con una app móvil o un segundo cliente, nadie tiene que acordarse de repetirlo.
+  - El texto vive en `openai.tutor.notice` (`OPENAI_TUTOR_NOTICE`): es para alumnado de primaria y el tono se ajusta sin desplegar.
+  - Cierra **K5** y deja **F7** listo para consumir.
+  - Fuente: `ESTADO_Y_PENDIENTES.md` §2 Aviso de IA e incidencias · §3.6 nº 8
+- [x] 🟡 **D5 · Registro de incidencias del tutor IA** — ✅ 13/09/2026 · **tabla + métrica de plataforma**
+  - Migración `2026_09_13_000003` (**ya aplicada** en Supabase): tabla `ai_tutor_incidents` con tipo (`pii`, `too_short`, `too_long`, `blocked_url`, `model_error`) y etapa (`chat`, `diagnosis`).
+  - ⚠️ **No guarda el texto que provocó la incidencia.** Un registro de bloqueos por datos personales que almacenara el dato personal sería el fallo que pretende evitar. Hay test que lo comprueba.
+  - **`GET /platform/ai-tutor-metrics`, solo superadmin**: ventana, totales, `validation_pass_rate` contra el umbral de 75, desglose por tipo/etapa/institución y serie diaria. Filtros `?from=`, `?to=`, `?institution_id=`. **Solo agregados** — ni un identificador de alumno sale de ahí.
+  - Con esto el criterio de [173] pasa de frase del informe a número que se mira. Cierra **K6**.
+  - Fuente: `ESTADO_Y_PENDIENTES.md` §2 Aviso de IA e incidencias · §3.6 nº 6
+- [x] **D6 · `PATCH /users/{id}/reset-password` no activa la cuenta** — ✅ 13/09/2026 · **se queda, pero la respuesta avisa**
+  - La regla no se toca: activar exige que el titular defina contraseña desde el enlace, porque eso prueba que controla el buzón — y eso un administrador no puede acreditarlo en su nombre.
+  - Lo que se corrige es la trampa de soporte: la respuesta devuelve `status`, `can_sign_in` y `activation_needed`, y el mensaje dice que hay que enviarle el enlace de activación.
   - Fuente: `ESTADO_Y_PENDIENTES.md` §8
-- [ ] **D7 · `available-exams` muestra `max_attempts` al alumno**
-  - Se dejó para poder mostrar «intento 2 de 3». Confirmar.
-- [ ] **D8 · ¿Formalizar `ENABLE ROW LEVEL SECURITY` en una migración?**
-  - Hoy lo pone Supabase; un PostgreSQL que no sea Supabase no lo tendría.
+- [x] **D7 · `available-exams` muestra `max_attempts` al alumno** — ✅ 13/09/2026 · **confirmado, se queda**
+  - Sin cambios de código. Con `max_attempts` y `submitted_count` el frontend puede pintar «intento 2 de 3».
+  - No es información sensible: es una regla del examen que le aplica a quien la lee.
+- [x] **D8 · Formalizar `ENABLE ROW LEVEL SECURITY` en una migración** — ✅ 13/09/2026 · **sí**
+  - Migración `2026_09_13_000004` sobre **26 tablas**. Idempotente: en Supabase, donde ya estaba, no cambió nada — comprobado tras aplicarla.
+  - Activar RLS **sin políticas** no afecta a la app (su rol es propietario y lo bypasea). Lo que cierra es la API REST automática de Supabase sobre la misma base. El aislamiento entre centros lo sigue haciendo `TenantScoped`.
+  - **Quita una trampa:** `schema:dump-sql` ya recoge el RLS de la propia base, así que dejó de haber que repegar el bloque a mano tras cada regeneración del esquema.
   - Fuente: `ESTADO_Y_PENDIENTES.md` §5, pendientes 31/07
 
 ---
@@ -123,7 +172,7 @@ Primero decidir, después ejecutar. Al tomar la decisión, anotar **qué se elig
   - [ ] `APP_URL=https://<dominio real>` — y registrar la URL real en `DEPLOY_COOLIFY.md:44` (hoy `https://tu-dominio`)
   - [ ] `OPENAI_REQUEST_TIMEOUT=15`
   - [ ] `DB_STATEMENT_TIMEOUT_MS=15000`
-  - [ ] `SANCTUM_TOKEN_EXPIRATION_MINUTES` según D3
+  - [ ] `SANCTUM_TOKEN_EXPIRATION_MINUTES=720` **y** `SANCTUM_TOKEN_INACTIVITY_MINUTES=60` — las dos, según D3
 - [ ] 🔴 **P3 · Cargar las asignaciones de docentes** (`POST /api/teacher-assignments`)
   - La tabla nace vacía a propósito: hasta entonces **ningún docente ve a ningún estudiante**.
 - [ ] 🟠 **P4 · Cloudflare delante del dominio + sus rangos en `TRUSTED_PROXIES`, en el mismo cambio**
@@ -167,7 +216,11 @@ Lo que el backend ya dejó listo y falta consumir, más los cambios que lo rompe
 - [ ] 🔴 **F4 · Pantalla de admin para asignar docentes** (`/api/teacher-assignments`)
 - [ ] **F5 · Confirmación antes de borrar** materias/grupos/exámenes/usuarios, mostrando `exams_count` (los borrados cascadean a resultados de alumnos)
 - [ ] **F6 · Saludo con el nombre del alumno en el tutor** (el backend ya no lo envía a OpenAI)
-- [ ] **F7 · Aviso de IA en cada respuesta del tutor** (según D4)
+- [ ] **F7 · Aviso de IA en cada respuesta del tutor** — 🔓 listo para consumir: el backend lo manda en `data.ai_notice` (D4)
+- [ ] 🟠 **F17 · Panel de métricas del tutor IA para el superadmin**
+  - Datos: `GET /platform/ai-tutor-metrics` (ventana, totales, `validation_pass_rate`, por tipo, por etapa, por institución y serie diaria).
+  - El umbral de [173] es 75 %: que se vea de un vistazo si se cumple.
+  - Solo agregados: no hay ningún dato de alumno que mostrar.
 - [ ] **F8 · Cargar el diagnóstico automáticamente al abrir el tutor** (`GET /ai/tutor/diagnosis`)
 - [ ] **F9 · Contexto `exam_id` opcional en el chat del tutor**
 
@@ -213,7 +266,7 @@ Lo que el backend ya dejó listo y falta consumir, más los cambios que lo rompe
 
 - [ ] 🟡 **I-9 · Rendimiento:** ≤2 s y reporte de 1.000 en <5 s están medidos; «200 concurrentes» según M3
 - [ ] **I-10 · Disponibilidad 99 %:** declarar que no se sostiene solo con la aplicación (requiere P4)
-- [ ] **I-11 · Expiración de sesión** según D3
+- [x] **I-11 · Expiración de sesión** — ✅ 13/09/2026: se cumple [758]. Merece una línea explicando que es inactividad y no expiración absoluta, y por qué (exámenes de hasta 300 min)
 
 ### Contradicciones internas — §10.1
 
@@ -224,7 +277,7 @@ Lo que el backend ya dejó listo y falta consumir, más los cambios que lo rompe
 - [ ] **C5** · Node.js intermediario [419-420] vs. Laravel+PostgreSQL [228-229][415-416]
 - [ ] **C6** · «Genera PDF y CSV» en presente [236] vs. requisito pendiente [732]
 - [ ] **C7** · «Se generó reportes en PDF» [390] vs. [732-733]
-- [ ] **C8** · Criterio 75 % automático [173] vs. revisión humana [396]
+- [ ] **C8** · Criterio 75 % automático [173] vs. revisión humana [396] — el 75 % ya es medible (D5); queda decidir qué dice el informe sobre la revisión humana
 
 ### Contradicciones con el sistema — §10.2
 
@@ -232,11 +285,11 @@ Lo que el backend ya dejó listo y falta consumir, más los cambios que lo rompe
 - [x] **K2** · Ítems con tema/indicador/dificultad [171][222] — ✅ 13/09/2026: ❌ deja de ser contradicción, las columnas existen (D2)
 - [x] **K3** · Personalización por área concreta («comprensión de lectura») [263][276] — ✅ 13/09/2026: el diagnóstico ya habla por tema (D2)
 - [x] **K4** · «Recursos personalizados» (Figura 10) — ✅ 13/09/2026: el recurso sugerido se acota por materia, grado y dificultad (D2)
-- [ ] **K5** · Aviso de IA en cada intervención [397] → según D4
-- [ ] **K6** · «Registrará incidencias» / 75 % [173] → según D5
+- [x] **K5** · Aviso de IA en cada intervención [397] — ✅ 13/09/2026: el sistema lo envía en `ai_notice` (D4)
+- [x] **K6** · «Registrará incidencias» / 75 % [173] — ✅ 13/09/2026: hay tabla y el porcentaje se calcula (D5)
 - [ ] **K7** · «2–4 oraciones» [173] vs. prompt de «máximo 4 párrafos»
 - [ ] **K8** · «GPT-4 variante ligera» [222] → `gpt-4o-mini` (variante de GPT-4o)
-- [ ] **K9** · Sesión de 60 min [758] → según D3
+- [x] **K9** · Sesión de 60 min [758] — ✅ 13/09/2026: el sistema caduca por inactividad a los 60 min (D3)
 - [ ] **K10** · «OpenAPI 5.0» [771] → OpenAPI 3.0 (la 5.0 no existe)
 - [ ] **K11** · Tres roles [720] → cuatro (ver I-7)
 

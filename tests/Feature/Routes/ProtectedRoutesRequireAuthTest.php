@@ -104,6 +104,8 @@ class ProtectedRoutesRequireAuthTest extends TestCase
 
             ['GET',  '/api/exam-attempts/1/recommendations'],
 
+            ['GET',  '/api/platform/ai-tutor-metrics'],
+
             ['GET',  '/api/reports/topics'],
 
             ['GET',  '/api/reports/exams/1/results'],

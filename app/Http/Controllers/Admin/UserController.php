@@ -178,8 +178,33 @@ class UserController extends Controller
             $user->tokens()->delete();
         }
 
+        /*
+        | **Este endpoint NO activa la cuenta, y es deliberado (decisión D6).**
+        |
+        | La única vía por la que una cuenta pasa a `active` es que su dueño
+        | defina contraseña desde el enlace que le llegó por correo
+        | (`ForgotPasswordController`): eso prueba que controla ese buzón, que es
+        | justo lo que un administrador no puede acreditar en su nombre.
+        |
+        | Lo que sí cambia desde el 13/09/2026 es que la respuesta lo dice. Antes
+        | devolvía un escueto «contraseña actualizada» y el administrador
+        | entregaba al alumno una contraseña con la que no podía entrar, sin que
+        | nada se lo advirtiera: la queja llegaba a soporte como «no funciona el
+        | sistema».
+        */
+        $activa = $user->status === UserStatus::Active;
+
         return response()->json([
-            'message' => 'Contraseña actualizada y tokens revocados',
+            'message' => $activa
+                ? 'Contraseña actualizada y tokens revocados'
+                : 'Contraseña actualizada y tokens revocados, pero la cuenta sigue sin activarse: '
+                    . 'no podrá iniciar sesión hasta que su titular defina la contraseña desde el '
+                    . 'enlace que recibe por correo.',
+            'data' => [
+                'status'            => $user->status->value,
+                'can_sign_in'       => $activa,
+                'activation_needed' => !$activa,
+            ],
         ]);
     }
 }

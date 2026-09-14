@@ -64,6 +64,9 @@
             "name": "99 · Institution-admins"
         },
         {
+            "name": "99 · Platform"
+        },
+        {
             "name": "99 · Teacher-assignments"
         }
     ],
@@ -2731,6 +2734,32 @@
                         "description": "Operación correcta"
                     }
                 }
+            }
+        },
+        "/api/platform/ai-tutor-metrics": {
+            "get": {
+                "tags": [
+                    "99 · Platform"
+                ],
+                "summary": "Ai tutor (PlatformMetricsController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\PlatformMetricsController@aiTutor`. **Roles permitidos:** superadmin.",
+                "operationId": "get_api_platform_ai_tutor_metrics",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
             }
         },
         "/api/questions/{question}": {
