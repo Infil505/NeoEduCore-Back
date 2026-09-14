@@ -35,6 +35,16 @@ CREATE TYPE public.adecuacion_type AS ENUM (
 
 
 --
+-- Name: ai_generation_source; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.ai_generation_source AS ENUM (
+    'heuristic',
+    'ai'
+);
+
+
+--
 -- Name: ai_recommendation_type; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -43,6 +53,17 @@ CREATE TYPE public.ai_recommendation_type AS ENUM (
     'weakness',
     'resource',
     'action'
+);
+
+
+--
+-- Name: ai_recommendations_status; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.ai_recommendations_status AS ENUM (
+    'preparing',
+    'ready',
+    'failed'
 );
 
 
@@ -200,7 +221,9 @@ CREATE TABLE public.ai_recommendations (
     resource json,
     generated_at timestamp(0) without time zone,
     created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    attempt_id uuid,
+    generated_by public.ai_generation_source DEFAULT 'heuristic'::public.ai_generation_source NOT NULL
 );
 
 
@@ -242,7 +265,8 @@ CREATE TABLE public.exam_attempts (
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
     paused_at timestamp(0) without time zone,
-    total_paused_seconds integer DEFAULT 0 NOT NULL
+    total_paused_seconds integer DEFAULT 0 NOT NULL,
+    ai_recommendations_status public.ai_recommendations_status
 );
 
 
@@ -527,7 +551,12 @@ CREATE TABLE public.questions (
     correct_answer_text text,
     order_index integer DEFAULT 0 NOT NULL,
     created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    topic character varying(120),
+    indicator character varying(255),
+    difficulty character varying(255),
+    topic_normalized character varying(120) GENERATED ALWAYS AS (NULLIF(regexp_replace(btrim(lower((topic)::text)), '\s+'::text, ' '::text, 'g'::text), ''::text)) STORED,
+    CONSTRAINT questions_difficulty_check CHECK (((difficulty IS NULL) OR ((difficulty)::text = ANY (ARRAY['basic'::text, 'intermediate'::text, 'advanced'::text]))))
 );
 
 
@@ -640,6 +669,7 @@ CREATE TABLE public.study_resources (
     created_by uuid,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
+    subject_id uuid,
     CONSTRAINT study_resources_difficulty_check CHECK (((difficulty)::text = ANY ((ARRAY['basic'::character varying, 'intermediate'::character varying, 'advanced'::character varying])::text[])))
 );
 
@@ -1006,6 +1036,13 @@ CREATE INDEX ai_chat_sessions_student_user_id_updated_at_index ON public.ai_chat
 
 
 --
+-- Name: ai_recommendations_attempt_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ai_recommendations_attempt_id_index ON public.ai_recommendations USING btree (attempt_id);
+
+
+--
 -- Name: idx_ai_exam; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1237,10 +1274,24 @@ CREATE INDEX personal_access_tokens_tokenable_type_tokenable_id_index ON public.
 
 
 --
+-- Name: questions_topic_normalized_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX questions_topic_normalized_index ON public.questions USING btree (topic_normalized);
+
+
+--
 -- Name: student_subjects_institution_id_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX student_subjects_institution_id_index ON public.student_subjects USING btree (institution_id);
+
+
+--
+-- Name: study_resources_subject_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX study_resources_subject_id_index ON public.study_resources USING btree (subject_id);
 
 
 --
@@ -1301,6 +1352,14 @@ ALTER TABLE ONLY public.ai_chat_sessions
 
 ALTER TABLE ONLY public.ai_chat_sessions
     ADD CONSTRAINT ai_chat_sessions_subject_id_foreign FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE SET NULL;
+
+
+--
+-- Name: ai_recommendations ai_recommendations_attempt_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_recommendations
+    ADD CONSTRAINT ai_recommendations_attempt_id_foreign FOREIGN KEY (attempt_id) REFERENCES public.exam_attempts(id) ON DELETE CASCADE;
 
 
 --
@@ -1632,6 +1691,14 @@ ALTER TABLE ONLY public.study_resources
 
 
 --
+-- Name: study_resources study_resources_subject_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.study_resources
+    ADD CONSTRAINT study_resources_subject_id_foreign FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE SET NULL;
+
+
+--
 -- Name: subjects subjects_institution_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1678,6 +1745,10 @@ ALTER TABLE ONLY public.teacher_assignments
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE SET NULL;
 
+
+--
+-- PostgreSQL database dump complete
+--
 
 
 --

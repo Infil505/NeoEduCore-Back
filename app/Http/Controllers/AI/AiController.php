@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\AI;
 
+use App\Enums\AiGenerationSource;
 use App\Http\Controllers\Controller;
 use App\Models\Exams\Exam;
 use App\Models\Students\Student;
@@ -106,7 +107,12 @@ class AiController extends Controller
             $data['exam_id'] ?? null,
             $data['type'],
             $validator->sanitize($text),
-            $data['resource'] ?? null
+            $data['resource'] ?? null,
+            null,
+            // Este texto sale de OpenAI, aunque lo pida un docente con prompt
+            // libre: se marca como tal para que el origen sea comparable con el
+            // de las recomendaciones del intento.
+            AiGenerationSource::Ai->value
         );
 
         return response()->json([

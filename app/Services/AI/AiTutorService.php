@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use OpenAI\Laravel\Facades\OpenAI;
 use App\Services\AI\AiOutputValidator;
+use App\Services\Academic\TopicMasteryService;
 
 /**
  * Tutor IA conversacional.
@@ -37,6 +38,9 @@ use App\Services\AI\AiOutputValidator;
  */
 class AiTutorService
 {
+    /** Cuántos temas flojos como máximo entran en el diagnóstico. */
+    private const TEMAS_EN_DIAGNOSTICO = 5;
+
     /*
      | Los parámetros de coste viven en `config/openai.php` (sección `tutor`),
      | no aquí: son lo primero que hay que poder ajustar por entorno cuando
@@ -243,11 +247,20 @@ class AiTutorService
             return "Hola {$name}. Aún no tienes exámenes registrados. ¡Realiza tu primer examen para ver tu diagnóstico personalizado!";
         }
 
+        // Temas concretos (D2). Es lo que separa «Español 45 %» de «te cuesta la
+        // comprensión de lectura», que es el ejemplo que pone [263]. Solo entran
+        // los temas que el docente etiquetó y con evidencia suficiente; si el
+        // centro aún no usa temas, el diagnóstico sigue siendo el de antes.
+        $temasLines = $this->lineasDeTemas($studentUserId);
+
         // El nombre NO entra en el prompt (ver `SIN_DATOS_IDENTIFICATIVOS`); solo
-        // se usa abajo, en el texto de reserva, que no sale del servidor.
+        // se usa abajo, en el texto de reserva, que no sale del servidor. Un tema
+        // tampoco identifica a nadie: es contenido curricular.
         $prompt = "Genera un diagnóstico educativo breve y motivador para un estudiante de primaria.\n\n"
             . "Progreso por materia:\n{$progressLines}\n\n"
+            . ($temasLines !== '' ? "Temas con más dificultad:\n{$temasLines}\n\n" : '')
             . "Incluye: resumen general, fortalezas, áreas por mejorar y 1-2 acciones concretas. "
+            . ($temasLines !== '' ? "Menciona los temas concretos de la lista, no solo las materias. " : '')
             . "Máximo 4 párrafos. Usa español claro y alentador. "
             . "No uses ningún nombre propio: no sabes cómo se llama.";
 
@@ -265,20 +278,20 @@ class AiTutorService
             $text = trim((string) ($response->choices[0]->message->content ?? ''));
 
             if ($text === '') {
-                return $this->fallbackDiagnosis($name, $progressLines);
+                return $this->fallbackDiagnosis($name, $progressLines, $temasLines);
             }
 
             // Coherencia con chat(): el diagnóstico también pasa por el filtro PII/longitud.
             $validator = new AiOutputValidator();
             if ($validator->validate($text) !== null) {
                 Log::warning('AiTutorService: diagnóstico bloqueado por validación PII/longitud');
-                return $this->fallbackDiagnosis($name, $progressLines);
+                return $this->fallbackDiagnosis($name, $progressLines, $temasLines);
             }
 
             return $validator->sanitize($text);
         } catch (\Throwable $e) {
             Log::warning('AiTutorService: diagnosis OpenAI error', ['error' => $e->getMessage()]);
-            return $this->fallbackDiagnosis($name, $progressLines);
+            return $this->fallbackDiagnosis($name, $progressLines, $temasLines);
         }
     }
 
@@ -380,9 +393,27 @@ class AiTutorService
         return 'Lo siento, no puedo responder en este momento. Por favor intenta de nuevo más tarde.';
     }
 
-    private function fallbackDiagnosis(string $name, string $progressLines): string
+    private function fallbackDiagnosis(string $name, string $progressLines, string $temasLines = ''): string
     {
         return "Hola {$name}, aquí está tu diagnóstico actual:\n\n{$progressLines}\n\n"
+            . ($temasLines !== '' ? "Temas con más dificultad:\n{$temasLines}\n\n" : '')
             . "Continúa practicando en las áreas con menor porcentaje y consulta al tutor si tienes dudas.";
+    }
+
+    /**
+     * Los temas más flojos del estudiante, en texto para el prompt.
+     *
+     * Devuelve cadena vacía cuando no hay nada que decir —un centro que todavía
+     * no etiqueta temas, o un alumno sin respuestas suficientes— y entonces el
+     * diagnóstico se queda como estaba, por materia. Es deliberado: media frase
+     * inventada sobre un tema con dos respuestas hace más daño que callarse.
+     */
+    private function lineasDeTemas(string $studentUserId): string
+    {
+        return app(TopicMasteryService::class)
+            ->porEstudiante($studentUserId, self::TEMAS_EN_DIAGNOSTICO)
+            ->filter(fn (array $t) => $t['percentage'] < TopicMasteryService::UMBRAL_REFUERZO)
+            ->map(fn (array $t) => "  - {$t['topic']}: {$t['percentage']}% ({$t['correctas']} de {$t['total']})")
+            ->join("\n");
     }
 }

@@ -2,7 +2,10 @@
 
 namespace App\Http\Controllers\Exams;
 
+use App\Enums\AiGenerationSource;
+use App\Enums\AiRecommendationsStatus;
 use App\Http\Controllers\Controller;
+use App\Jobs\GenerateAiRecommendations;
 use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
@@ -312,6 +315,68 @@ class ExamAttemptController extends Controller
         return response()->json(['data' => $attempt->fresh()]);
     }
 
+    /**
+     * Recomendaciones de un intento, y disparador del análisis de IA (D1).
+     *
+     * Es el endpoint que el alumno abre al consultar sus resultados, y la
+     * **primera** vez que lo hace encola `GenerateAiRecommendations`. No se
+     * encola en la entrega a propósito: el pico real del sistema es una clase
+     * entera entregando a la vez, y así solo se paga API por quien de verdad va
+     * a leer el análisis.
+     *
+     * `status` dice qué está mirando el alumno:
+     *   - `preparing` → lo que ve son plantillas; el análisis viene en camino
+     *   - `ready`     → ya son las del modelo
+     *   - `failed`    → el modelo no respondió tras los reintentos; se queda con
+     *                   las plantillas y puede pedir «regenerar» a mano
+     *   - `null`      → no hay análisis encolado ni lo habrá (examen sin materia)
+     *
+     * El encolado va con un UPDATE condicionado al estado nulo: si el alumno
+     * abre los resultados, recarga y vuelve a abrirlos, solo la primera llamada
+     * se lleva la fila y solo esa encola. Sin eso, cada recarga sería una
+     * llamada a OpenAI más.
+     */
+    public function recommendations(Request $request, ExamAttempt $attempt)
+    {
+        $user = $request->user();
+
+        if ($attempt->student_user_id !== $user->id) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
+
+        if (!$attempt->submitted_at) {
+            return response()->json(['message' => 'El intento aún no ha sido enviado'], 409);
+        }
+
+        $attempt->load('exam');
+
+        if ($attempt->exam?->subject_id && $attempt->ai_recommendations_status === null) {
+            $encolado = ExamAttempt::query()
+                ->whereKey($attempt->id)
+                ->whereNull('ai_recommendations_status')
+                ->update(['ai_recommendations_status' => AiRecommendationsStatus::Preparing->value]);
+
+            if ($encolado === 1) {
+                GenerateAiRecommendations::dispatch($attempt->id);
+                $attempt->ai_recommendations_status = AiRecommendationsStatus::Preparing;
+            } else {
+                $attempt->refresh();
+            }
+        }
+
+        $recomendaciones = AiRecommendation::query()
+            ->where('attempt_id', $attempt->id)
+            ->orderBy('generated_at')
+            ->get();
+
+        return response()->json([
+            'data' => [
+                'status'          => $attempt->ai_recommendations_status,
+                'recommendations' => $recomendaciones,
+            ],
+        ]);
+    }
+
     public function regenerateRecommendations(
         Request $request,
         ExamAttempt $attempt,
@@ -337,29 +402,26 @@ class ExamAttemptController extends Controller
             return response()->json(['message' => 'El examen no tiene materia asociada'], 409);
         }
 
-        // Límite: la generación automática del submit + 3 regeneraciones.
+        // Límite: la generación automática + 3 regeneraciones a mano.
         //
-        // `ai_recommendations` no tiene `attempt_id`, así que este intento se
-        // acota por tiempo: solo cuentan las generadas desde su entrega. Cada
-        // llamada —el submit y cada regeneración— escribe su lote con un mismo
-        // `generated_at`, de modo que contar instantes distintos cuenta
-        // generaciones y no filas.
+        // Se cuenta por `attempt_id`, que existe desde la migración del 13/09.
+        // Cada llamada —la entrega, el job de IA y cada regeneración— escribe su
+        // lote con un mismo `generated_at`, así que contar instantes distintos
+        // cuenta generaciones y no filas.
         //
-        // Antes era `ceil($total / 4)` sobre TODAS las del par (examen, materia),
-        // con dos errores a la vez: `generateFromAttempt` no guarda 4 filas sino
-        // 1 o 2 según el porcentaje, así que la división no contaba nada real; y
-        // sin corte temporal un segundo intento del mismo examen nacía con el
-        // cupo del primero ya gastado.
+        // Antes no había `attempt_id` y el lote se acotaba por (estudiante,
+        // examen, materia) más una ventana `generated_at >= submitted_at`. Eso
+        // ya era mejor que el `ceil($total / 4)` original —que dividía entre 4
+        // unos lotes de 1 o 2 filas, y dejaba al segundo intento de un examen
+        // nacer con el cupo del primero gastado—, pero seguía dependiendo de
+        // relojes. Ahora la pertenencia al intento es un dato, no una inferencia.
         //
-        // `generated_at` tiene precisión de segundo: entregar y regenerar dentro
-        // del mismo segundo cuenta como una sola generación. El error va del lado
-        // permisivo y hace falta un cronometraje imposible a mano.
+        // `generated_at` tiene precisión de segundo: dos generaciones dentro del
+        // mismo segundo cuentan como una. El error va del lado permisivo y hace
+        // falta un cronometraje imposible a mano.
         $MAX_REGENS = 3;
 
-        $generacionesPrevias = AiRecommendation::where('student_user_id', $user->id)
-            ->where('exam_id', $attempt->exam_id)
-            ->where('subject_id', $subjectId)
-            ->where('generated_at', '>=', $attempt->submitted_at)
+        $generacionesPrevias = AiRecommendation::where('attempt_id', $attempt->id)
             ->distinct()
             ->count('generated_at');
 
@@ -371,6 +433,23 @@ class ExamAttemptController extends Controller
 
         // Generar y guardar nuevas recomendaciones
         $created = $aiService->regenerateForAttempt($attempt, $user->id);
+
+        // Misma regla que el job: en cuanto hay análisis real, las plantillas de
+        // ese intento se retiran. Si no, el alumno acumula tarjetas genéricas
+        // debajo de las buenas cada vez que pulsa regenerar.
+        $hayAnalisis = collect($created)
+            ->contains(fn (AiRecommendation $r) => $r->generated_by === AiGenerationSource::Ai);
+
+        if ($hayAnalisis) {
+            AiRecommendation::query()
+                ->where('attempt_id', $attempt->id)
+                ->where('generated_by', AiGenerationSource::Heuristic->value)
+                ->delete();
+
+            $attempt->forceFill([
+                'ai_recommendations_status' => AiRecommendationsStatus::Ready,
+            ])->save();
+        }
 
         return response()->json([
             'data' => $created,

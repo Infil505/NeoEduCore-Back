@@ -2,6 +2,7 @@
 
 namespace App\Models\AI;
 
+use App\Enums\AiGenerationSource;
 use App\Enums\AiRecommendationType;
 use App\Models\Students\Student;
 use App\Models\Academic\Subject;
@@ -25,16 +26,19 @@ class AiRecommendation extends Model
         'student_user_id',
         'subject_id',
         'exam_id',
+        'attempt_id',
         'recommendation_text',
         'generated_at',
         'recommendation_type',
         'resource',
+        'generated_by',
     ];
 
     protected $casts = [
         'generated_at'        => 'datetime',
         'resource'            => 'array',
         'recommendation_type' => AiRecommendationType::class,
+        'generated_by'        => AiGenerationSource::class,
     ];
 
     /* =========================

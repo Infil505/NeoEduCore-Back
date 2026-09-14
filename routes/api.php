@@ -94,6 +94,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::patch('/exams/{exam}/attempts/{attempt}/pause', [ExamAttemptController::class, 'pause']);
         Route::patch('/exams/{exam}/attempts/{attempt}/resume', [ExamAttemptController::class, 'resume']);
         Route::get('/exams/{exam}/attempts/{attempt}', [ExamAttemptController::class, 'show']);
+        // Resultados del intento. Es lo que abre el alumno al terminar, y la
+        // primera consulta encola el análisis de IA (D1): no se encola en la
+        // entrega para no meter a OpenAI en el pico de entregas simultáneas.
+        Route::get('/exam-attempts/{attempt}/recommendations',
+            [ExamAttemptController::class, 'recommendations']
+        );
         Route::post('/exam-attempts/{attempt}/recommendations/regenerate',
             [ExamAttemptController::class, 'regenerateRecommendations']
         )->middleware('throttle:ai-regenerate');
@@ -211,14 +217,20 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Reportes
         Route::get('/reports/exams/{exam}/results', [ReportController::class, 'examResults']);
         Route::get('/reports/exams/{exam}/results.csv', [ReportController::class, 'exportExamResultsCsv']);
+        Route::get('/reports/exams/{exam}/results.xlsx', [ReportController::class, 'exportExamResultsXlsx']);
         Route::get('/reports/students/{student_user_id}/history', [ReportController::class, 'studentHistory']);
         Route::get('/reports/students/{student_user_id}/history.csv', [ReportController::class, 'exportStudentHistoryCsv']);
+        Route::get('/reports/students/{student_user_id}/history.xlsx', [ReportController::class, 'exportStudentHistoryXlsx']);
 
         // Resúmenes agregados para los gráficos y el PDF que arma el frontend.
         // Van aparte de los listados paginados: quien solo quiere la tabla no
         // paga los agregados, y quien solo quiere los gráficos no pagina.
         Route::get('/reports/exams/{exam}/summary', [ReportController::class, 'examSummary']);
         Route::get('/reports/students/{student_user_id}/summary', [ReportController::class, 'studentSummary']);
+
+        // Temas a reforzar, agregados y sin nombres (D2). El docente los ve de
+        // sus grupos asignados; el admin, de toda la institución.
+        Route::get('/reports/topics', [ReportController::class, 'topicMastery']);
 
         // Estrategias del tutor de un alumno. El docente solo ve las nacidas de
         // exámenes suyos; el chat con el tutor no sale por aquí nunca ([175]).

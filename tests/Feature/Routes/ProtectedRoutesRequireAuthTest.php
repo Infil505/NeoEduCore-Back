@@ -102,9 +102,15 @@ class ProtectedRoutesRequireAuthTest extends TestCase
             ['PUT',  '/api/institutions/1'],
             ['PATCH','/api/institutions/1/toggle'],
 
+            ['GET',  '/api/exam-attempts/1/recommendations'],
+
+            ['GET',  '/api/reports/topics'],
+
             ['GET',  '/api/reports/exams/1/results'],
             ['GET',  '/api/reports/exams/1/results.csv'],
+            ['GET',  '/api/reports/exams/1/results.xlsx'],
             ['GET',  '/api/reports/students/1/history'],
+            ['GET',  '/api/reports/students/1/history.xlsx'],
         ];
 
         foreach ($endpoints as [$method, $uri]) {

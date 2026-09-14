@@ -208,6 +208,40 @@ php artisan test --verbose
 - ✅ GET /ai-recommendations/me
 - ✅ GET /ai-recommendations/{id}
 - ✅ POST /exam-attempts/{attempt}/recommendations/regenerate
+- ✅ El cupo de regeneraciones es por intento (`attempt_id`), no por examen+materia
+- ✅ El recurso sugerido corresponde al grado del alumno
+
+### Metadatos curriculares — `CurricularMetadataTest` (8 tests)
+Decisión D2: `questions` gana tema, indicador y dificultad; `study_resources` gana materia.
+- ✅ Crear pregunta con `topic`, `indicator` y `difficulty`
+- ✅ Una dificultad fuera de los tres niveles se rechaza (422)
+- ✅ Los metadatos son opcionales: la pregunta sin ellos se sigue creando
+- ✅ `topic_normalized` la calcula la base, no el código (escritura directa por Eloquent)
+- ✅ Recurso con materia, y filtro `?subject_id=`
+- ✅ 422 al colgar un recurso de la materia de otro centro
+- ✅ El recurso sugerido es de la materia del examen, no el más reciente del centro
+- ✅ La materia pesa más que el grado cuando no hay nada del grado
+
+### Dominio por tema — `TopicMasteryTest` (9 tests)
+- ✅ «Fracciones», «fracciones » y «  FRACCIONES   » cuentan como un solo tema
+- ✅ Los espacios interiores de más tampoco crean temas nuevos
+- ✅ Un tema con menos de 3 respuestas no se reporta
+- ✅ Las preguntas sin `topic` se ignoran
+- ✅ Los temas salen del más flojo al más sólido
+- ✅ El docente solo ve los temas de sus grupos, y sin identificadores de alumno
+- ✅ El admin ve los de toda su institución
+- ✅ El diagnóstico del tutor menciona los temas flojos y nunca el nombre
+- ✅ 403 para el estudiante en `/reports/topics`
+
+### Análisis de IA en cola — `AiRecommendationsQueueTest` (6 tests)
+Decisión D1: la entrega deja plantillas y el análisis del modelo se encola al
+consultar los resultados. Lo que se vigila es el reparto entre los dos pasos.
+- ✅ La entrega no encola ni llama al modelo
+- ✅ Abrir los resultados encola el análisis, y recargar no vuelve a encolar
+- ✅ El job sustituye las plantillas por las 4 secciones del modelo y deja `ready`
+- ✅ Si el modelo no responde: no se escribe ni se borra nada, y `failed` solo tras agotar reintentos
+- ✅ 403 sobre el intento de otro alumno
+- ✅ 409 si el intento aún no se entregó
 
 ### Usuarios (6 tests)
 - ✅ GET /users
@@ -233,6 +267,17 @@ php artisan test --verbose
 - ✅ GET /reports/students/{student}/history.csv
 - ✅ GET /reports/students/{student}/summary — tendencia en orden cronológico
 - ✅ GET /reports/students/{student}/summary — parámetro `points` y su validación
+
+### Exportación de reportes a fichero (7 tests)
+`ReportExportsTest`. CSV y XLSX salen del mismo dataset, así que lo que se vigila
+es que no diverjan y que ninguna celda acabe siendo una fórmula.
+- ✅ GET /reports/exams/{exam}/results.xlsx — content-type y cabeceras idénticas al CSV
+- ✅ GET /reports/students/{student}/history.xlsx — cabeceras idénticas al CSV
+- ✅ El XLSX escribe la nota como número y `submitted_at` como fecha de Excel
+- ✅ Un `full_name` que empieza por `=` no se guarda como fórmula (CSV y XLSX)
+- ✅ Un título de examen que empieza por `=` tampoco
+- ✅ 403 para el docente ajeno al examen
+- ✅ 403 para el docente no asignado al estudiante
 
 ### Estrategias del tutor (7 tests)
 - ✅ `SECTIONS` cubre todo el enum `AiRecommendationType`

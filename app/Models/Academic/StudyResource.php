@@ -22,6 +22,11 @@ class StudyResource extends Model
     protected $fillable = [
         'institution_id',
 
+        // Materia del recurso (D2). Nullable: un recurso sin materia sigue
+        // valiendo como material genérico, que es lo que son los anteriores
+        // a esta columna.
+        'subject_id',
+
         // RN-AI-008
         'title',
         'description',
@@ -53,6 +58,11 @@ class StudyResource extends Model
     public function institution()
     {
         return $this->belongsTo(Institution::class);
+    }
+
+    public function subject()
+    {
+        return $this->belongsTo(Subject::class);
     }
 
     public function creator()

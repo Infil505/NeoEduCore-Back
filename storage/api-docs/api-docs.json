@@ -924,6 +924,47 @@
                 ]
             }
         },
+        "/api/exam-attempts/{attempt}/recommendations": {
+            "get": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Recommendations (ExamAttemptController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamAttemptController@recommendations`. **Roles permitidos:** student.",
+                "operationId": "get_api_exam_attempts_attempt_recommendations",
+                "parameters": [
+                    {
+                        "name": "attempt",
+                        "in": "path",
+                        "required": true,
+                        "description": "attempt_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
         "/api/exam-attempts/{attempt}/recommendations/regenerate": {
             "post": {
                 "tags": [
@@ -2965,6 +3006,47 @@
                 ]
             }
         },
+        "/api/reports/exams/{exam}/results.xlsx": {
+            "get": {
+                "tags": [
+                    "12 · Reportes"
+                ],
+                "summary": "Export exam results xlsx (ReportController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\ReportController@exportExamResultsXlsx`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_reports_exams_exam_results_xlsx",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
         "/api/reports/exams/{exam}/summary": {
             "get": {
                 "tags": [
@@ -3114,6 +3196,47 @@
                 ]
             }
         },
+        "/api/reports/students/{student_user_id}/history.xlsx": {
+            "get": {
+                "tags": [
+                    "12 · Reportes"
+                ],
+                "summary": "Export student history xlsx (ReportController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\ReportController@exportStudentHistoryXlsx`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_reports_students_student_user_id_history_xlsx",
+                "parameters": [
+                    {
+                        "name": "student_user_id",
+                        "in": "path",
+                        "required": true,
+                        "description": "student_user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
         "/api/reports/students/{student_user_id}/strategies": {
             "get": {
                 "tags": [
@@ -3187,6 +3310,32 @@
                     },
                     "404": {
                         "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/reports/topics": {
+            "get": {
+                "tags": [
+                    "12 · Reportes"
+                ],
+                "summary": "Topic mastery (ReportController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\ReportController@topicMastery`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_reports_topics",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
                     }
                 },
                 "security": [

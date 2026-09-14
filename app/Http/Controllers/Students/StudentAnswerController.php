@@ -131,7 +131,8 @@ class StudentAnswerController extends Controller
                     $attempt->exam_id,
                     'action',
                     'Se recomienda repasar los temas donde hubo errores y practicar con ejercicios guiados antes del próximo intento.',
-                    null
+                    null,
+                    $attempt->id
                 );
             }
 

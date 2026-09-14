@@ -2,6 +2,7 @@
 
 namespace App\Models\Exams;
 
+use App\Enums\AiRecommendationsStatus;
 use App\Enums\GradeStatus;
 use App\Models\Students\Student;
 use Illuminate\Database\Eloquent\Model;
@@ -35,6 +36,8 @@ class ExamAttempt extends Model
         'max_score',
 
         'grade_status',
+
+        'ai_recommendations_status',
     ];
 
     protected $casts = [
@@ -48,6 +51,8 @@ class ExamAttempt extends Model
         'max_score'  => 'decimal:2',
 
         'grade_status' => GradeStatus::class,
+
+        'ai_recommendations_status' => AiRecommendationsStatus::class,
     ];
 
     /* =========================

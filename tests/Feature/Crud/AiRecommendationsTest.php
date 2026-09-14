@@ -154,8 +154,11 @@ class AiRecommendationsTest extends TestCase
      * 2. Sin corte temporal, un **segundo intento** del mismo examen nacía con el
      *    cupo del primero ya consumido.
      *
-     * Ahora se cuentan instantes `generated_at` distintos desde la entrega de
-     * este intento, que es lo que sí equivale a una generación.
+     * Después se acotó por una ventana `generated_at >= submitted_at`, y desde la
+     * migración del 13/09 (D1) se cuenta por `attempt_id`: la pertenencia de un
+     * lote a un intento es un dato, no algo que se deduzca de relojes. Se siguen
+     * contando instantes `generated_at` distintos, que es lo que equivale a una
+     * generación.
      */
     public function test_a_new_attempt_gets_its_own_regeneration_budget(): void
     {
@@ -191,6 +194,7 @@ class AiRecommendationsTest extends TestCase
                     'student_user_id' => $studentUser->id,
                     'subject_id' => $subject->id,
                     'exam_id' => $exam->id,
+                    'attempt_id' => $primero->id,
                     'generated_at' => now()->subHours(2)->addMinutes($i),
                 ]);
             }
@@ -201,8 +205,8 @@ class AiRecommendationsTest extends TestCase
         $this->postJson("/api/exam-attempts/{$primero->id}/recommendations/regenerate")
             ->assertStatus(429);
 
-        // Segundo intento, entregado después: cupo limpio pese a las 16 filas
-        // que ya existen para el mismo examen y materia.
+        // Segundo intento: cupo limpio pese a las 16 filas que ya existen para el
+        // mismo examen y materia, porque son del intento anterior.
         $segundo = \App\Models\Exams\ExamAttempt::factory()->submitted()->create([
             'institution_id' => $institution->id,
             'exam_id' => $exam->id,

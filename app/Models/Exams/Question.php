@@ -39,6 +39,13 @@ class Question extends Model
 
         // Orden dentro del examen
         'order_index',
+
+        // Metadatos curriculares (D2): tema e indicador tal como los escribe el
+        // docente, y nivel del ítem. `topic_normalized` NO va aquí: la genera
+        // PostgreSQL a partir de `topic` y escribirla daría error.
+        'topic',
+        'indicator',
+        'difficulty',
     ];
 
     protected $casts = [

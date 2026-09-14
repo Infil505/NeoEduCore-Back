@@ -12,6 +12,7 @@ use App\Models\Students\Student;
 use App\Services\Admin\ReportExportService;
 use App\Services\Admin\ReportMetricsService;
 use App\Services\Admin\ReportStrategyService;
+use App\Services\Academic\TopicMasteryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -84,6 +85,19 @@ class ReportController extends Controller
     }
 
     /**
+     * Export XLSX: resultados de un examen. Mismo dataset y mismos permisos que
+     * la versión CSV; cambia solo la serialización.
+     */
+    public function exportExamResultsXlsx(Exam $exam, Request $request): StreamedResponse
+    {
+        if (!$this->assertCanAccessExam($exam, $request)) {
+            abort(403, 'No autorizado');
+        }
+
+        return $this->exports->examResultsXlsx($exam);
+    }
+
+    /**
      * Resumen grupal de un examen, listo para graficar y para el PDF que arma el
      * frontend: totales, histograma por rango de nota (barras) y reparto por
      * nivel de desempeño (pastel).
@@ -103,6 +117,15 @@ class ReportController extends Controller
     public function exportStudentHistoryCsv(string $student_user_id, Request $request): StreamedResponse
     {
         return $this->exports->studentHistoryCsv($this->findStudent($student_user_id, $request->user()));
+    }
+
+    /**
+     * Export XLSX: historial completo de un estudiante. El alcance por
+     * asignación lo sigue decidiendo `findStudent()`, igual que el CSV.
+     */
+    public function exportStudentHistoryXlsx(string $student_user_id, Request $request): StreamedResponse
+    {
+        return $this->exports->studentHistoryXlsx($this->findStudent($student_user_id, $request->user()));
     }
 
     /**
@@ -232,6 +255,43 @@ class ReportController extends Controller
         }
 
         return $student;
+    }
+
+    /**
+     * Temas que conviene reforzar, agregados (decisión D2).
+     *
+     * Responde a lo que [173] promete al personal docente: saber **qué temas**
+     * necesitan repaso, no solo qué materias van flojas. Sale de los ítems que
+     * el propio profesorado etiquetó con `topic` al redactarlos.
+     *
+     * **Es un agregado sin nombres, a propósito.** [173] concede al docente
+     * «solo métricas agregadas» y «reportes anónimos»; un listado de qué alumno
+     * falló qué tema sería otra cosa. Quien necesite el detalle individual lo
+     * tiene en el historial del estudiante, que sí exige alcance por asignación.
+     *
+     * El alcance: un docente ve los temas de los estudiantes de **sus grupos
+     * asignados**; un admin, los de toda su institución (vía `TenantScoped`).
+     */
+    public function topicMastery(Request $request, TopicMasteryService $topics)
+    {
+        $validated = $request->validate([
+            'limit' => ['sometimes', 'integer', 'between:1,50'],
+        ]);
+
+        $limite = (int) ($validated['limit'] ?? 10);
+        $user   = $request->user();
+
+        $temas = $this->esDocente($user)
+            ? $topics->porEstudiantes($this->estudiantesDelDocente($user->id), $limite)
+            : $topics->porTodos($limite);
+
+        return response()->json([
+            'data' => [
+                'threshold' => TopicMasteryService::UMBRAL_REFUERZO,
+                'min_answers' => TopicMasteryService::MINIMO_RESPUESTAS,
+                'topics'    => $temas,
+            ],
+        ]);
     }
 
     /**

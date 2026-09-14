@@ -1,8 +1,12 @@
 # NeoEduCore — Estado del proyecto y pendientes
-**Última actualización:** 8 de agosto de 2026  
+**Última actualización:** 13 de septiembre de 2026  
 **Rama activa:** Darwin  
-**Tests:** 375 pasando / 0 fallando  
-**Endpoints:** 117
+**Tests:** 405 pasando / 0 fallando  
+**Endpoints:** 121
+
+> ☑️ **Control de avance:** todo lo abierto de este documento está resumido como checklist
+> marcable en [`CHECKLIST_PENDIENTES.md`](CHECKLIST_PENDIENTES.md). Al cerrar algo, marcarlo
+> allí y actualizar aquí la sección correspondiente.
 
 ---
 
@@ -198,26 +202,88 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 
 ---
 
+### ✅ Metadatos curriculares y dominio por tema
+
+Decisión **D2** (13/09/2026). Hasta aquí la señal más fina del sistema era
+`student_progress.mastery_percentage`, que es por materia: «Español 45 %».
+
+**Esquema** (migración `2026_09_13_000002`):
+
+| Columna | Dónde | Para qué |
+|---|---|---|
+| `topic` | `questions` | tema tal como lo escribe el docente |
+| `topic_normalized` | `questions` | **columna generada** por PostgreSQL: minúsculas, sin espacios sobrantes. Es la que se agrupa |
+| `indicator` | `questions` | indicador curricular ([222]) |
+| `difficulty` | `questions` | `basic` / `intermediate` / `advanced`, los mismos de `study_resources` |
+| `subject_id` | `study_resources` | materia del recurso, nullable |
+
+**Por qué `topic_normalized` la genera la base y no el código.** El tema lo teclea
+cada docente, así que «Fracciones», «fracciones » y «Fracciones  equivalentes» con
+dos espacios serían temas distintos para un `GROUP BY`. Poniéndola en el esquema, no
+hay vía de escritura que se la salte: ni una carga masiva, ni un seeder, ni un INSERT
+a mano. **No cubre sinónimos ni tildes** — eso pedía un catálogo de temas por materia,
+que se valoró y se dejó fuera por coste.
+
+**Qué usa esto:**
+
+- **Diagnóstico del tutor** (`GET /ai/tutor/diagnosis`): además del progreso por
+  materia, ahora lista los temas flojos. Es lo que separa «Español 45 %» de «te cuesta
+  la comprensión de lectura», que es el ejemplo literal de [263].
+- **`GET /reports/topics`**: temas a reforzar, **agregados y sin nombres**. El docente
+  ve los de sus grupos asignados; el admin, los de toda la institución. [173] solo le
+  concede al docente «métricas agregadas» y «reportes anónimos».
+- **Recurso sugerido**: `recursoSugerido()` prefiere la materia del examen → grado del
+  alumno → dificultad `basic` → más reciente, aflojando cada filtro si deja la búsqueda
+  vacía. La materia pesa más que el grado.
+- **Banco de 60 ítems (E2)**: ya tiene dónde guardarse.
+
+Un tema necesita **3 respuestas como mínimo** (`TopicMasteryService::MINIMO_RESPUESTAS`)
+antes de reportarse: con dos, un despiste lo manda al 50 % y lo coloca arriba del todo.
+Los metadatos son **opcionales** en el endpoint de preguntas — exigirlos rompería todo
+examen ya creado; que el banco de ítems los lleve es criterio editorial, no del API.
+
+---
+
 ### ✅ Recomendaciones IA
 - **List** `GET /api/ai-recommendations` (admin/teacher)
 - **Me** `GET /api/ai-recommendations/me` (student)
 - **Show** `GET /api/ai-recommendations/{id}`
+- **Resultados del intento** `GET /api/exam-attempts/{attempt}/recommendations` (student)
+  - Devuelve `{status, recommendations}` y **encola el análisis de IA la primera vez**
+  - `status`: `preparing` (lo que se ve son plantillas), `ready` (ya es el análisis),
+    `failed` (el modelo no respondió tras los reintentos), `null` (no hay nada encolado)
 - **Regenerate post-examen** `POST /api/exam-attempts/{attempt}/recommendations/regenerate`
-  - Llama GPT-4o-mini; límite: la generación automática del submit + 3 regeneraciones
-  - El cupo es **por intento**: `ai_recommendations` no tiene `attempt_id`, así que se
-    cuentan los `generated_at` distintos desde la entrega de ese intento. Un segundo
-    intento del mismo examen arranca con el cupo limpio
-  - Fallback a plantillas estáticas si OpenAI falla
+  - Llama GPT-4o-mini; límite: la generación automática + 3 regeneraciones a mano
+  - El cupo es **por intento**, contado por `attempt_id` (columna añadida el 13/09):
+    se cuentan los `generated_at` distintos de ese intento. Un segundo intento del
+    mismo examen arranca con el cupo limpio
+  - Fallback a plantillas estáticas si OpenAI falla — solo aquí, con el alumno
+    esperando delante; en la cola se lanza `AiGenerationFailed` en vez de duplicar
   - El texto devuelto por el modelo pasa por `AiOutputValidator` (PII, longitud y
     lista blanca de enlaces) antes de guardarse
 
-⚠️ **Lo que genera el submit NO lo escribe la IA.** `AiRecommendationService::generateFromAttempt`
-—el camino por defecto, el único que recorre un alumno que no pulsa nada— es un
-`if/elseif/else` sobre el porcentaje con textos fijos, sin ninguna llamada a OpenAI.
-La IA solo interviene si el estudiante pide explícitamente regenerar. Es una decisión
-de arquitectura (no meter una llamada de segundos dentro de la transacción del submit,
-que es el pico de concurrencia del sistema), pero **el informe la describe al revés**:
-ver [§3.6](#36-el-tutor-lo-que-hace-vs-lo-que-el-informe-dice).
+#### Cómo se genera una recomendación (decisión D1, 13/09/2026)
+
+Son **dos pasos separados**, y el disparador del segundo no es la entrega:
+
+1. **Al entregar el examen** se guardan 1 o 2 plantillas elegidas por tramo de
+   porcentaje (`generateFromAttempt`), sin tocar OpenAI. La entrega responde al
+   instante: el pico real del sistema es una clase entera entregando a la vez.
+2. **Al abrir los resultados** (`GET /exam-attempts/{attempt}/recommendations`) se
+   encola `GenerateAiRecommendations`. El job analiza las respuestas falladas con el
+   modelo y **sustituye** las plantillas de ese intento por las cuatro secciones que
+   redacta (`strength`, `weakness`, `action`, `resource`). Solo se paga API por el
+   alumno que de verdad va a leerlas.
+
+El encolado va con un UPDATE condicionado a `ai_recommendations_status IS NULL`, así
+que recargar la pantalla no encola otra vez. Cada fila lleva `generated_by`
+(`heuristic` | `ai`), que es lo que permite al frontend avisar de qué está mirando el
+alumno ([397], decisión D4 pendiente).
+
+⚠️ **Depende del worker de cola.** Sin `queue:work` corriendo (P1) los intentos se
+quedan en `preparing` para siempre y el alumno nunca pasa de las plantillas.
+`QUEUE_CONNECTION` debe ser `database` —lo es en `.env.example`— y no `sync`, que
+volvería a meter la llamada a OpenAI dentro de la petición.
 
 ---
 
@@ -274,14 +340,35 @@ de la respuesta se conserva.
 Grupal (por examen):
 - Resultados paginados `GET /api/reports/exams/{exam}/results`
 - Exportar CSV `GET /api/reports/exams/{exam}/results.csv`
+- Exportar XLSX `GET /api/reports/exams/{exam}/results.xlsx`
 - Resumen para gráficos `GET /api/reports/exams/{exam}/summary`
 
 Individual (por estudiante):
 - Historial paginado `GET /api/reports/students/{id}/history`
 - Exportar CSV `GET /api/reports/students/{id}/history.csv`
+- Exportar XLSX `GET /api/reports/students/{id}/history.xlsx`
 - Resumen para gráficos `GET /api/reports/students/{id}/summary?points=`
 
 - IDOR protegido: teacher solo accede a sus propios exámenes
+
+**CSV y XLSX salen del mismo dataset** (`ReportExportService`): cada reporte
+define cabeceras, tipos y filas una sola vez, y los dos formatos lo serializan.
+Diferencias entre ambos, a tener en cuenta:
+
+| | CSV | XLSX |
+|---|---|---|
+| Memoria | constante (`lazy()`, fila a fila) | proporcional a las filas: PhpSpreadsheet arma el libro entero antes de comprimirlo |
+| Tipos | no hay; todo es texto | explícitos: nota y porcentaje como número, `submitted_at` como fecha |
+| Fechas | `Y-m-d H:i:s` en **UTC** | fecha de Excel con formato `yyyy-mm-dd hh:mm:ss`, también **UTC** |
+
+Con los volúmenes previstos (≤ ~1.000 intentos por examen) el libro son pocos MB;
+si un reporte creciera un orden de magnitud, el CSV sigue siendo la salida segura.
+
+**Inyección de fórmulas, cerrada en los dos formatos.** Un nombre de alumno o un
+título de examen que empiece por `=`, `+`, `-` o `@` se ejecutaba como fórmula al
+abrir el fichero con Excel o LibreOffice. En el CSV esas celdas salen ahora
+precedidas de un apóstrofo; en el XLSX se escriben con `setCellValueExplicit()` y
+tipo texto, que es lo que impide que el escritor las guarde como fórmula.
 
 **Reparto backend/frontend.** El backend expone datos; el PDF con gráficos lo
 arma el frontend a partir de los `summary`. Los endpoints devuelven las series
@@ -513,13 +600,13 @@ el tutor IA es el diferenciador del TFG.
 
 | # | El informe dice | El sistema hace | Estado |
 |---|---|---|---|
-| 1 | [122][222][255][736] el tutor analiza los resultados y genera recomendaciones personalizadas | En el submit las genera un `if/elseif/else` sobre el porcentaje, **sin OpenAI**. La IA solo entra si el alumno pulsa regenerar | 🔴 Abierto — decisión de redacción |
-| 2 | Figura 10 y [263]: «recursos personalizados» | Era el recurso más reciente del centro, igual para todos | ✅ Corregido (H3) |
+| 1 | [122][222][255][736] el tutor analiza los resultados y genera recomendaciones personalizadas | La entrega deja plantillas y, al abrir los resultados, un job de cola las sustituye por el análisis del modelo | ✅ Resuelto el 13/09/2026 (D1, opción a) |
+| 2 | Figura 10 y [263]: «recursos personalizados» | Era el recurso más reciente del centro, igual para todos | ✅ Corregido (H3) y afinado con `subject_id` el 13/09/2026 (D2) |
 | 3 | [173] «prohibirá datos personales» · [394] anonimización, Ley 8968, menores | El `full_name` del alumno viajaba en cada prompt a OpenAI | ✅ Corregido (H2) |
 | 4 | [173] materiales externos «mediante una lista blanca» | La lista blanca no cubría el texto libre del chat | ✅ Corregido (H2) |
 | 5 | [173] docentes con «solo métricas agregadas» y «reportes anónimos» | `tutor-usage` devolvía al docente un top 10 de alumnos **con nombre** | ✅ Corregido (H5) |
 | 6 | [173] «registrará incidencias» + criterio «>75 % de mensajes que superen validación» | Solo `Log::warning`. Sin tabla, sin contador: **el criterio no es medible** | 🔴 Abierto — ya en §9.3 |
-| 7 | [171] ítems con «tema, indicador y dificultad» · [222] «indicadores curriculares» | `questions` no tiene tema, indicador ni dificultad. La única señal es `mastery_percentage` **por materia** | 🔴 Abierto — decisión de alcance |
+| 7 | [171] ítems con «tema, indicador y dificultad» · [222] «indicadores curriculares» | `questions` tiene `topic`, `indicator` y `difficulty`; el diagnóstico y el reporte al docente agregan por tema | ✅ Resuelto el 13/09/2026 (D2) |
 | 8 | [397] el sistema avisa de que la sugerencia viene de un modelo automatizado | La respuesta del chat es `{session_id, reply, message_count}`: no hay campo de aviso | 🟡 Abierto — contrato con el frontend |
 | 9 | [173] recomendaciones «breves (2–4 oraciones)» | System prompt: «máximo 4 párrafos», 600 tokens (800 en práctica) | 🟡 Redacción |
 | 10 | [222] «modelos GPT-4 (variante ligera)» | `gpt-4o-mini`, que es variante de GPT-4o, no de GPT-4 | 🟡 Redacción |
@@ -536,26 +623,24 @@ el tutor IA es el diferenciador del TFG.
 >   menores en equipos posiblemente compartidos del centro. Aquí es más defendible bajar
 >   la variable que relajar el requisito escrito.
 
-**Sobre el nº 1 — es la decisión que hay que tomar antes de redactar.** No es un
-descuido: meter una llamada a OpenAI de varios segundos dentro de la transacción del
-submit ataría un worker de Octane justo en el pico real del sistema (todos los alumnos
-entregan a la vez), que es lo que `ANALISIS_CONCURRENCIA.md` pide evitar. Las dos
-salidas son legítimas:
+**Sobre el nº 1 — decidido el 13/09/2026: opción (a), diferirlo a la cola.** Meter una
+llamada a OpenAI de varios segundos dentro de la transacción del submit ataría un worker
+de Octane justo en el pico real del sistema (todos los alumnos entregan a la vez), que es
+lo que `ANALISIS_CONCURRENCIA.md` pide evitar. La salida fue diferirla, **con el
+disparador puesto en la consulta de resultados y no en la entrega**: así el pico queda
+intacto y solo se paga API por el alumno que va a leer el análisis.
 
-- **(a) Diferirlo a la cola.** El submit responde al instante con las plantillas y un
-  job regenera con IA después. Cumple el informe tal como está escrito y no toca la
-  concurrencia. Cuesta trabajo: job, estado «recomendación en preparación» y el
-  frontend enterándose de que llegó.
-- **(b) Redactar el diseño real** — heurística inmediata + refinamiento IA bajo demanda.
-  Cero código, y se defiende bien: respuesta instantánea, coste de API acotado y el
-  alumno decide si quiere el análisis profundo. Hay que reescribir [122], [222], [255]
-  y [736] para que digan eso.
+Implementado en [§2 Recomendaciones IA](#-recomendaciones-ia). Lo que hizo falta:
+`attempt_id` y `generated_by` en `ai_recommendations`, `ai_recommendations_status` en
+`exam_attempts`, el job `GenerateAiRecommendations` y el endpoint
+`GET /exam-attempts/{attempt}/recommendations`. Con esto **el informe ya no hay que
+reescribirlo en este punto**: describe lo que el sistema hace.
 
-**Sobre el nº 7 — bloquea a los nº 6 y 2.** Sin tema por ítem no hay diagnóstico por
-tema, luego no hay «temas más recomendados» para el docente ([173]) ni recurso por
-tema. `study_resources` tampoco tiene `subject_id`. Es una decisión de alcance: añadir
-las columnas a `questions` (y llevarlas al ERD nuevo) o recortar la promesa en [171],
-[222], [263] y [276].
+**Sobre el nº 7 — decidido el 13/09/2026 (D2): se añadieron las columnas.** `questions`
+tiene ahora `topic`, `indicator` y `difficulty`, y `study_resources` tiene `subject_id`.
+Con eso existen el diagnóstico por tema, el reporte de «temas a reforzar» para el docente
+([173]) y el recurso acotado a la materia que el alumno falló. Detalle en
+[§2 Metadatos curriculares](#-metadatos-curriculares-y-dominio-por-tema).
 
 ---
 
@@ -833,6 +918,29 @@ La migración ya es idempotente ante eso, pero el comando correcto para regenera
 - [x] ~~**`exam_attempts.institution_id` y `student_progress.institution_id` siguen sin FK**~~ → **Resuelto el 08/08/2026 (H8).** Se dejaron fuera de G10 por no desviarse del boceto del TFG; al fijar que manda el sistema, esa razón deja de valer. Ver `ANALISIS_MODELO_DATOS_TFG.md` §7.2.
 - [ ] **Los borrados ahora son realmente destructivos.** Antes `DELETE /subjects|/groups|/exams|/users` fallaban con 500 cuando había contenido, lo que protegía por accidente. Ahora funcionan y cascadean: borrar una materia elimina sus exámenes **y todos los resultados de los alumnos**. El frontend debería pedir confirmación explícita. Ver `ANALISIS_MODELO_DATOS_TFG.md` §7.3.
 
+### 📌 Pendientes abiertos (anotados 13/09/2026)
+
+- [ ] 🟡 **Los temas dependen de que el profesorado los escriba.** `topic` es opcional y
+  texto libre: un centro que no etiquete ítems no verá nada en `GET /reports/topics` ni
+  en el diagnóstico por tema, y no habrá ningún error que lo avise. La agregación tolera
+  mayúsculas y espacios, **no** sinónimos ni tildes. Si en el piloto (E4) se ve que los
+  temas se dispersan, la salida es el catálogo de temas por materia que se descartó en D2.
+
+- [ ] 🔴 **El worker de cola pasa a ser imprescindible.** Desde D1, sin `queue:work` los
+  intentos se quedan en `preparing` y el alumno nunca ve el análisis. Ya figuraba en la
+  checklist como **P1**, pero como un recurso más; ahora es requisito de funcionalidad.
+  Verificar también que `QUEUE_CONNECTION` en Coolify **no** sea `sync` (**P2**).
+- [ ] 🟡 **Los intentos entregados antes del 13/09 tienen `attempt_id` nulo** en sus
+  recomendaciones y `ai_recommendations_status` nulo. Se comportan como «sin análisis
+  encolado»: al abrir sus resultados se encolará uno. Es el comportamiento buscado, pero
+  conviene saberlo antes de mirar datos viejos.
+
+### 📌 Pendientes abiertos (anotados 10/09/2026)
+
+- [x] ~~**Exportar los reportes también en XLSX**~~ → **Resuelto el 13/09/2026 (B1).** Rutas `results.xlsx` e `history.xlsx`, con el mismo dataset y los mismos permisos que sus versiones CSV. Ver [§2 Reportes](#-reportes).
+- [x] ~~**Posible inyección de fórmulas en los CSV exportados**~~ → **Confirmado y corregido el 13/09/2026 (S4).** Se reprodujo con un `full_name` igual a `=HYPERLINK("http://…","clic")`: salía tal cual en el CSV. Ahora esas celdas se neutralizan en CSV y se escriben con tipo texto explícito en XLSX; lo cubre `tests/Feature/Crud/ReportExportsTest.php`.
+- [ ] **Fechas de los reportes en UTC, no en la hora del centro.** CSV, XLSX y JSON usan UTC. `institutions.settings.timezone` existe pero ningún reporte lo lee. Decisión pendiente: convertir en todos los formatos o dejarlo documentado.
+
 ### 📌 Pendientes abiertos (anotados 08/08/2026)
 
 > 📄 Contexto y evidencia en [§3.5](#35-las-relaciones-informe-vs-sistema-revisado-08082026) y [§3.6](#36-el-tutor-lo-que-hace-vs-lo-que-el-informe-dice).
@@ -900,6 +1008,7 @@ La migración ya es idempotente ante eso, pero el comando correcto para regenera
 | PATCH | `/api/exams/{exam}/attempts/{attempt}/pause` | Pausar intento |
 | PATCH | `/api/exams/{exam}/attempts/{attempt}/resume` | Reanudar intento |
 | GET | `/api/exams/{exam}/attempts/{attempt}` | Ver intento |
+| GET | `/api/exam-attempts/{attempt}/recommendations` | Recomendaciones del intento; la 1.ª consulta encola el análisis IA |
 | POST | `/api/exam-attempts/{attempt}/recommendations/regenerate` | Regenerar recomendaciones IA |
 | GET | `/api/student-progress/me` | Mi progreso por materia |
 | GET | `/api/ai-recommendations/me` | Mis recomendaciones IA |
@@ -954,10 +1063,13 @@ La migración ya es idempotente ante eso, pero el comando correcto para regenera
 | GET | `/api/ai-recommendations/{id}` | Ver recomendación |
 | GET | `/api/reports/exams/{exam}/results` | Reporte de examen |
 | GET | `/api/reports/exams/{exam}/results.csv` | CSV de resultados |
+| GET | `/api/reports/exams/{exam}/results.xlsx` | XLSX de resultados (mismo dataset y permisos que el CSV) |
 | GET | `/api/reports/exams/{exam}/summary` | Agregados del examen para gráficos |
 | GET | `/api/reports/students/{id}/history` | Historial estudiante |
 | GET | `/api/reports/students/{id}/history.csv` | CSV del historial |
+| GET | `/api/reports/students/{id}/history.xlsx` | XLSX del historial (mismo dataset y permisos que el CSV) |
 | GET | `/api/reports/students/{id}/summary` | Agregados del estudiante para gráficos |
+| GET | `/api/reports/topics` | Temas a reforzar, agregados y sin nombres (docente: sus grupos; admin: la institución) |
 | GET | `/api/reports/students/{id}/strategies` | Estrategias del tutor (acotado a exámenes propios) |
 | GET | `/api/reports/ai/tutor-usage` | Métricas de uso del tutor — el top nominal de alumnos **solo lo ve el admin** |
 | GET | `/api/system/config` | Configuración de la institución |

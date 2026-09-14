@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Academic;
 
 use App\Http\Controllers\Controller;
+use App\Enums\Difficulty;
 use App\Enums\ResourceType;
 use App\Models\Academic\StudyResource;
 use App\Services\AI\AiOutputValidator;
@@ -17,7 +18,7 @@ class StudyResourceController extends Controller
     public function index(Request $request)
     {
         $query = StudyResource::query()
-            ->with('creator')
+            ->with(['creator', 'subject'])
             ->orderByDesc('created_at');
 
         if ($request->filled('resource_type')) {
@@ -26,6 +27,10 @@ class StudyResourceController extends Controller
 
         if ($request->filled('difficulty')) {
             $query->where('difficulty', $request->string('difficulty')->toString());
+        }
+
+        if ($request->filled('subject_id')) {
+            $query->where('subject_id', $request->string('subject_id')->toString());
         }
 
         if ($request->filled('grade')) {
@@ -62,8 +67,15 @@ class StudyResourceController extends Controller
                 }
             }],
 
+            // Materia del recurso (D2). Acotada a la institución del usuario: con
+            // un `exists` a secas se podría referenciar la materia de otro centro,
+            // porque `Rule::exists` va por el query builder y no pasa por el
+            // scope de tenant de Eloquent.
+            'subject_id' => ['nullable', 'uuid', Rule::exists('subjects', 'id')
+                ->where('institution_id', $request->user()->institution_id)],
+
             'estimated_duration' => ['nullable', 'integer', 'between:1,999'],
-            'difficulty' => ['nullable', Rule::in(['basic', 'intermediate', 'advanced'])],
+            'difficulty' => ['nullable', Rule::in(Difficulty::values())],
 
             'grade_min' => ['nullable', 'integer', 'between:1,12'],
             'grade_max' => ['nullable', 'integer', 'between:1,12', 'gte:grade_min'],
@@ -74,6 +86,7 @@ class StudyResourceController extends Controller
         $user = $request->user();
 
         $resource = StudyResource::create([
+            'subject_id' => $data['subject_id'] ?? null,
             'title' => trim($data['title']),
             'description' => $data['description'] ?? null,
             'resource_type' => $data['resource_type'],
@@ -88,7 +101,7 @@ class StudyResourceController extends Controller
         ]);
 
         return response()->json([
-            'data' => $resource->load('creator'),
+            'data' => $resource->load(['creator', 'subject']),
         ], 201);
     }
 
@@ -98,7 +111,7 @@ class StudyResourceController extends Controller
     public function show(StudyResource $studyResource)
     {
         return response()->json([
-            'data' => $studyResource->load('creator'),
+            'data' => $studyResource->load(['creator', 'subject']),
         ]);
     }
 
@@ -122,8 +135,15 @@ class StudyResourceController extends Controller
                 }
             }],
 
+            // Materia del recurso (D2). Acotada a la institución del usuario: con
+            // un `exists` a secas se podría referenciar la materia de otro centro,
+            // porque `Rule::exists` va por el query builder y no pasa por el
+            // scope de tenant de Eloquent.
+            'subject_id' => ['nullable', 'uuid', Rule::exists('subjects', 'id')
+                ->where('institution_id', $request->user()->institution_id)],
+
             'estimated_duration' => ['nullable', 'integer', 'between:1,999'],
-            'difficulty' => ['nullable', Rule::in(['basic', 'intermediate', 'advanced'])],
+            'difficulty' => ['nullable', Rule::in(Difficulty::values())],
 
             'grade_min' => ['nullable', 'integer', 'between:1,12'],
             'grade_max' => ['nullable', 'integer', 'between:1,12', 'gte:grade_min'],
@@ -139,7 +159,7 @@ class StudyResourceController extends Controller
         $studyResource->save();
 
         return response()->json([
-            'data' => $studyResource->fresh()->load('creator'),
+            'data' => $studyResource->fresh()->load(['creator', 'subject']),
         ]);
     }
 
