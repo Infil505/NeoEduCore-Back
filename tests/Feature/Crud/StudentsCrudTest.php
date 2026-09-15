@@ -71,14 +71,14 @@ class StudentsCrudTest extends TestCase
 
         $res = $this->putJson("/api/students/{$student->user_id}", [
             'full_name' => 'Juan Actualizado',
-            'grade' => 11,
+            'grade' => 5,
             'parent_name' => 'Nuevo Acudiente',
         ]);
 
         $res->assertOk();
         $this->assertDatabaseHas('students', [
             'user_id' => $studentUser->id,
-            'grade' => 11,
+            'grade' => 5,
         ]);
     }
 

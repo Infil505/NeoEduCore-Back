@@ -1,7 +1,7 @@
 # NeoEduCore — Estado del proyecto y pendientes
 **Última actualización:** 13 de septiembre de 2026  
 **Rama activa:** Darwin  
-**Tests:** 422 pasando / 0 fallando  
+**Tests:** 449 pasando / 0 fallando  
 **Endpoints:** 122
 
 > ☑️ **Control de avance:** todo lo abierto de este documento está resumido como checklist
@@ -229,6 +229,120 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 
 ---
 
+### ✅ Primaria 1.º–6.º (6 a 12 años) y registro del tutor por grado (13/09/2026)
+
+**El sistema es de primaria, grados 1 a 6.** Hasta hoy había tres rangos escritos a
+mano que no coincidían entre sí ni con eso:
+
+| Dónde | Decía | Ahora |
+|---|---|---|
+| `config/academic.php` | 6–12, «secundaria de Costa Rica» | **1–6**, y de aquí salen los tres |
+| `GroupController` | `between:6,12` a mano | `config('academic.grade_*')` |
+| `ExamController` | `between:7,12` a mano | `config('academic.grade_*')` |
+| Los prompts del tutor | «un estudiante de primaria» | coherente por fin |
+
+El desajuste tenía consecuencia real: **no se podía crear un examen de 6.º** aunque sí
+el grupo, porque exámenes empezaba en 7 y grupos en 6.
+
+**La etapa también estaba escrita a mano**, y en tres sitios: los prompts del chat, del
+diagnóstico y de las recomendaciones decían «un estudiante de primaria» cada uno por su
+cuenta — la misma trampa de las tres copias. Ahora sale de `config('academic.etapa')`,
+con valor `primaria (6 a 12 años)`. **Va la edad y no solo la etiqueta** porque al modelo
+le dice más: «primaria» cambia de país a país, «6 a 12 años» no. Un centro que despliegue
+esto para secundaria cambia esa línea y el rango de grados, y no toca código.
+
+⚠️ **Los datos cargados quedan fuera de rango, y no por poco.** De los 65 estudiantes de
+la base remota, **solo 5 tienen grado o fecha de nacimiento** — y esos 5 tienen **15 y 16
+años**, en grados 10 y 11. Los otros 60 no tienen ni grado ni fecha. Los grupos están en
+11 y los exámenes en 10.
+
+La validación solo actúa al escribir, así que nada se rompe; pero ninguna de esas filas
+describe a la población objetivo. Queda como **B2a** en la checklist: decidir si se
+limpian, se remapean o se dejan hasta el piloto (E4).
+
+*(Nota: `students.birth_date` existe y permitiría deducir la edad cuando falta el grado,
+pero hoy está igual de vacía —5 de 65—, así que no sirve como respaldo. Si el piloto
+llega con fechas de nacimiento bien cargadas, es una mejora barata.)*
+
+#### El tutor le escribe distinto a 1.º que a 6.º
+
+Entre primero y sexto hay seis años de diferencia lectora y el sistema los trataba
+igual. Peor: de las tres superficies, **solo el chat sabía el grado**, y como número
+suelto con una instrucción vaga («adapta el nivel de detalle al perfil»), así que el
+registro lo improvisaba el modelo. El diagnóstico y las recomendaciones post-examen ni
+siquiera lo recibían.
+
+Ahora las tres reciben una **instrucción explícita de registro** según la franja:
+
+| Franja | Qué le dice al modelo |
+|---|---|
+| 1.º–2.º | 6–8 años, aprendiendo a leer: frases muy cortas, una idea por frase, cero tecnicismos |
+| 3.º–4.º | 8–10 años, ya lee para aprender: un término técnico si se explica; pasos de dos o tres |
+| 5.º–6.º | 10–12 años: explicación de varios pasos, vocabulario académico básico, se le puede pedir que justifique |
+| sin grado | registro conservador — el alumnado cargado en masa suele no traerlo |
+
+Los textos viven en `config/openai.php` (`tutor.registro`), no en el código: son texto
+pedagógico y quien mejor los afina es el profesorado. La lógica está en
+`App\Services\AI\RegistroPorGrado`, compartida por los tres prompts.
+
+---
+
+### ✅ Revisión de alcance por rol (S1, 13/09/2026)
+
+Revisión sistemática de los **122 endpoints** contra los cuatro roles. La pregunta no
+era «¿llega?» sino **«¿qué ve cuando llega?»**, que es la que los tests anteriores no
+hacían: los cinco hallazgos previos del proyecto aparecieron por casualidad.
+
+**Matriz de acceso resultante:**
+
+| Puerta | Endpoints | Cómo se acota el dato |
+|---|---|---|
+| Pública | 7 | login, recuperación de contraseña, ping, docs |
+| Cualquier autenticado | 3 | `auth/me`, logout, cambio de contraseña — solo lo propio |
+| `admin` | 21 | `TenantScoped` + filtro explícito de institución en `User` |
+| `admin,teacher` | 53 | `TenantScoped` + **`teacher_assignments`** para todo lo que sea alumnado |
+| `admin,teacher,student` | 9 | catálogos (materias, recursos, calendario) y exámenes vía `Exam::visibleTo` |
+| `student` | 17 | propiedad del propio registro (`student_user_id === $user->id`) |
+| `superadmin` | 14 | instituciones y plataforma; **`RequireRole` no le deja entrar al aula** |
+
+**Hallazgo corregido — `/users` era una puerta paralela a `/students`.** `GET /users` y
+`GET /users/{id}` filtraban por institución pero **no por asignación**, así que un
+docente sin ninguna asignación listaba a todos los menores del centro con su
+`full_name` y su `email`, y abría la ficha de cualquiera — mientras `/students`, la vía
+«oficial», le devolvía correctamente cero. La regla del sistema no puede cambiar según
+la puerta por la que se entre. Corregido en `UserController` (`assertPuedeVerFicha()` y
+el filtro del `index`), acotando **solo el alumnado**: el personal del centro sigue
+siendo un directorio visible entre adultos.
+
+**Lo que se verificó correcto y ahora tiene test:** `/students`, `/groups`,
+`/student-progress`, `/ai-recommendations`, `/analytics/students/{id}`, los cinco
+reportes por estudiante, los intentos de examen, las recomendaciones por intento, el
+aislamiento entre instituciones y la frontera del superadministrador.
+
+Todo ello queda cubierto por `tests/Feature/Security/AlcancePorRolTest.php` (20
+casos), que recorre la matriz entera y falla si alguna puerta se abre de más.
+
+**Las otras dos observaciones también se cerraron** el mismo día, con criterio del
+usuario:
+
+- **S5 — analíticas por materia.** `GET /analytics/subjects` daba al docente el
+  rendimiento de **todas** las materias del centro. Ahora **el docente ve las que
+  imparte y el administrador todas**. No era fuga de datos personales —son agregados
+  sin nombres— pero le ponía delante el desempeño de las clases de sus colegas. Es la
+  misma frontera que el resto del sistema: se alcanza lo que se tiene asignado.
+- **S6 — autoría sobre calendario y recursos.** `PUT`/`DELETE` de `calendar-events` y
+  `study-resources` no miraban `created_by`, así que cualquier docente reescribía o
+  borraba lo de otro. Ahora **cada entrada es de quien la creó**; el administrador
+  queda fuera de la regla porque responde por la institución. Se lee entre todos, no se
+  reescribe lo ajeno.
+
+  Detalle que importa: `created_by` es nullable y queda en `NULL` al borrarse la cuenta
+  que lo creó (`ON DELETE SET NULL`). **Esas entradas huérfanas solo las toca el
+  administrador** — dejarlas abiertas a cualquier docente reabriría el agujero por la
+  puerta de atrás. La regla vive en el trait `ExigeAutoria`.
+
+---
+
 ### ✅ Aviso de IA e incidencias del tutor
 
 Decisiones **D4** y **D5** (13/09/2026). Salen del mismo sitio del informe.
@@ -348,6 +462,25 @@ Son **dos pasos separados**, y el disparador del segundo no es la entrega:
    modelo y **sustituye** las plantillas de ese intento por las cuatro secciones que
    redacta (`strength`, `weakness`, `action`, `resource`). Solo se paga API por el
    alumno que de verdad va a leerlas.
+
+**Qué se le manda al modelo, y qué no** (ajustado el 13/09/2026):
+
+| Entra | No entra |
+|---|---|
+| materia y título del examen | **`correct_answer_text`** — nunca ha entrado |
+| recuento de correctas e incorrectas | el nombre del estudiante |
+| hasta 8 ítems fallados: enunciado (240 car.), tipo y respuesta dada (120 car.) | |
+| **tema, indicador y dificultad** de cada ítem (D2) | |
+| resumen de temas con más fallos, ordenado por frecuencia | |
+
+Y la instrucción que gobierna el tono: **explicar, no resolver**. El modelo tiene
+prohibido dar la respuesta correcta de las preguntas falladas o dejarla deducir con un
+ejemplo calcado; lo que debe hacer es explicar el procedimiento que falló y por qué el
+camino que tomó el alumno no lleva al resultado, con un ejemplo **distinto** si hace
+falta. El motivo es concreto: el alumno puede volver a intentar el examen
+(`max_attempts`), así que un tutor que resuelve le quita el intento en vez de enseñarle.
+
+Lo fija `AiRecommendationsQueueTest::test_el_prompt_lleva_los_metadatos_del_item_pero_nunca_la_respuesta_correcta`.
 
 El encolado va con un UPDATE condicionado a `ai_recommendations_status IS NULL`, así
 que recargar la pantalla no encola otra vez. Cada fila lleva `generated_by`

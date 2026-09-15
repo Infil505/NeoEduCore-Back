@@ -47,7 +47,7 @@ class Level7_AcademicCycleTest extends TestCase
         Student::factory()->create([
             'user_id'        => $user->id,
             'institution_id' => $this->institution->id,
-            'grade'          => 7,
+            'grade'          => 1,
             'section'        => 'A',
             'year'           => 2026,
         ]);
@@ -99,17 +99,17 @@ class Level7_AcademicCycleTest extends TestCase
 
         $g7_2026 = Group::factory()->create([
             'institution_id' => $this->institution->id,
-            'name' => '7-A 2026', 'grade' => 7, 'section' => 'A',
-            'year' => 2026, 'group_code' => '7A-2026',
+            'name' => '1-A 2026', 'grade' => 1, 'section' => 'A',
+            'year' => 2026, 'group_code' => '1A-2026',
         ]);
         $g7_2027 = Group::factory()->create([
             'institution_id' => $this->institution->id,
-            'name' => '7-A 2027', 'grade' => 7, 'section' => 'A',
-            'year' => 2027, 'group_code' => '7A-2027',
+            'name' => '1-A 2027', 'grade' => 1, 'section' => 'A',
+            'year' => 2027, 'group_code' => '1A-2027',
         ]);
         $g8_2027 = Group::factory()->create([
             'institution_id' => $this->institution->id,
-            'name' => '8-A 2027', 'grade' => 8, 'section' => 'A',
+            'name' => '2-A 2027', 'grade' => 2, 'section' => 'A',
             'year' => 2027, 'group_code' => '8A-2027',
         ]);
 
@@ -199,11 +199,11 @@ class Level7_AcademicCycleTest extends TestCase
 
         // Campos denormalizados sincronizados, incluido `year`
         $this->assertDatabaseHas('students', [
-            'user_id' => $repitentes[0], 'grade' => 7, 'section' => 'A',
-            'year' => 2027, 'group_code' => '7A-2027',
+            'user_id' => $repitentes[0], 'grade' => 1, 'section' => 'A',
+            'year' => 2027, 'group_code' => '1A-2027',
         ]);
         $this->assertDatabaseHas('students', [
-            'user_id' => $promovidos[0], 'grade' => 8, 'section' => 'A',
+            'user_id' => $promovidos[0], 'grade' => 2, 'section' => 'A',
             'year' => 2027, 'group_code' => '8A-2027',
         ]);
 

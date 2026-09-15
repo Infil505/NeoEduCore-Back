@@ -291,7 +291,7 @@ class TeacherAssignmentsTest extends TestCase
         return [
             'title'            => 'Diagnóstico',
             'subject_id'       => $subjectId,
-            'grade'            => 8,
+            'grade'            => 2,
             'duration_minutes' => 45,
             'group_ids'        => $groupIds,
         ];

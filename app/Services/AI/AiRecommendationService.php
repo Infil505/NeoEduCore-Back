@@ -8,6 +8,7 @@ use App\Models\AI\AiRecommendation;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Academic\StudyResource;
 use App\Services\AI\AiOutputValidator;
+use App\Services\AI\RegistroPorGrado;
 use OpenAI\Laravel\Facades\OpenAI;
 
 class AiRecommendationService
@@ -171,6 +172,8 @@ class AiRecommendationService
     ): array {
         $attempt->load([
             'exam.subject',
+            // El grado decide el registro con el que se le escribe (RegistroPorGrado).
+            'student',
             'answers.question.options',
             'answers.selectedOptions',
         ]);
@@ -197,29 +200,69 @@ class AiRecommendationService
         $wrong = collect($attempt->answers)->filter(fn ($a) => $a->is_correct === false)->values();
         $right = collect($attempt->answers)->filter(fn ($a) => $a->is_correct === true)->values();
 
+        /*
+        | Cada error viaja con sus **metadatos curriculares** (D2): tema,
+        | indicador y dificultad. Antes solo iba el enunciado en bruto, así que
+        | el modelo tenía que adivinar de qué trataba la pregunta aunque el
+        | sistema ya lo supiera. Es lo que [222] pide al hablar de sugerencias
+        | «alineadas con los indicadores curriculares».
+        |
+        | Lo que NO se añade, y es deliberado: `correct_answer_text`. La
+        | respuesta correcta nunca ha entrado en este prompt y sigue sin entrar
+        | — ver la regla de abajo sobre explicar en vez de resolver.
+        */
         $wrongItems = $wrong->take(8)->map(function ($a) {
             $q = $a->question;
-            return [
-                'question' => mb_substr((string)($q->question_text ?? ''), 0, 240),
-                'type' => $q?->question_type?->value,
-                'given' => $a->answer_text ? mb_substr((string)$a->answer_text, 0, 120) : null,
-            ];
+            return array_filter([
+                'question'   => mb_substr((string)($q->question_text ?? ''), 0, 240),
+                'type'       => $q?->question_type?->value,
+                'topic'      => $q?->topic,
+                'indicator'  => $q?->indicator,
+                'difficulty' => $q?->difficulty,
+                'given'      => $a->answer_text ? mb_substr((string)$a->answer_text, 0, 120) : null,
+            ], fn ($v) => $v !== null && $v !== '');
         })->all();
 
-        $prompt = "Genera recomendaciones educativas para un estudiante según su intento de examen.\n\n"
+        // Los temas repetidos son la señal más útil: un fallo suelto es ruido,
+        // tres del mismo tema son un tema por reforzar.
+        $temasFallados = $wrong
+            ->map(fn ($a) => $a->question?->topic)
+            ->filter()
+            ->countBy()
+            ->sortDesc()
+            ->map(fn (int $veces, string $tema) => "{$tema} ({$veces})")
+            ->implode(', ');
+
+        $prompt = "Genera recomendaciones educativas para un estudiante de " . config('academic.etapa') . " según su intento de examen.\n\n"
             . "Contexto:\n"
             . "- Materia: " . ($attempt->exam?->subject?->name ?? 'N/D') . "\n"
             . "- Examen: " . ($attempt->exam?->title ?? 'N/D') . "\n"
             . "- Correctas: " . $right->count() . "\n"
             . "- Incorrectas: " . $wrong->count() . "\n"
+            . ($temasFallados !== '' ? "- Temas con más fallos: {$temasFallados}\n" : '')
             . "- Errores (muestra): " . json_encode($wrongItems, JSON_UNESCAPED_UNICODE) . "\n\n"
             . "Devuelve EXACTAMENTE 4 secciones con este formato:\n"
             . "strength: ...\n"
             . "weakness: ...\n"
             . "action: ...\n"
             . "resource: ...\n"
-            . "Si incluyes datos de recurso, agrega un JSON al final de resource.\n"
-            . "Reglas: español, breve, accionable, no inventes datos.\n";
+            . "Si incluyes datos de recurso, agrega un JSON al final de resource.\n\n"
+            . "Reglas:\n"
+            . "- Español, breve y accionable.\n"
+            . "- No inventes datos ni resultados que no se te hayan dado.\n"
+            . "- **No resuelvas el examen.** No des la respuesta correcta de ninguna de esas "
+            . "preguntas, ni la dejes deducir con un ejemplo calcado. El estudiante puede "
+            . "volver a intentarlo y tiene que llegar él.\n"
+            . "- Explica **el procedimiento o el concepto** que falló y por qué el camino que "
+            . "tomó no lleva al resultado. Si hace falta un ejemplo, usa uno **distinto** al "
+            . "de la pregunta.\n"
+            . "- Cuando haya tema o indicador, nómbralo: al estudiante le dice qué repasar y "
+            . "al docente con qué parte del programa se corresponde.\n"
+            . "- No te dirijas al estudiante por su nombre ni se lo preguntes: no lo conoces.\n"
+            // El registro llega explícito: este prompt no sabía siquiera el
+            // grado, así que un alumno de 1.º recibía el mismo texto que uno
+            // de 6.º. Ver `RegistroPorGrado`.
+            . '- ' . app(RegistroPorGrado::class)->para($attempt->student?->grade) . "\n";
 
         try {
             $response = OpenAI::chat()->create([

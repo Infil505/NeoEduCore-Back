@@ -84,8 +84,8 @@ class BulkReassignmentTest extends TestCase
     {
         $this->signInAdmin(['institution_id' => $this->institution->id]);
 
-        $origen  = $this->grupo(['grade' => 7, 'section' => 'A', 'group_code' => '7A']);
-        $destino = $this->grupo(['grade' => 8, 'section' => 'B', 'group_code' => '8B']);
+        $origen  = $this->grupo(['grade' => 1, 'section' => 'A', 'group_code' => '1A']);
+        $destino = $this->grupo(['grade' => 2, 'section' => 'B', 'group_code' => '2B']);
         $ids     = $this->estudiantes(3);
 
         // Alta previa en el grupo origen
@@ -174,7 +174,7 @@ class BulkReassignmentTest extends TestCase
     {
         $this->signInAdmin(['institution_id' => $this->institution->id]);
 
-        $destino = $this->grupo(['grade' => 9, 'section' => 'C', 'group_code' => '9C']);
+        $destino = $this->grupo(['grade' => 3, 'section' => 'C', 'group_code' => '3C']);
         $ids     = $this->estudiantes(2);
 
         Student::query()->whereIn('user_id', $ids)->update([
@@ -189,9 +189,9 @@ class BulkReassignmentTest extends TestCase
         foreach ($ids as $id) {
             $this->assertDatabaseHas('students', [
                 'user_id'    => $id,
-                'grade'      => 9,
+                'grade'      => 3,
                 'section'    => 'C',
-                'group_code' => '9C',
+                'group_code' => '3C',
             ]);
         }
     }
@@ -204,8 +204,8 @@ class BulkReassignmentTest extends TestCase
     {
         $this->signInAdmin(['institution_id' => $this->institution->id]);
 
-        $anterior = $this->grupo(['grade' => 7, 'section' => 'A', 'year' => 2026, 'group_code' => '7A-2026']);
-        $nuevo    = $this->grupo(['grade' => 7, 'section' => 'A', 'year' => 2027, 'group_code' => '7A-2027']);
+        $anterior = $this->grupo(['grade' => 1, 'section' => 'A', 'year' => 2026, 'group_code' => '1A-2026']);
+        $nuevo    = $this->grupo(['grade' => 1, 'section' => 'A', 'year' => 2027, 'group_code' => '1A-2027']);
         $ids      = $this->estudiantes(1);
 
         DB::table('group_students')->insert([[
@@ -230,10 +230,10 @@ class BulkReassignmentTest extends TestCase
         // Mismo grado y sección, pero el año debe haberse actualizado
         $this->assertDatabaseHas('students', [
             'user_id'    => $ids[0],
-            'grade'      => 7,
+            'grade'      => 1,
             'section'    => 'A',
             'year'       => 2027,
-            'group_code' => '7A-2027',
+            'group_code' => '1A-2027',
         ]);
 
         $this->assertSame(0, (int) $anterior->fresh()->student_count);
@@ -244,7 +244,7 @@ class BulkReassignmentTest extends TestCase
     {
         $this->signInAdmin(['institution_id' => $this->institution->id]);
 
-        $destino = $this->grupo(['grade' => 9, 'section' => 'C']);
+        $destino = $this->grupo(['grade' => 3, 'section' => 'C']);
         $ids     = $this->estudiantes(1);
 
         Student::query()->whereIn('user_id', $ids)->update(['grade' => 6, 'section' => 'A']);

@@ -114,10 +114,10 @@ PAGINATION_DEFAULT=20
 PAGINATION_REPORTS=50
 
 # --- Dominio académico ------------------------------------------------------
-# Grados 6-12 y secciones A-D son la estructura de secundaria de COSTA RICA.
+# El sistema es de PRIMARIA: grados 1-6. Las secciones A-D son de COSTA RICA.
 # Solo hay que tocarlos para otro país o un centro con más secciones.
-ACADEMIC_GRADE_MIN=6
-ACADEMIC_GRADE_MAX=12
+ACADEMIC_GRADE_MIN=1
+ACADEMIC_GRADE_MAX=6
 ACADEMIC_SECTIONS=A,B,C,D
 EXAM_GRACE_SECONDS=30
 

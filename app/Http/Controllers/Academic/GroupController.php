@@ -50,7 +50,7 @@ class GroupController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'min:2', 'max:120'],
-            'grade' => ['required', 'integer', 'between:6,12'],
+            'grade' => ['required', 'integer', 'between:' . config('academic.grade_min') . ',' . config('academic.grade_max')],
             'section' => ['required', 'string', Rule::in(['A', 'B', 'C', 'D'])],
 
             'year' => ['nullable', 'integer', 'between:2000,2100'],
@@ -105,7 +105,7 @@ class GroupController extends Controller
     {
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'min:2', 'max:120'],
-            'grade' => ['sometimes', 'integer', 'between:6,12'],
+            'grade' => ['sometimes', 'integer', 'between:' . config('academic.grade_min') . ',' . config('academic.grade_max')],
             'section' => ['sometimes', 'string', Rule::in(['A', 'B', 'C', 'D'])],
 
             'year' => ['sometimes', 'integer', 'between:2000,2100'],

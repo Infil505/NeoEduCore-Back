@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
 use App\Enums\UserStatus;
 use App\Enums\UserType;
@@ -13,6 +14,8 @@ use Illuminate\Validation\Rules\Password;
 
 class UserController extends Controller
 {
+    use AcotaAlDocente;
+
     /**
      * El modelo User no usa TenantScoped (login/register públicos consultan
      * por email sin contexto de tenant), así que aquí se filtra el tenant
@@ -22,6 +25,36 @@ class UserController extends Controller
     private function assertSameTenant(Request $request, User $user): void
     {
         if ($user->institution_id !== $request->user()->institution_id) {
+            abort(404);
+        }
+    }
+
+    /**
+     * El docente alcanza al alumnado **solo por asignación**, también por aquí.
+     *
+     * Este endpoint era una puerta paralela a `/students`: aquel filtraba por
+     * `teacher_assignments` y este solo por institución, así que un docente sin
+     * ninguna asignación listaba a todos los menores del centro con su nombre y
+     * su correo, y abría la ficha de cualquiera. La regla del sistema no cambia
+     * según la ruta por la que se entre. Detectado el 13/09/2026 en la revisión
+     * sistemática de alcance por rol (S1).
+     *
+     * Se limita **solo al alumnado**. El personal del centro (docentes y
+     * administración) sigue siendo visible: es un directorio interno entre
+     * adultos, y la frontera que [173] protege es la de los menores.
+     *
+     * 404 y no 403, igual que `assertSameTenant()`: un 403 confirmaría que ese
+     * estudiante existe, que es justo lo que no se quiere revelar.
+     */
+    private function assertPuedeVerFicha(Request $request, User $objetivo): void
+    {
+        $quienMira = $request->user();
+
+        if (! $this->esDocente($quienMira) || $objetivo->user_type !== UserType::Student) {
+            return;
+        }
+
+        if (! $this->docenteAlcanzaEstudiante($quienMira, $objetivo->id)) {
             abort(404);
         }
     }
@@ -45,6 +78,17 @@ class UserController extends Controller
         $query = User::query()
             ->where('institution_id', $request->user()->institution_id)
             ->orderByDesc('created_at');
+
+        // Ver `assertPuedeVerFicha()`: al docente se le recorta el alumnado a
+        // los suyos; el personal del centro se le deja.
+        if ($this->esDocente($request->user())) {
+            $alcanzados = $this->estudiantesDelDocente($request->user()->id);
+
+            $query->where(function ($w) use ($alcanzados) {
+                $w->where('user_type', '!=', UserType::Student->value)
+                  ->orWhereIn('id', $alcanzados);
+            });
+        }
 
         if (!empty($data['user_type'])) {
             $query->where('user_type', $data['user_type']);
@@ -73,6 +117,7 @@ class UserController extends Controller
     public function show(Request $request, User $user)
     {
         $this->assertSameTenant($request, $user);
+        $this->assertPuedeVerFicha($request, $user);
 
         return response()->json([
             'data' => $user->load(['institution', 'studentProfile']),

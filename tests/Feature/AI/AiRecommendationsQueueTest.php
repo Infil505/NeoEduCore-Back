@@ -114,6 +114,62 @@ class AiRecommendationsQueueTest extends TestCase
         );
     }
 
+    /**
+     * Qué viaja al modelo al pedirle las recomendaciones, y qué no.
+     *
+     * Entra el contexto curricular que el sistema ya conoce —tema, indicador y
+     * dificultad del ítem fallado (D2)— porque sin él el modelo tiene que
+     * adivinar de qué trata la pregunta. Es lo que [222] pide al hablar de
+     * sugerencias «alineadas con los indicadores curriculares».
+     *
+     * **No entra la respuesta correcta.** Nunca ha entrado y el test lo fija:
+     * el alumno puede volver a intentar el examen, así que el tutor explica el
+     * procedimiento pero no lo resuelve por él.
+     */
+    public function test_el_prompt_lleva_los_metadatos_del_item_pero_nunca_la_respuesta_correcta(): void
+    {
+        [$institution, $studentUser, $exam] = $this->escenario();
+        $attempt = $this->intentoEntregado($institution, $exam, $studentUser);
+
+        app()->instance('tenant_id', $institution->id);
+
+        $pregunta = \App\Models\Exams\Question::factory()->shortAnswer()->create([
+            'institution_id'      => $institution->id,
+            'exam_id'             => $exam->id,
+            'question_text'       => '¿Cuánto es 1/2 + 1/4?',
+            'topic'               => 'Fracciones equivalentes',
+            'indicator'           => 'MAT.3.2 Suma fracciones de distinto denominador',
+            'difficulty'          => 'intermediate',
+            'correct_answer_text' => 'TRES CUARTOS ES LA RESPUESTA',
+            'order_index'         => 99,
+        ]);
+
+        \App\Models\Students\StudentAnswer::factory()->create([
+            'institution_id' => $institution->id,
+            'attempt_id'     => $attempt->id,
+            'question_id'    => $pregunta->id,
+            'is_correct'     => false,
+            'answer_text'    => '2/6',
+        ]);
+
+        $this->fingirModelo(self::RESPUESTA_MODELO);
+
+        (new GenerateAiRecommendations($attempt->id))
+            ->handle(app(\App\Services\AI\AiRecommendationService::class));
+
+        OpenAI::assertSent(\OpenAI\Resources\Chat::class, function (string $metodo, array $parametros): bool {
+            $enviado = json_encode($parametros, JSON_UNESCAPED_UNICODE);
+
+            return str_contains($enviado, 'Fracciones equivalentes')
+                && str_contains($enviado, 'MAT.3.2')
+                && str_contains($enviado, 'intermediate')
+                // La instrucción de explicar sin resolver viaja siempre.
+                && str_contains($enviado, 'No resuelvas el examen')
+                // Y la respuesta correcta jamás sale del servidor.
+                && ! str_contains($enviado, 'TRES CUARTOS ES LA RESPUESTA');
+        });
+    }
+
     public function test_si_el_modelo_no_responde_el_job_no_duplica_las_plantillas(): void
     {
         [$institution, $studentUser, $exam] = $this->escenario();

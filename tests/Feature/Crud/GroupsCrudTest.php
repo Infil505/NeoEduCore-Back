@@ -33,7 +33,7 @@ class GroupsCrudTest extends TestCase
 
         $res = $this->postJson('/api/groups', [
             'name' => '10-A',
-            'grade' => 10,
+            'grade' => 4,
             'section' => 'A',
             'year' => 2026,
             'group_code' => '10A2026',
@@ -43,7 +43,7 @@ class GroupsCrudTest extends TestCase
         $res->assertCreated();
         $this->assertDatabaseHas('groups', [
             'name' => '10-A',
-            'grade' => 10,
+            'grade' => 4,
             'institution_id' => $institution->id,
         ]);
     }
@@ -106,14 +106,14 @@ class GroupsCrudTest extends TestCase
 
         $res = $this->putJson("/api/groups/{$group->id}", [
             'name' => 'Grupo Actualizado',
-            'grade' => 11,
+            'grade' => 5,
         ]);
 
         $res->assertOk();
         $this->assertDatabaseHas('groups', [
             'id' => $group->id,
             'name' => 'Grupo Actualizado',
-            'grade' => 11,
+            'grade' => 5,
         ]);
     }
 

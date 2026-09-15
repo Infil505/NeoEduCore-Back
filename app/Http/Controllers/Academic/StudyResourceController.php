@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Academic;
 
+use App\Http\Controllers\Concerns\ExigeAutoria;
 use App\Http\Controllers\Controller;
 use App\Enums\Difficulty;
 use App\Enums\ResourceType;
@@ -12,6 +13,8 @@ use Illuminate\Validation\Rule;
 
 class StudyResourceController extends Controller
 {
+    use ExigeAutoria;
+
     /**
      * Listar recursos (con filtros)
      */
@@ -120,6 +123,12 @@ class StudyResourceController extends Controller
      */
     public function update(Request $request, StudyResource $studyResource)
     {
+        // S6: el recurso es de quien lo subió. La biblioteca se lee entre todos,
+        // pero no se reescribe el material ajeno.
+        if (! $this->esSuyoOEsAdmin($request->user(), $studyResource->created_by, 'este recurso')) {
+            return $this->noAutorizadoPorAutoria('este recurso');
+        }
+
         $data = $request->validate([
             'title' => ['sometimes', 'string', 'min:2', 'max:120'],
             'description' => ['nullable', 'string', 'max:2000'],
@@ -166,8 +175,12 @@ class StudyResourceController extends Controller
     /**
      * Eliminar recurso
      */
-    public function destroy(StudyResource $studyResource)
+    public function destroy(Request $request, StudyResource $studyResource)
     {
+        if (! $this->esSuyoOEsAdmin($request->user(), $studyResource->created_by, 'este recurso')) {
+            return $this->noAutorizadoPorAutoria('este recurso');
+        }
+
         $studyResource->delete();
 
         return response()->noContent();

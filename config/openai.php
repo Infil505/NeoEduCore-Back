@@ -112,6 +112,54 @@ return [
             'Esta respuesta la escribió un asistente de inteligencia artificial. '
             . 'Puede equivocarse: si algo no te cuadra, preguntale a tu docente.'
         ),
+
+        /*
+        |----------------------------------------------------------------------
+        | Registro de lenguaje por grado
+        |----------------------------------------------------------------------
+        |
+        | Entre 1.º y 6.º de primaria hay seis años de diferencia lectora, y el
+        | tutor los trataba igual: el prompt mandaba «grado 3» y una instrucción
+        | vaga («adapta el nivel de detalle al perfil»), así que el registro lo
+        | improvisaba el modelo. Para 1.º eso no es un matiz de estilo — a esa
+        | edad muchos apenas leen con fluidez, y un párrafo denso no es poco
+        | adaptado: es inservible.
+        |
+        | Cada franja describe **cómo escribir**, no qué enseñar. Va aquí y no
+        | en el código porque es texto pedagógico: quien mejor lo ajusta es el
+        | profesorado del centro, y no debería hacer falta desplegar para ello.
+        |
+        | `hasta` es el grado máximo al que aplica la franja; se evalúan en
+        | orden. `null` es el texto para cuando no se conoce el grado, que pasa
+        | con el alumnado cargado en masa sin ese dato.
+        */
+        'registro' => [
+            'franjas' => [
+                [
+                    'hasta' => 2,
+                    'texto' => 'Escribe para alguien de 6 a 8 años que está aprendiendo a leer: '
+                        . 'frases muy cortas, una idea por frase, vocabulario cotidiano y ningún '
+                        . 'tecnicismo. Apóyate en objetos y situaciones que conozca. No uses más '
+                        . 'de tres frases seguidas sin cortar.',
+                ],
+                [
+                    'hasta' => 4,
+                    'texto' => 'Escribe para alguien de 8 a 10 años que ya lee para aprender: '
+                        . 'frases cortas y directas. Puedes usar un término propio de la materia '
+                        . 'si lo explicas con palabras suyas la primera vez. Las instrucciones, '
+                        . 'en pasos de dos o tres.',
+                ],
+                [
+                    'hasta' => 6,
+                    'texto' => 'Escribe para alguien de 10 a 12 años que puede seguir una '
+                        . 'explicación de varios pasos: vocabulario académico básico, y puedes '
+                        . 'pedirle que justifique su razonamiento o que compare dos caminos.',
+                ],
+            ],
+
+            'sin_grado' => 'No sabes en qué grado está: usa lenguaje sencillo de primaria, '
+                . 'evita tecnicismos y no des por supuesta una lectura rápida.',
+        ],
     ],
 
     /*

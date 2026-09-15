@@ -2,7 +2,7 @@
 
 **Creada:** 10 de septiembre de 2026 · **última actualización:** 13 de septiembre de 2026
 **Base:** estado registrado al 08/08/2026 (375 tests, 117 endpoints)
-**Ahora:** 422 tests, 122 endpoints, 4 migraciones nuevas aplicadas
+**Ahora:** 449 tests, 122 endpoints, 4 migraciones nuevas aplicadas
 
 ## Avance al 13/09/2026
 
@@ -18,13 +18,15 @@
 | **D6** | El reset del admin sigue sin activar, pero la respuesta lo advierte |
 | **D7** | `max_attempts` se queda visible al alumno (sin cambios de código) |
 | **D8** | RLS formalizado en migración: 26 tablas |
+| **S1** | Revisión de alcance por rol: 1 hallazgo corregido (`/users`) |
+| **S5** | Analíticas por materia: el docente ve lo suyo, el admin todo |
+| **S6** | Calendario y recursos: son de quien los crea |
+| **B2** | Primaria 1.º–6.º (6–12 años): un solo rango de grados, y el tutor adapta el registro |
 
 **Ya no queda ninguna decisión bloqueante: D1–D8 están cerradas.** Arrastran cerradas
 **K1–K6** y **K9**, e **I-11**; queda desbloqueado **E2** (banco de ítems).
 
-**Lo siguiente, por orden:** **S1** (revisión de seguridad por rol), que ahora cubre
-bastante más superficie que el 10/09 — hay 5 endpoints nuevos y 4 tablas nuevas. Y
-luego **P1–P2**, que dejaron de ser solo despliegue:
+**Lo siguiente, por orden:** **P1–P2** (despliegue), que dejaron de ser solo eso:
 
 - **sin worker de cola, D1 no funciona** (los intentos se quedan en `preparing`);
 - hay que fijar en Coolify `QUEUE_CONNECTION=database` y **las dos** variables de sesión
@@ -56,7 +58,7 @@ luego **P1–P2**, que dejaron de ser solo despliegue:
 > es el **código** (P1): las columnas existen, pero nada las usa hasta que el servidor
 > corra la versión nueva.
 
-**Orden sugerido:** ~~Decisiones D1–D3~~ → **Seguridad S1** → Producción P1–P4 →
+**Orden sugerido:** ~~Decisiones D1–D3~~ → ~~Seguridad S1~~ → **Producción P1–P4** →
 Mediciones → Informe. Frontend y entregables pueden avanzar en paralelo; E2 ya no espera
 a nada.
 
@@ -136,10 +138,21 @@ Primero decidir, después ejecutar. Al tomar la decisión, anotar **qué se elig
 
 ## 2. Seguridad
 
-- [ ] 🔴 **S1 · Revisión sistemática de seguridad por rol, endpoint por endpoint**
-  - Pregunta a responder en cada ruta: **qué campos ve cada rol**, no solo si llega.
-  - Motivo: 5 hallazgos aparecieron por casualidad (G12, 05/08, 07/08, 08/08, 08/08 tarde) y ningún test existente los detectaba.
-  - Herramienta: `/security-review` o `/code-review` sobre la rama.
+- [x] 🔴 **S1 · Revisión sistemática de seguridad por rol, endpoint por endpoint** — ✅ 13/09/2026
+  - Revisados los **122 endpoints** contra los cuatro roles, preguntando **qué ve cada uno cuando llega**, no solo si llega.
+  - **1 hallazgo real, corregido: `/users` era una puerta paralela a `/students`.** Filtraba por institución pero no por asignación, así que un docente sin ninguna asignación listaba a todos los menores del centro con nombre y correo (`GET /users?user_type=student`) y abría la ficha de cualquiera (`GET /users/{id}`), mientras `/students` le devolvía cero. Acotado al alumnado alcanzable; el personal del centro sigue visible.
+  - Verificado correcto el resto: `/students`, `/groups`, `/student-progress`, `/ai-recommendations`, analíticas por estudiante, los cinco reportes, intentos de examen, aislamiento entre instituciones y la frontera del superadministrador.
+  - Queda blindado por `tests/Feature/Security/AlcancePorRolTest.php` (20 casos), que recorre la matriz entera.
+  - Fuente: `ESTADO_Y_PENDIENTES.md` §2 Revisión de alcance por rol
+- [x] 🟡 **S5 · Analíticas por materia acotadas al docente** — ✅ 13/09/2026 · **el docente ve lo suyo, el admin el de todos**
+  - `GET /analytics/subjects` devolvía el rendimiento de **todas** las materias del centro a cualquiera de los dos. Ahora el docente ve solo las que imparte (`materiasDelDocente()`); el administrador sigue viéndolas todas.
+  - No era fuga de datos personales —son agregados sin nombres— pero le ponía delante el desempeño de las clases de sus colegas. Misma frontera que el resto del sistema.
+  - Un docente sin asignaciones recibe lista vacía, igual que en `/students` o `/groups`.
+- [x] 🟡 **S6 · Autoría para editar y borrar calendario y recursos** — ✅ 13/09/2026 · **son de quien los crea**
+  - `PUT`/`DELETE` de `calendar-events` y `study-resources` no miraban `created_by`: cualquier docente reescribía o borraba lo de otro. Ahora cada entrada es de su autor.
+  - **El administrador queda fuera de la regla**: responde por la institución y necesita poder ordenar el calendario o retirar un recurso cuando quien lo subió ya no está.
+  - ⚠️ **Entradas sin autor** (`created_by` es nullable y queda en `NULL` al borrarse la cuenta que lo creó): **solo las toca el administrador**. Dejarlas abiertas a cualquier docente reabriría el agujero por la puerta de atrás.
+  - La regla vive en el trait `ExigeAutoria`, para que un endpoint nuevo la herede en vez de reinventarla.
 - [ ] 🔴 **S2 · Cambiar la contraseña temporal del superadmin en producción**
   - `POST /api/password/change`. Antes de que haya usuarios reales.
 - [ ] 🔴 **S3 · Credencial de PostgreSQL en el historial de git**
@@ -344,6 +357,18 @@ Sin urgencia; ninguna bloquea el TFG.
 ## 9. Funcionalidad nueva del backend
 
 Requisitos nuevos, anotados después de crear esta lista.
+
+- [x] 🔴 **B2 · El sistema es de primaria (1.º–6.º, 6 a 12 años) y el tutor adapta el lenguaje al grado** — ✅ 13/09/2026
+  - **Había tres rangos de grado escritos a mano y ninguno coincidía**: `config/academic.php` decía 6–12 («secundaria de Costa Rica»), `GroupController` validaba 6–12, `ExamController` 7–12 y los prompts del tutor hablaban de «primaria». Consecuencia real: **no se podía crear un examen de 6.º** aunque sí el grupo.
+  - Ahora los tres salen de `config('academic.grade_min'/'grade_max')`, con **1–6** por defecto. Las factories también, así que los tests siguen al dominio en vez de fijar su propio rango.
+  - **El tutor le escribe distinto a 1.º que a 6.º.** De las tres superficies, solo el chat sabía el grado —y como número suelto con «adapta el nivel de detalle»—; el diagnóstico y las recomendaciones post-examen ni lo recibían. Las tres reciben ahora una instrucción explícita por franja (1–2, 3–4, 5–6, y una conservadora si no se conoce el grado).
+  - La **etapa** también estaba a mano en los tres prompts («un estudiante de primaria»): ahora sale de `config('academic.etapa')` = `primaria (6 a 12 años)`. Va la edad y no solo la etiqueta porque al modelo le dice más.
+  - Los textos de las franjas viven en `config/openai.php` (`tutor.registro`): son texto pedagógico y los afina el profesorado, no el código. La lógica, en `App\Services\AI\RegistroPorGrado`.
+  - Fuente: `ESTADO_Y_PENDIENTES.md` §2 Primaria 1.º–6.º
+- [ ] 🟠 **B2a · Decidir qué se hace con los datos fuera de rango** (lo deja abierto B2)
+  - De los **65 estudiantes** de la base remota, solo **5 tienen grado o fecha de nacimiento** — y esos 5 tienen **15 y 16 años** (grados 10 y 11). Los otros 60 no tienen ninguno de los dos. Grupos en 11, exámenes en 10.
+  - La validación solo actúa al escribir, así que nada se rompe; pero esas filas ya no describen un centro de primaria.
+  - ¿Se limpian, se remapean o se dejan como datos de prueba hasta el piloto (E4)?
 
 - [x] 🟠 **B1 · Exportar los reportes también en XLSX** (además de PDF y CSV) — ✅ 13/09/2026
   - Requisito fijado por el usuario el 10/09/2026: el sistema debe generar los reportes en PDF, CSV **y XLSX**.

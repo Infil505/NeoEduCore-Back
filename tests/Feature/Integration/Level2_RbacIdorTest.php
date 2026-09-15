@@ -164,7 +164,7 @@ class Level2_RbacIdorTest extends TestCase
         $res = $this->postJson('/api/exams', [
             'title'            => 'Examen trampa',
             'subject_id'       => $subject->id,
-            'grade'            => 7,
+            'grade'            => 1,
             'duration_minutes' => 30,
         ]);
 

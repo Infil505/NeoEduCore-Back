@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use OpenAI\Laravel\Facades\OpenAI;
 use App\Services\AI\AiOutputValidator;
+use App\Services\AI\RegistroPorGrado;
 use App\Enums\AiIncidentStage;
 use App\Enums\AiIncidentType;
 use App\Services\Academic\TopicMasteryService;
@@ -261,12 +262,13 @@ class AiTutorService
         // El nombre NO entra en el prompt (ver `SIN_DATOS_IDENTIFICATIVOS`); solo
         // se usa abajo, en el texto de reserva, que no sale del servidor. Un tema
         // tampoco identifica a nadie: es contenido curricular.
-        $prompt = "Genera un diagnóstico educativo breve y motivador para un estudiante de primaria.\n\n"
+        $prompt = "Genera un diagnóstico educativo breve y motivador para un estudiante de " . config('academic.etapa') . ".\n\n"
             . "Progreso por materia:\n{$progressLines}\n\n"
             . ($temasLines !== '' ? "Temas con más dificultad:\n{$temasLines}\n\n" : '')
             . "Incluye: resumen general, fortalezas, áreas por mejorar y 1-2 acciones concretas. "
             . ($temasLines !== '' ? "Menciona los temas concretos de la lista, no solo las materias. " : '')
-            . "Máximo 4 párrafos. Usa español claro y alentador. "
+            . "Máximo 4 párrafos. Usa español claro y alentador.\n"
+            . app(RegistroPorGrado::class)->para($student->grade) . "\n"
             . "No uses ningún nombre propio: no sabes cómo se llama.";
 
         try {
@@ -409,7 +411,7 @@ class AiTutorService
 
         // Sin nombre ni ningún otro identificador: ver `SIN_DATOS_IDENTIFICATIVOS`.
         // Sin nombre ni ningún otro identificador: ver `SIN_DATOS_IDENTIFICATIVOS`.
-        $parts = ['Eres un tutor educativo personalizado para un estudiante de primaria.'];
+        $parts = ['Eres un tutor educativo personalizado para un estudiante de ' . config('academic.etapa') . '.'];
 
         if ($grade || $style) {
             $profile = collect([$grade, $style ? "estilo de aprendizaje: {$style}" : null])
@@ -426,8 +428,12 @@ class AiTutorService
             $parts[] = "Progreso actual del estudiante:\n{$progressLines}";
         }
 
+        // El registro va explícito y no como «adapta el nivel al perfil»: con
+        // eso el modelo improvisaba, y entre 1.º y 6.º hay seis años de
+        // diferencia lectora. Ver `RegistroPorGrado`.
+        $parts[] = app(RegistroPorGrado::class)->para($student->grade);
+
         $parts[] = "Responde siempre en español, de forma clara y motivadora. "
-            . "Adapta el nivel de detalle al perfil. "
             . "Sé conciso (máximo 4 párrafos). "
             . "No inventes datos ni resultados que no se te hayan dado. "
             . "No te dirijas al estudiante por su nombre ni se lo preguntes: no lo conoces.";

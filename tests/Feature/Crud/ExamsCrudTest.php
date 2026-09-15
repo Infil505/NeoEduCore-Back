@@ -39,7 +39,7 @@ class ExamsCrudTest extends TestCase
         $res = $this->postJson('/api/exams', [
             'title' => 'Parcial 1 - Matemáticas',
             'subject_id' => $subject->id,
-            'grade' => 10,
+            'grade' => 4,
             'instructions' => 'Responder todas las preguntas',
             'duration_minutes' => 60,
             'status' => 'draft',
