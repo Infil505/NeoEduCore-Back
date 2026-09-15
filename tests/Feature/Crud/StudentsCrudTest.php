@@ -7,7 +7,6 @@ use App\Models\Admin\Institution;
 use App\Models\Students\Student;
 use Tests\TestCase;
 use Tests\Traits\ApiAuth;
-use Illuminate\Support\Facades\Hash;
 
 class StudentsCrudTest extends TestCase
 {

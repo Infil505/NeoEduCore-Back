@@ -2,7 +2,6 @@
 
 namespace App\Models\Admin;
 
-use App\Models\Students\Student;
 use App\Models\Academic\Subject;
 use App\Models\Academic\Group;
 use App\Models\Academic\StudyResource;

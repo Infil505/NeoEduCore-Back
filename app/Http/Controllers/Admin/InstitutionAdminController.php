@@ -65,7 +65,7 @@ class InstitutionAdminController extends Controller
             });
         }
 
-        return response()->json(['data' => $query->paginate(20)]);
+        return response()->json(['data' => $query->paginate(config('pagination.default'))]);
     }
 
     /**

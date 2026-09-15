@@ -4,9 +4,7 @@ namespace Tests\Feature\Crud;
 
 use App\Models\Exams\Exam;
 use App\Models\Exams\Question;
-use App\Models\Academic\Subject;
 use App\Models\Admin\Institution;
-use App\Enums\QuestionType;
 use Tests\TestCase;
 use Tests\Traits\ApiAuth;
 

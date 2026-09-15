@@ -5,7 +5,6 @@ namespace Tests\Feature\Crud;
 use App\Models\Exams\Exam;
 use App\Models\Academic\Subject;
 use App\Models\Admin\Institution;
-use App\Enums\ExamStatus;
 use Tests\TestCase;
 use Tests\Traits\ApiAuth;
 

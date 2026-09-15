@@ -2114,6 +2114,31 @@
                     "response": []
                 },
                 {
+                    "name": "PATCH /api/exams/{exam}/status",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/exams/{{exam_id}}/status",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "exams",
+                                "{{exam_id}}",
+                                "status"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
                     "name": "PUT /api/questions/{question}",
                     "request": {
                         "method": "PUT",

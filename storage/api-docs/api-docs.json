@@ -167,7 +167,7 @@
                     "11 · IA (Tutor y Generación)"
                 ],
                 "summary": "Generate (AiController)",
-                "description": "Controlador: `App\\Http\\Controllers\\AI\\AiController@generate`. **Roles permitidos:** admin, teacher. Limitado por `throttle:20,1`. Limitado por `throttle:ai-global`.",
+                "description": "Controlador: `App\\Http\\Controllers\\AI\\AiController@generate`. **Roles permitidos:** admin, teacher. Limitado por `throttle:ai-generate`. Limitado por `throttle:ai-global`.",
                 "operationId": "post_api_ai_generate",
                 "requestBody": {
                     "required": true,
@@ -213,7 +213,7 @@
                     "11 · IA (Tutor y Generación)"
                 ],
                 "summary": "Chat (AiTutorController)",
-                "description": "Controlador: `App\\Http\\Controllers\\AI\\AiTutorController@chat`. **Roles permitidos:** student. Limitado por `throttle:30,1`. Limitado por `throttle:ai-global`.",
+                "description": "Controlador: `App\\Http\\Controllers\\AI\\AiTutorController@chat`. **Roles permitidos:** student. Limitado por `throttle:ai-chat`. Limitado por `throttle:ai-global`.",
                 "operationId": "post_api_ai_tutor_chat",
                 "requestBody": {
                     "required": true,
@@ -260,7 +260,7 @@
                     "11 · IA (Tutor y Generación)"
                 ],
                 "summary": "Diagnosis (AiTutorController)",
-                "description": "Controlador: `App\\Http\\Controllers\\AI\\AiTutorController@diagnosis`. **Roles permitidos:** student. Limitado por `throttle:10,1`. Limitado por `throttle:ai-global`.",
+                "description": "Controlador: `App\\Http\\Controllers\\AI\\AiTutorController@diagnosis`. **Roles permitidos:** student. Limitado por `throttle:ai-diagnosis`. Limitado por `throttle:ai-global`.",
                 "operationId": "get_api_ai_tutor_diagnosis",
                 "responses": {
                     "200": {
@@ -541,7 +541,7 @@
                     "99 · Bulk"
                 ],
                 "summary": "Reassign group (BulkReassignmentController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Academic\\BulkReassignmentController@reassignGroup`. **Roles permitidos:** admin. Limitado por `throttle:10,1`.",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\BulkReassignmentController@reassignGroup`. **Roles permitidos:** admin. Limitado por `throttle:bulk-ops`.",
                 "operationId": "post_api_bulk_reassign_group",
                 "responses": {
                     "201": {
@@ -570,7 +570,7 @@
                     "99 · Bulk"
                 ],
                 "summary": "Reassign subjects (BulkReassignmentController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Academic\\BulkReassignmentController@reassignSubjects`. **Roles permitidos:** admin. Limitado por `throttle:10,1`.",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\BulkReassignmentController@reassignSubjects`. **Roles permitidos:** admin. Limitado por `throttle:bulk-ops`.",
                 "operationId": "post_api_bulk_reassign_subjects",
                 "responses": {
                     "201": {
@@ -599,7 +599,7 @@
                     "99 · Bulk"
                 ],
                 "summary": "Reset progress (BulkReassignmentController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Academic\\BulkReassignmentController@resetProgress`. **Roles permitidos:** admin. Limitado por `throttle:10,1`.",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\BulkReassignmentController@resetProgress`. **Roles permitidos:** admin. Limitado por `throttle:bulk-ops`.",
                 "operationId": "post_api_bulk_reset_progress",
                 "responses": {
                     "201": {
@@ -930,7 +930,7 @@
                     "07 · Exámenes, Preguntas e Intentos"
                 ],
                 "summary": "Regenerate recommendations (ExamAttemptController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamAttemptController@regenerateRecommendations`. **Roles permitidos:** student. Limitado por `throttle:5,1`.",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamAttemptController@regenerateRecommendations`. **Roles permitidos:** student. Limitado por `throttle:ai-regenerate`.",
                 "operationId": "post_api_exam_attempts_attempt_recommendations_regenerate",
                 "parameters": [
                     {
@@ -1655,6 +1655,50 @@
                 },
                 "responses": {
                     "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/exams/{exam}/status": {
+            "patch": {
+                "tags": [
+                    "07 · Exámenes, Preguntas e Intentos"
+                ],
+                "summary": "Set status (ExamController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Exams\\ExamController@setStatus`. **Roles permitidos:** admin, teacher.",
+                "operationId": "patch_api_exams_exam_status",
+                "parameters": [
+                    {
+                        "name": "exam",
+                        "in": "path",
+                        "required": true,
+                        "description": "exam_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
                         "description": "Operación correcta"
                     },
                     "401": {
@@ -2501,7 +2545,7 @@
                     "01 · Auth y Sesión"
                 ],
                 "summary": "Change password (ForgotPasswordController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Auth\\ForgotPasswordController@changePassword`. Limitado por `throttle:5,1`.",
+                "description": "Controlador: `App\\Http\\Controllers\\Auth\\ForgotPasswordController@changePassword`. Limitado por `throttle:password`.",
                 "operationId": "post_api_password_change",
                 "requestBody": {
                     "required": true,
@@ -2542,7 +2586,7 @@
                     "01 · Auth y Sesión"
                 ],
                 "summary": "Send reset link (ForgotPasswordController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Auth\\ForgotPasswordController@sendResetLink`. Limitado por `throttle:5,1`.",
+                "description": "Controlador: `App\\Http\\Controllers\\Auth\\ForgotPasswordController@sendResetLink`. Limitado por `throttle:password`.",
                 "operationId": "post_api_password_forgot",
                 "requestBody": {
                     "required": true,
@@ -2573,7 +2617,7 @@
                     "01 · Auth y Sesión"
                 ],
                 "summary": "Reset password (ForgotPasswordController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Auth\\ForgotPasswordController@resetPassword`. Limitado por `throttle:5,1`.",
+                "description": "Controlador: `App\\Http\\Controllers\\Auth\\ForgotPasswordController@resetPassword`. Limitado por `throttle:password`.",
                 "operationId": "post_api_password_reset",
                 "requestBody": {
                     "required": true,
@@ -2607,7 +2651,7 @@
                     "01 · Auth y Sesión"
                 ],
                 "summary": "Verify token (ForgotPasswordController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Auth\\ForgotPasswordController@verifyToken`. Limitado por `throttle:10,1`.",
+                "description": "Controlador: `App\\Http\\Controllers\\Auth\\ForgotPasswordController@verifyToken`. Limitado por `throttle:password-verify`.",
                 "operationId": "post_api_password_verify",
                 "requestBody": {
                     "required": true,
@@ -3380,7 +3424,7 @@
                     "04 · Estudiantes"
                 ],
                 "summary": "Bulk upload (StudentController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentController@bulkUpload`. **Roles permitidos:** admin. Limitado por `throttle:3,1`.",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentController@bulkUpload`. **Roles permitidos:** admin. Limitado por `throttle:bulk-upload`.",
                 "operationId": "post_api_students_bulk_upload",
                 "requestBody": {
                     "required": true,

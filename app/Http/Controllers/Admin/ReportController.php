@@ -20,7 +20,6 @@ class ReportController extends Controller
 {
     use AcotaAlDocente;
 
-    private const RESULTS_PER_PAGE = 50;
 
     public function __construct(
         private ReportExportService $exports,
@@ -52,7 +51,7 @@ class ReportController extends Controller
             ->whereNotNull('submitted_at')
             ->with(['student.user'])
             ->orderByDesc('score')
-            ->paginate(self::RESULTS_PER_PAGE);
+            ->paginate(config('pagination.reports'));
 
         $paginator->through(fn ($a) => [
             'attempt_id'      => $a->id,
@@ -138,7 +137,7 @@ class ReportController extends Controller
             ->whereNotNull('submitted_at')
             ->with('exam.subject')
             ->orderByDesc('submitted_at')
-            ->paginate(self::RESULTS_PER_PAGE);
+            ->paginate(config('pagination.reports'));
 
         $paginator->through(fn ($a) => [
             'attempt_id'   => $a->id,

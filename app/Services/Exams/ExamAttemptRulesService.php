@@ -16,8 +16,8 @@ class ExamAttemptRulesService
     private function timeMultiplierFor(?Student $student): float
     {
         return match ($student?->adecuacion_type) {
-            AdecuacionType::Acceso    => 1.25,
-            AdecuacionType::Evaluacion => 1.50,
+            AdecuacionType::Acceso    => (float) config('academic.exam.adecuacion.acceso'),
+            AdecuacionType::Evaluacion => (float) config('academic.exam.adecuacion.evaluacion'),
             default                   => 1.0,
         };
     }
@@ -67,7 +67,7 @@ class ExamAttemptRulesService
             $deadline = $attempt->started_at->copy()
                 ->addMinutes($adjustedMin)
                 ->addSeconds($pausedSoFar)
-                ->addSeconds(30);
+                ->addSeconds((int) config('academic.exam.grace_seconds'));
             if (now()->gt($deadline)) {
                 throw new \RuntimeException('El tiempo del examen ha expirado');
             }

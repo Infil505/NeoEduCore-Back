@@ -6,7 +6,6 @@ use App\Enums\StudentStatus;
 use App\Enums\AdecuacionType;
 use App\Enums\LearningStyle;
 use App\Models\Admin\User;
-use App\Models\Admin\Institution;
 use App\Models\Academic\Group;
 use App\Models\Exams\ExamAttempt;
 use Illuminate\Database\Eloquent\Model;

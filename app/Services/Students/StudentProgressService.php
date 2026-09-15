@@ -5,7 +5,6 @@ namespace App\Services\Students;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
 use App\Models\Students\StudentProgress;
-use Illuminate\Support\Facades\DB;
 
 class StudentProgressService
 {

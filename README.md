@@ -20,7 +20,7 @@ El frontend es un proyecto aparte (React + Vite + TypeScript): este repositorio 
 - PHP >= 8.2 con extensiones: `pgsql`, `pdo_pgsql`, `mbstring`, `xml`, `curl`, `zip`, `gd`
 - Composer >= 2
 - PostgreSQL >= 14
-- Node.js >= 18 (solo para assets)
+- Node.js >= 18 — **opcional**, solo para validar los diagramas Mermaid (`npm run validar-diagramas`). El backend no compila assets: no hay Vite ni CSS/JS propios
 
 ---
 
@@ -119,10 +119,14 @@ composer run dev                    # servidor + worker de cola + logs
 php artisan queue:work
 
 # Documentación
-php artisan openapi:generate        # OpenAPI (116 endpoints) → /api/documentation
+php artisan openapi:generate        # OpenAPI (117 endpoints) → /api/documentation
 
 # Crear el operador de la plataforma (no hay ruta de API que lo cree)
 php artisan superadmin:create --email=ops@ejemplo.com --name="Operaciones"
+
+# Sin contraseña: la cuenta nace inactiva y su dueño la define desde el enlace.
+# El enlace se arma con APP_URL, así que el envío se detiene si apunta a localhost.
+php artisan superadmin:create --send-setup-link --email=ops@ejemplo.com --name="Operaciones"
 php postman/generate_postman_collection.php   # colección de Postman desde route:list
 
 # Inspección

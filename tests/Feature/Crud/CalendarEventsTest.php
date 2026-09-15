@@ -3,7 +3,6 @@
 namespace Tests\Feature\Crud;
 
 use App\Models\Academic\CalendarEvent;
-use App\Models\Exams\Exam;
 use App\Models\Academic\Group;
 use App\Models\Admin\Institution;
 use Tests\TestCase;
