@@ -434,7 +434,12 @@ class StudentController extends Controller
                     // --- Matrícula en el aula ---
                     $studentUserId = $student->user_id;
 
+                    // Acotado al centro: sin esto, una matrícula de otra
+                    // institución —que el modelo de datos no debería permitir,
+                    // pero la consulta no comprobaba— haría que el recuento de
+                    // más abajo escribiera en un grupo ajeno.
                     $aulaActual = DB::table('group_students')
+                        ->where('institution_id', $institutionId)
                         ->where('student_user_id', $studentUserId)
                         ->whereNull('left_at')
                         ->value('group_id');
@@ -450,6 +455,7 @@ class StudentController extends Controller
                         // estudiante que ya existía: la creación abre matrícula,
                         // el traslado se hace actualizando su fila.
                         DB::table('group_students')
+                            ->where('institution_id', $institutionId)
                             ->where('student_user_id', $studentUserId)
                             ->whereNull('left_at')
                             ->update(['left_at' => now()]);
@@ -471,13 +477,17 @@ class StudentController extends Controller
         // Recuento de las aulas afectadas (RN-STU-012). Una sola pasada al
         // final: durante el bucle el contador cambiaría en cada fila.
         foreach (array_keys($aulasTocadas) as $groupId) {
-            DB::table('groups')->where('id', $groupId)->update([
-                'student_count' => DB::table('group_students')
-                    ->where('group_id', $groupId)
-                    ->whereNull('left_at')
-                    ->count(),
-                'updated_at' => now(),
-            ]);
+            DB::table('groups')
+                ->where('institution_id', $institutionId)
+                ->where('id', $groupId)
+                ->update([
+                    'student_count' => DB::table('group_students')
+                        ->where('institution_id', $institutionId)
+                        ->where('group_id', $groupId)
+                        ->whereNull('left_at')
+                        ->count(),
+                    'updated_at' => now(),
+                ]);
         }
 
         // Encolar el enlace de "establece tu contraseña" a los usuarios creados.

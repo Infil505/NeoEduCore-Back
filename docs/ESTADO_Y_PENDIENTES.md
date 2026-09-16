@@ -1,7 +1,7 @@
 # NeoEduCore — Estado del proyecto y pendientes
 **Última actualización:** 15 de septiembre de 2026  
 **Rama activa:** Darwin  
-**Tests:** 493 pasando / 0 fallando  
+**Tests:** 499 pasando / 0 fallando  
 **Endpoints:** 122
 
 > ☑️ **Control de avance:** todo lo abierto de este documento está resumido como checklist
@@ -1251,6 +1251,7 @@ La migración ya es idempotente ante eso, pero el comando correcto para regenera
 
 - [ ] **Detección de drift esquema↔migraciones no automatizada.** El drift de `tokenable_id` (G3) vivió meses sin detectarse porque `SchemaIntegrityTest` corre sobre `01_schema.sql`, no contra las migraciones. El chequeo real hay que hacerlo a mano: BD limpia → `php artisan migrate` apuntando ahí → `php artisan schema:dump-sql --output=<tmp>` → `git diff --no-index` contra el artefacto. Si aparece algo más que la línea de versión de `pg_dump`, hay drift. **Pendiente:** empaquetarlo como comando `schema:check-drift` para poder correrlo en CI. *(Desde D8 el `ENABLE ROW LEVEL SECURITY` ya está en las migraciones, así que dejó de ser una excepción esperada en esta comparación.)*
 - [x] ~~**`ENABLE ROW LEVEL SECURITY` fuera de las migraciones**~~ → **Resuelto el 13/09/2026 (D8).** La migración `2026_09_13_000004` lo declara sobre **26 tablas** (las 20 de dominio, incluida la nueva `ai_tutor_incidents`, más las 5 del framework y `institutions`). Es idempotente, así que en Supabase —donde ya estaba— no cambió nada; verificado tras aplicarla: la app sigue leyendo con normalidad. **Efecto colateral que quita una trampa:** `schema:dump-sql` ya recoge el RLS desde la propia base, así que dejó de haber que repegar el bloque a mano tras cada regeneración.
+  - ⚠️ **Corrección del 15/09/2026:** «la app sigue leyendo con normalidad» no era la buena noticia que parecía. Seguía leyendo porque **el RLS no la afecta** (rol con `rolbypassrls`) y porque **no hay ni una sola política** (`pg_policies` = 0 sobre las 26 tablas). Lo que este RLS hace es denegar todo **a los demás roles**; el aislamiento entre instituciones no lo da la base. Ver §5.1.
 
 ---
 
@@ -1261,6 +1262,77 @@ La migración ya es idempotente ante eso, pero el comando correcto para regenera
 > el tutor ([§3.6](#36-el-tutor-lo-que-hace-vs-lo-que-el-informe-dice)) y las
 > contradicciones del documento consigo mismo, recogidas por escrito en
 > `ANALISIS_MODELO_DATOS_TFG.md` §10 para que el equipo entre a corregirlas.
+
+
+### 5.1 Qué aísla de verdad una institución de otra (15/09/2026)
+
+**No el RLS.** Comprobado contra la base real, no deducido:
+
+| Comprobación | Resultado |
+|---|---|
+| Rol de la aplicación | `postgres`, con **`rolbypassrls = true`** |
+| Políticas en las 26 tablas con RLS | **0** (`select count(*) from pg_policies` → 0) |
+| Roles sin bypass | `anon`, `authenticated`, `authenticator` |
+
+RLS activo **sin políticas** significa, en PostgreSQL, *denegar todo*. Así que el efecto real
+del RLS de D8 es: para la aplicación, nada; para cualquier otro rol, acceso cero.
+
+Eso **no es inútil** —la amenaza realista en Supabase es que alguien use la clave `anon`
+contra PostgREST, y por esa vía hoy no sale una fila— pero hay que decirlo con precisión:
+**ninguna política compara `institution_id` con nada**. El RLS no es, ni ha sido nunca, el
+aislamiento entre centros. ⚠️ **El informe no puede presentarlo como lo que protege los datos
+de los menores.** Lo que los protege es `TenantScoped` más los controladores, revisados en S1
+y ahora cubiertos por `tests/Feature/Security/AislamientoMultitenantTest.php`.
+
+**El reparto real:**
+
+- **15 modelos** llevan `TenantScoped`. Los **3 que no** —`User`, `Institution` y
+  `AiTutorIncident`— es deliberado y está documentado en cada uno: el superadministrador es
+  externo a las instituciones y necesita leer a través de ellas. Ahí el filtro lo pone el
+  controlador, y **ahí es donde aparecen los agujeros**: el único hallazgo real de S1 fue en
+  `/users`, uno de esos tres.
+- En HTTP el trait **falla cerrado**: sin tenant lanza, en vez de devolver las filas de todas
+  las instituciones.
+
+**La mina que se desactivó.** Esa decisión la tomaba `app()->runningInConsole()`, que mira
+`PHP_SAPI`. Pero **Octane arranca desde consola**: con `--server=swoole` o `--server=roadrunner`
+el SAPI *es* `cli` en plena petición HTTP, y el trait habría dejado de lanzar para empezar a
+devolver datos de todas las instituciones **sin un solo error**. Con FrankenPHP —lo que fija
+el `Dockerfile`— no ocurre, pero era una palabra del `CMD` de distancia, y el `CMD` se toca
+justo al desplegar (P1). Ahora la marca la pone el middleware global `MarcaContextoHttp`: el
+entorno se declara, no se adivina.
+
+**Escrituras crudas.** Una docena de consultas sobre `group_students`, `groups` y
+`student_subjects` en `GroupController`, `StudentController`, `BulkReassignmentService` y
+`Exam::scopeVisibleTo()` no llevaban `institution_id`: colgaban de un objeto ya acotado, así
+que eran correctas *por deducción*. Ahora lo dicen ellas mismas. Con datos coherentes no
+cambia nada; con una fila incoherente —una carga mal hecha, un arreglo a mano— la diferencia
+es entre tocar otro centro y no tocarlo. Los tests siembran esa incoherencia a propósito.
+
+**El worker de cola** no tiene tenant: `GenerateAiRecommendations` lo fija desde el intento y
+lo suelta en un `finally`, pensando en que el worker es de vida larga. Es el patrón que debe
+copiar cualquier job nuevo de P1.
+
+#### Viabilidad de un RLS que sí aísle (investigado, no implementado)
+
+Lo que **está comprobado que se puede**:
+
+- `postgres` tiene `rolcreaterole`, así que se puede crear un rol de aplicación sin
+  `BYPASSRLS`. Las 26 tablas son suyas, de modo que habría que otorgar permisos explícitos.
+- Las variables de sesión funcionan a través del pooler: `set app.institution_id = '…'` y
+  `current_setting('app.institution_id', true)` devuelven lo esperado. Es el mecanismo sobre
+  el que se escribirían las políticas.
+
+Lo que **queda por verificar**: si Supavisor acepta un rol propio como usuario del pooler
+(el formato es `rol.<project-ref>`). Es una prueba empírica que exige crear el rol.
+
+**El coste no está en la base, está en la aplicación.** La conexión se reutiliza entre
+peticiones de distintos centros, así que la variable habría que fijarla **en cada petición**
+(un roundtrip más) y limpiarla sin fallo: un valor olvidado del anterior acotaría la siguiente
+al centro equivocado. Es la misma clase de trampa que el `tenant_id` del contenedor bajo
+Octane, con la diferencia de que esta falla en silencio. Además, el superadministrador no
+tiene institución, así que las políticas necesitarían un modo «sin centro», y las migraciones
+y el worker, o la variable, o una conexión aparte.
 
 ---
 

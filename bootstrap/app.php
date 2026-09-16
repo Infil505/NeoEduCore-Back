@@ -19,6 +19,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'role'   => \App\Http\Middleware\RequireRole::class,
         ]);
 
+        // Global, y lo primero de todo: marca que esto es HTTP para que
+        // `TenantScoped` no tenga que deducirlo de `PHP_SAPI` —que bajo Octane
+        // depende del servidor elegido—. Ver `MarcaContextoHttp`.
+        $middleware->prepend(\App\Http\Middleware\MarcaContextoHttp::class);
+
         // SetTenantFromAuth must run before SubstituteBindings so TenantScoped
         // global scopes are active during route model binding.
         $middleware->prependToGroup('api', \App\Http\Middleware\SetTenantFromAuth::class);

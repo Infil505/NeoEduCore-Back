@@ -201,7 +201,11 @@ class GroupController extends Controller
         return DB::transaction(function () use ($group, $data) {
             $now = now();
 
+            // El `institution_id` es redundante —`$group` llega por route binding
+            // y `Group` es TenantScoped, así que ya está acotado— pero lo deja
+            // dicho en la consulta en vez de en una cadena de deducciones.
             DB::table('group_students')
+                ->where('institution_id', $group->institution_id)
                 ->where('group_id', $group->id)
                 ->whereIn('student_user_id', $data['student_user_ids'])
                 ->whereNull('left_at')
@@ -224,12 +228,16 @@ class GroupController extends Controller
     private function recountStudents(Group $group): void
     {
         // UPDATE con subquery: 1 roundtrip en lugar de COUNT + UPDATE separados.
-        DB::table('groups')->where('id', $group->id)->update([
-            'student_count' => DB::table('group_students')
-                ->where('group_id', $group->id)
-                ->whereNull('left_at')
-                ->count(),
-            'updated_at' => now(),
-        ]);
+        DB::table('groups')
+            ->where('institution_id', $group->institution_id)
+            ->where('id', $group->id)
+            ->update([
+                'student_count' => DB::table('group_students')
+                    ->where('institution_id', $group->institution_id)
+                    ->where('group_id', $group->id)
+                    ->whereNull('left_at')
+                    ->count(),
+                'updated_at' => now(),
+            ]);
     }
 }

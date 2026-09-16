@@ -55,6 +55,7 @@ class BulkReassignmentService
             // Quiénes ya están activos en el destino: no se tocan, para no
             // pisarles el joined_at con un "movimiento" que no ocurrió.
             $yaEnDestino = DB::table('group_students')
+                ->where('institution_id', $institutionId)
                 ->where('group_id', $destino->id)
                 ->whereIn('student_user_id', $validos)
                 ->whereNull('left_at')
@@ -64,7 +65,11 @@ class BulkReassignmentService
             $aMover = array_values(array_diff($validos, $yaEnDestino));
 
             // Grupos de origen, capturados ANTES de cerrar las membresías.
+            // El `institution_id` estaba implícito —los alumnos salen de
+            // `Student`, que es TenantScoped— pero estas tres consultas cierran
+            // y reabren matrículas: que lo digan ellas mismas.
             $gruposOrigen = DB::table('group_students')
+                ->where('institution_id', $institutionId)
                 ->whereIn('student_user_id', $aMover)
                 ->whereNull('left_at')
                 ->where('group_id', '!=', $destino->id)
@@ -75,6 +80,7 @@ class BulkReassignmentService
             $cerradas = 0;
             if (!empty($aMover)) {
                 $cerradas = DB::table('group_students')
+                    ->where('institution_id', $institutionId)
                     ->whereIn('student_user_id', $aMover)
                     ->whereNull('left_at')
                     ->where('group_id', '!=', $destino->id)
@@ -161,7 +167,10 @@ class BulkReassignmentService
             $desinscritas = 0;
 
             if ($mode === 'remove') {
+                // Son DELETE: aquí el `institution_id` explícito importa más
+                // que en ningún otro sitio.
                 $desinscritas = DB::table('student_subjects')
+                    ->where('institution_id', $institutionId)
                     ->whereIn('student_user_id', $validos)
                     ->whereIn('subject_id', $materias)
                     ->delete();
@@ -174,6 +183,7 @@ class BulkReassignmentService
                 // vacío esto deja al estudiante sin materias, que es lo que
                 // "replace con lista vacía" significa.
                 $desinscritas = DB::table('student_subjects')
+                    ->where('institution_id', $institutionId)
                     ->whereIn('student_user_id', $validos)
                     ->when(!empty($materias), fn ($q) => $q->whereNotIn('subject_id', $materias))
                     ->delete();

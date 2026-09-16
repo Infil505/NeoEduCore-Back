@@ -2,7 +2,7 @@
 
 **Creada:** 10 de septiembre de 2026 · **última actualización:** 15 de septiembre de 2026
 **Base:** estado registrado al 08/08/2026 (375 tests, 117 endpoints)
-**Ahora:** 493 tests, 122 endpoints, 5 migraciones aplicadas, base remota limpia con el aula del taller
+**Ahora:** 499 tests, 122 endpoints, 5 migraciones aplicadas, base remota limpia con el aula del taller
 
 ## Avance al 15/09/2026
 
@@ -14,6 +14,10 @@ Corregido además un fallo de cableado que salió al revisar los prompts: **`OPE
 llegaba al tutor**. Las recomendaciones y el prompt libre del docente leían
 `services.openai.model`, una clave inexistente, y caían siempre al literal `gpt-4o-mini` sin
 avisar. Los tres leen ya `openai.model` — `ESTADO_Y_PENDIENTES.md` §4, sesión 15/09/2026.
+
+**S8 · Aislamiento multi-tenant**: el RLS de D8 no aísla instituciones —la app lo evita y no
+hay ni una política—, y el guardia de `TenantScoped` se apagaba solo si Octane arrancaba con
+Swoole. Las dos cosas corregidas y documentadas.
 
 De paso quedó anotado, sin tocar nada todavía, que **el `APP_KEY` del `.env` sigue siendo el
 mismo que está publicado en `.env.testing`** dentro de un repositorio público — ver S3.
@@ -178,6 +182,15 @@ Primero decidir, después ejecutar. Al tomar la decisión, anotar **qué se elig
   - **Incidencias:** tipo nuevo `prompt_injection` (migración `2026_09_15_000001`, **ya aplicada**). **Queda fuera de `deValidacion()`**: mide lo que intenta el alumno, no lo que acierta el modelo, y sumarla hundiría el 75 % de [173] justo cuando el tutor está funcionando bien. Sale sola en el desglose del superadmin.
   - ⚠️ **El filtro va deliberadamente estrecho.** Quien escribe tiene 6-12 años: «no entiendo las instrucciones del ejercicio, ignóralas» es una frase de deberes. `ignorar/olvidar` solo cuenta con un calificativo que señale al tutor («tus reglas», «las instrucciones anteriores»). La contrapartida asumida: **un ataque redactado con cuidado pasa el filtro** y lo para el prompt, no el regex.
   - Cubierto por `tests/Unit/AI/AiInputSanitizerTest.php` (31 casos, la mitad falsos positivos de primaria) y `tests/Feature/AI/AiPromptInjectionTest.php` (8). Suite: **489 pasando**.
+- [x] 🔴 **S8 · Aislamiento multi-tenant: qué separa de verdad a una institución de otra** — ✅ 15/09/2026 · **el RLS no era lo que parecía; el aislamiento está en Eloquent y ahora también en el `WHERE`**
+  - **Comprobado contra la base real:** la app se conecta con un rol con `rolbypassrls`, y las 26 tablas con RLS tienen **cero políticas** (`pg_policies` = 0). RLS activo sin políticas = denegar todo. Efecto real: para la app el RLS no existe; para el resto de roles (`anon`, `authenticated`) el acceso es cero.
+  - **Eso vale algo** —bloquea la vía PostgREST con la clave `anon`, que es la amenaza realista en Supabase— pero **ninguna política compara `institution_id` con nada**. ⚠️ **El informe no puede decir que el RLS protege los datos de los menores**: lo hacen `TenantScoped` y los controladores. Corregida la frase engañosa de §5 («la app sigue leyendo con normalidad»: leía porque el RLS no la afecta).
+  - 🔴 **Mina desactivada.** El trait decidía si exigir tenant con `app()->runningInConsole()`, que mira `PHP_SAPI`. **Octane arranca desde consola**: con `--server=swoole` o `roadrunner` el SAPI es `cli` en plena petición HTTP, y el trait habría pasado de lanzar a devolver, en silencio, filas de todas las instituciones. Hoy no pasa porque el `Dockerfile` fija FrankenPHP — **una palabra del `CMD`**, y el `CMD` se toca en P1. Ahora la marca la pone el middleware global `MarcaContextoHttp`: el entorno se declara, no se adivina.
+  - **Doce consultas crudas** (`group_students`, `groups`, `student_subjects` en `GroupController`, `StudentController`, `BulkReassignmentService` y `Exam::scopeVisibleTo()`) eran correctas *por deducción*, colgando de un objeto ya acotado. Ahora llevan `institution_id` explícito. Con datos coherentes no cambia nada; con una fila incoherente, es la diferencia entre tocar otro centro y no tocarlo.
+  - **Lo que está bien y no hay que romper:** 15 modelos con el trait; los 3 sin él (`User`, `Institution`, `AiTutorIncident`) es deliberado por el superadmin —y **es justo ahí donde aparecen los agujeros**, como el `/users` de S1—; el job de la cola fija y suelta el tenant correctamente, patrón a copiar en P1.
+  - Cubierto por `tests/Feature/Security/AislamientoMultitenantTest.php` (6 casos). **Verificado que fallan sin los arreglos**: revertidos los tres cambios, caen 3 de los 6.
+  - **Viabilidad de un RLS que sí aísle (investigada, no implementada):** se puede crear el rol sin `BYPASSRLS` (`postgres` tiene `rolcreaterole`) y las variables de sesión funcionan por el pooler (`set app.institution_id` + `current_setting` verificados). Falta probar si Supavisor acepta un rol propio (`rol.<project-ref>`). **El coste está en la aplicación, no en la base**: la conexión se reutiliza entre centros, así que la variable hay que fijarla en cada petición y limpiarla sin fallo, o la siguiente queda acotada al centro equivocado — y eso falla en silencio.
+  - Fuente: `ESTADO_Y_PENDIENTES.md` §5.1
 - [ ] 🔴 **S2 · Cambiar la contraseña temporal del superadmin en producción**
   - `POST /api/password/change`. Antes de que haya usuarios reales.
 - [ ] 🔴 **S3 · Credencial de PostgreSQL en el historial de git**
