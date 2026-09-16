@@ -2,7 +2,7 @@
 
 **Creada:** 10 de septiembre de 2026 · **última actualización:** 13 de septiembre de 2026
 **Base:** estado registrado al 08/08/2026 (375 tests, 117 endpoints)
-**Ahora:** 449 tests, 122 endpoints, 4 migraciones nuevas aplicadas
+**Ahora:** 449 tests, 122 endpoints, 4 migraciones aplicadas, base remota limpia con el aula del taller
 
 ## Avance al 13/09/2026
 
@@ -22,6 +22,7 @@
 | **S5** | Analíticas por materia: el docente ve lo suyo, el admin todo |
 | **S6** | Calendario y recursos: son de quien los crea |
 | **B2** | Primaria 1.º–6.º (6–12 años): un solo rango de grados, y el tutor adapta el registro |
+| **B3** | Base limpia y aula completa de 4.º sembrada para el taller |
 
 **Ya no queda ninguna decisión bloqueante: D1–D8 están cerradas.** Arrastran cerradas
 **K1–K6** y **K9**, e **I-11**; queda desbloqueado **E2** (banco de ítems).
@@ -365,11 +366,16 @@ Requisitos nuevos, anotados después de crear esta lista.
   - La **etapa** también estaba a mano en los tres prompts («un estudiante de primaria»): ahora sale de `config('academic.etapa')` = `primaria (6 a 12 años)`. Va la edad y no solo la etiqueta porque al modelo le dice más.
   - Los textos de las franjas viven en `config/openai.php` (`tutor.registro`): son texto pedagógico y los afina el profesorado, no el código. La lógica, en `App\Services\AI\RegistroPorGrado`.
   - Fuente: `ESTADO_Y_PENDIENTES.md` §2 Primaria 1.º–6.º
-- [ ] 🟠 **B2a · Decidir qué se hace con los datos fuera de rango** (lo deja abierto B2)
-  - De los **65 estudiantes** de la base remota, solo **5 tienen grado o fecha de nacimiento** — y esos 5 tienen **15 y 16 años** (grados 10 y 11). Los otros 60 no tienen ninguno de los dos. Grupos en 11, exámenes en 10.
-  - La validación solo actúa al escribir, así que nada se rompe; pero esas filas ya no describen un centro de primaria.
-  - ¿Se limpian, se remapean o se dejan como datos de prueba hasta el piloto (E4)?
-
+- [x] 🟠 **B2a · Datos fuera de rango** — ✅ 14/09/2026 · **resuelto al limpiar la base para el taller**
+  - Los 5 estudiantes de 15–16 años (grados 10 y 11), los 60 sin grado, los grupos en 11, los exámenes en 10 y las 206 materias acumuladas por seeders repetidos: ya no están.
+  - La base remota quedó con un único centro de primaria y **cero grados fuera de 1–6**, verificado tras sembrar.
+  - La cuenta de superadministrador se conservó: administra las instituciones y solo se crea por consola.
+- [x] 🟠 **B3 · Aula completa de 4.º para el taller de simulación** — ✅ 14/09/2026
+  - `TallerAulaSeeder`: vacía la base (conservando el superadmin) y siembra Escuela Nueva Esperanza, grupo 4-A 2026 con **28 estudiantes**, 4 materias, 4 asignaciones docentes, un examen de 8 ítems con metadatos curriculares, **24 entregas** con notas repartidas por todos los tramos y fallos concentrados en decimales (28 % de aciertos), 6 recursos y 3 eventos.
+  - **Reproducible**: nombres, notas y fallos salen de listas fijas, no de `fake()`. Dos ejecuciones dan el mismo aula.
+  - Un docente **sin asignaciones** a propósito, para enseñar en vivo que no alcanza a ningún estudiante.
+  - Credenciales y guion del taller en [`TALLER_AULA.md`](TALLER_AULA.md). Contraseña única: `Taller2026`.
+  - ⚠️ El paso del análisis de IA en vivo necesita `queue:work` corriendo.
 - [x] 🟠 **B1 · Exportar los reportes también en XLSX** (además de PDF y CSV) — ✅ 13/09/2026
   - Requisito fijado por el usuario el 10/09/2026: el sistema debe generar los reportes en PDF, CSV **y XLSX**.
   - Rutas nuevas, en paralelo a las `.csv`: `GET /reports/exams/{exam}/results.xlsx` y `GET /reports/students/{id}/history.xlsx`. Mismos permisos que su versión CSV (`assertCanAccessExam` y `findStudent`).

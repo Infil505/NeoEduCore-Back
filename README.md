@@ -8,6 +8,7 @@ El frontend es un proyecto aparte (React + Vite + TypeScript): este repositorio 
 |---|---|
 | `docs/CHECKLIST_PENDIENTES.md` | Checklist marcable de todo lo pendiente (código, producción, frontend, informe y entregables) |
 | `docs/CHECKLIST_PENDIENTES.xlsx` | La misma checklist en Excel, con estado por desplegable y hoja de resumen de avance |
+| `docs/TALLER_AULA.md` | Aula de 4.º sembrada para el taller: credenciales, qué contiene y guion sugerido |
 | `docs/ESTADO_Y_PENDIENTES.md` | Estado por módulo, brechas, TODO priorizado y referencia de endpoints |
 | `docs/ANALISIS_MODELO_DATOS_TFG.md` | Modelo de datos y qué corregir del informe del TFG |
 | `docs/ANALISIS_CONCURRENCIA.md` | Modelo de capacidad y prueba de carga |
