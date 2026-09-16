@@ -113,13 +113,45 @@ class AiOutputValidator
 
     public function sanitize(string $text): string
     {
-        $text = $this->sanitizeUrls(trim($text));
+        $text = $this->sanitizeUrls($this->sinMarcado(trim($text)));
 
         if (strlen($text) > $this->limite('max_length')) {
             $text = mb_substr($text, 0, $this->limite('max_length'));
         }
 
         return $text;
+    }
+
+    /**
+     * Quita del texto del modelo lo que un navegador ejecutaría.
+     *
+     * El backend no renderiza nada —es una API pura— pero esto **se guarda**:
+     * en `ai_chat_sessions.messages` y en `ai_recommendations`, de donde sale
+     * hacia el alumno, hacia el informe de estrategias del docente y hacia el
+     * PDF que compone el frontend. Si el modelo escribe `<img onerror=...>`
+     * porque alguien le convenció de hacerlo, el backend lo almacenaba tal cual
+     * y el XSS quedaba guardado, cruzando además de un alumno a su docente.
+     *
+     * Confiar en que el cliente escape es exactamente la suposición que produce
+     * estos fallos: hay un frontend web hoy, y puede haber otro cliente mañana.
+     * El dato sale limpio de aquí.
+     *
+     * Se quitan **etiquetas**, no el signo `<` suelto: «3 < 5» es una frase
+     * perfectamente normal en un tutor de primaria y no hay razón para
+     * estropearla. Por eso el patrón exige una letra o una barra tras el signo.
+     */
+    private function sinMarcado(string $text): string
+    {
+        // Etiquetas HTML/XML, incluido el contenido de <script> y <style>: dejar
+        // el cuerpo suelto convertiría el script en texto visible.
+        $text = (string) preg_replace('#<(script|style)\b[^>]*>.*?</\1\s*>#is', '', $text);
+        $text = (string) preg_replace('#</?[a-z][^>]*>#i', '', $text);
+
+        // Esquemas ejecutables en lo que quede: `PATRON_URL` solo mira http(s),
+        // así que un `javascript:` en prosa no pasaba por ningún filtro.
+        $text = (string) preg_replace('#\b(javascript|vbscript|data)\s*:#i', '', $text);
+
+        return trim($text);
     }
 
     /**

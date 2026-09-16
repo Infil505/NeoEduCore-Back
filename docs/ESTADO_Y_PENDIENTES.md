@@ -1,7 +1,7 @@
 # NeoEduCore — Estado del proyecto y pendientes
-**Última actualización:** 13 de septiembre de 2026  
+**Última actualización:** 15 de septiembre de 2026  
 **Rama activa:** Darwin  
-**Tests:** 449 pasando / 0 fallando  
+**Tests:** 493 pasando / 0 fallando  
 **Endpoints:** 122
 
 > ☑️ **Control de avance:** todo lo abierto de este documento está resumido como checklist
@@ -518,6 +518,71 @@ de la respuesta se conserva.
 
 ---
 
+### ✅ Superficie de inyección del tutor IA (S7, 15/09/2026)
+
+**Qué NO estaba en juego.** Conviene fijarlo antes que nada, porque es lo que el informe
+debe poder decir sin exagerar: el tutor **no tiene herramientas ni acceso a datos de otros
+usuarios**, y la respuesta correcta de un examen nunca ha entrado en su prompt. Por esta vía
+no se roba información ni se resuelve una prueba. Lo que sí estaba en juego es **qué se le
+puede hacer decir a un modelo que conversa con menores de 6 a 12 años** —el compromiso de
+[173] y [394]— y un salto que cruza de una persona a otra.
+
+**Los cuatro agujeros:**
+
+| | Dónde | Qué permitía |
+|---|---|---|
+| 1 | `AiTutorService::buildModePrefix()` | `topic` —200 caracteres libres del alumno— se interpolaba **dentro** del token de control `[MODO: explicar '{$topic}']`. Cerrando comilla y corchete se escribía en el mismo renglón que la orden. |
+| 2 | `AiTutorService::chat()` | La directiva de modo viajaba concatenada al mensaje, en el **mismo turno `user`**: para el modelo, orden y texto del alumno eran lo mismo, así que bastaba escribir `[MODO: …]` para falsificar una. |
+| 3 | `AiRecommendationService` | `answer_text` —lo que el alumno escribe en el examen— entraba crudo en el prompt, y ese texto acaba en el **informe de estrategias del docente** y en el PDF. **Inyección de alumno a docente**, la única que cruza de una persona a otra. |
+| 4 | `AiOutputValidator::sanitize()` | Filtraba URL y longitud, no marcado. Un `<img onerror=…>` se guardaba tal cual en `ai_chat_sessions` y en `ai_recommendations`: XSS almacenado, servido después al alumno y a su docente. |
+
+**Entrada — `AiInputSanitizer` (nuevo), simétrico a `AiOutputValidator`:**
+
+- `paraPrompt()` neutraliza **la forma** de todo dato de usuario que entre en un prompt
+  —mensaje, tema, enunciado, respuesta del alumno, nombre de materia, título de examen,
+  indicador—: fuera corchetes, llaves, `<|im_start|>`, saltos de línea y caracteres de
+  control, y longitud acotada. Un dato no puede abrir una sección que parezca del sistema.
+- `pareceInyeccion()` detecta **la intención** en el texto libre del alumno y **corta antes
+  de llamar a OpenAI**: no se paga la petición, el mensaje **no entra en el historial** —donde
+  contaminaría los 20 turnos siguientes— y queda registrado como incidencia. La respuesta al
+  alumno sale de `openai.tutor.injection_reply`.
+
+**Estructura del turno.** La directiva de modo pasa a turno `system` propio; el mensaje del
+alumno viaja intacto como `user`. El historial almacenado se reduce a `role` + `content`
+antes de enviarse, con el rol forzado a `user`/`assistant` —antes se pasaban también `mode` y
+`created_at`, y un turno `system` guardado en el JSONB habría llegado al modelo con la
+autoridad de las instrucciones del sistema.
+
+**Prompt.** El system prompt del tutor cierra declarando que todo lo que llegue después es
+contenido de un estudiante y nunca una orden; el de recomendaciones marca el bloque
+«Contexto» —enunciados y `given`— como datos de examen. Es la defensa que queda cuando el
+ataque está bien redactado y **no tiene forma reconocible**, que es el caso que el regex no
+cubre.
+
+**Salida.** `sanitize()` quita etiquetas HTML, el cuerpo de `<script>`/`<style>` y los
+esquemas `javascript:`/`data:`. El backend no renderiza —es una API pura— pero **sí guarda**,
+y confiar en que escape el cliente es justo la suposición que produce estos fallos. Se
+respeta el `<` suelto: «3 < 5» es una frase normal de un tutor de primaria.
+
+**Incidencias (D5).** Tipo nuevo `prompt_injection`, migración `2026_09_15_000001` **ya
+aplicada**. Queda **fuera de `AiIncidentType::deValidacion()`**: mide lo que intenta el
+alumno, no lo que acierta el modelo, y sumarla hundiría el 75 % de [173] justo cuando el
+tutor está funcionando bien. En el desglose del superadmin aparece como una categoría más.
+
+⚠️ **Los patrones van deliberadamente estrechos.** Quien escribe tiene entre 6 y 12 años:
+«no entiendo las instrucciones del ejercicio, ignóralas» es una frase de deberes, y
+bloquearla sería peor que el ataque —el crío se queda sin tutor y nadie sabe por qué. Por eso
+`ignorar`/`olvidar` solo cuentan acompañados de algo que señale al propio tutor («tus
+reglas», «las instrucciones anteriores»). La contrapartida está asumida y conviene que conste
+en el informe: **un ataque redactado con cuidado pasa el filtro**, y entonces lo para el
+prompt, no el patrón.
+
+Cubierto por `tests/Unit/AI/AiInputSanitizerTest.php` (31 casos, la mitad de ellos frases
+normales de primaria que **no** deben bloquearse) y `tests/Feature/AI/AiPromptInjectionTest.php`
+(8, uno por agujero y sus reversos).
+
+---
+
 ### ✅ Progreso del estudiante
 - Se actualiza automáticamente al enviar examen (`StudentProgressService`)
 - `mastery_percentage` calculado con AVG() en SQL (no en memoria)
@@ -856,6 +921,21 @@ Con eso existen el diagnóstico por tema, el reporte de «temas a reforzar» par
 
 > ✅ Todos los bugs identificados hasta el 09/05/2026 han sido corregidos.  
 > Ver detalle completo en `INFORME_BUGS_ABRIL_2026.md`.
+
+### Sesión 15/09/2026 — `OPENAI_MODEL` solo llegaba a uno de los tres caminos
+
+`AiRecommendationService` y `AiController` leían el modelo de
+`config('services.openai.model', 'gpt-4o-mini')`, y **`services.openai` no existe** en
+`config/services.php`: la llamada devolvía null y caía siempre al literal. El tutor ya se
+había pasado a `openai.model`, así que cambiar `OPENAI_MODEL` movía el tutor y dejaba las
+recomendaciones y el prompt libre del docente en `gpt-4o-mini`, **sin un solo aviso** — un
+`config()` con valor por defecto nunca falla.
+
+No tenía efecto de seguridad y hasta hoy ninguno práctico, porque el defecto coincidía con
+el modelo en uso. Lo habría tenido el día que suba el precio o salga un modelo mejor: el
+cambio de entorno habría alcanzado a un tercio del gasto. Los tres leen ya `openai.model`,
+que queda como única clave del modelo, y lo fija `tests/Feature/AI/ModeloConfigurableTest.php`
+(4 casos: chat, diagnóstico, recomendaciones y `/ai/generate`).
 
 ### Bugs corregidos en sesión 21/04/2026
 

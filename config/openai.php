@@ -71,6 +71,12 @@ return [
     | `config/services.php`: la llamada devolvía null y caía siempre al valor por
     | defecto, así que el modelo estaba fijado de hecho. Cambiar de modelo —lo
     | primero que se toca si sube el precio o sale uno mejor— exigía desplegar.
+    |
+    | El tutor se pasó a esta clave en su momento, pero las recomendaciones
+    | (`AiRecommendationService`) y el prompt libre del docente (`AiController`)
+    | se quedaron atrás hasta el 15/09/2026: `OPENAI_MODEL` cambiaba el modelo de
+    | uno de los tres caminos y los otros dos seguían en el literal. **Ya son los
+    | tres**, así que esta es la única clave del modelo en todo el sistema.
     */
     'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
 
@@ -111,6 +117,23 @@ return [
             'OPENAI_TUTOR_NOTICE',
             'Esta respuesta la escribió un asistente de inteligencia artificial. '
             . 'Puede equivocarse: si algo no te cuadra, preguntale a tu docente.'
+        ),
+
+        /*
+         | Lo que se responde cuando el mensaje intenta reescribir las reglas
+         | del tutor (`AiInputSanitizer::pareceInyeccion()`).
+         |
+         | Ese turno no llega a OpenAI, así que este texto es literalmente lo
+         | que lee el alumno. Va en configuración por lo mismo que `notice`: es
+         | texto para menores de primaria y lo afina el profesorado, no el
+         | desarrollador. La negativa se ofrece con salida —«pero sí puedo…»—
+         | porque casi siempre quien lo escribe es un crío probando qué pasa,
+         | no un atacante.
+         */
+        'injection_reply' => env(
+            'OPENAI_TUTOR_INJECTION_REPLY',
+            'Esa parte no la puedo hacer: mis instrucciones no se cambian. '
+            . 'Pero sí puedo ayudarte con tus materias. ¿Qué tema quieres repasar?'
         ),
 
         /*

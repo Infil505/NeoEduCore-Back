@@ -66,7 +66,11 @@ class AiController extends Controller
         // 🔥 Llamada a OpenAI (con manejo de error)
         try {
             $response = OpenAI::chat()->create([
-                'model' => config('services.openai.model', 'gpt-4o-mini'),
+                // `services.openai.model` no existe en config/services.php: esta
+                // llamada devolvía null y caía siempre al literal, así que
+                // OPENAI_MODEL no llegaba hasta aquí. La clave buena es la que
+                // ya usa el tutor.
+                'model' => config('openai.model'),
                 'messages' => [
                     [
                         'role' => 'system',

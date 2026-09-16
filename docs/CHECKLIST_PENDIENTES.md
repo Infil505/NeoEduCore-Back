@@ -1,8 +1,22 @@
 # NeoEduCore — Checklist de pendientes
 
-**Creada:** 10 de septiembre de 2026 · **última actualización:** 13 de septiembre de 2026
+**Creada:** 10 de septiembre de 2026 · **última actualización:** 15 de septiembre de 2026
 **Base:** estado registrado al 08/08/2026 (375 tests, 117 endpoints)
-**Ahora:** 449 tests, 122 endpoints, 4 migraciones aplicadas, base remota limpia con el aula del taller
+**Ahora:** 493 tests, 122 endpoints, 5 migraciones aplicadas, base remota limpia con el aula del taller
+
+## Avance al 15/09/2026
+
+**S7 · Superficie de inyección del tutor IA**, cerrada por los dos lados: entrada saneada y
+detectada, salida sin marcado ejecutable, y un tipo de incidencia nuevo (`prompt_injection`)
+que no contamina el 75 % de [173]. Detalle en [§2 Seguridad](#2-seguridad). 40 tests nuevos.
+
+Corregido además un fallo de cableado que salió al revisar los prompts: **`OPENAI_MODEL` solo
+llegaba al tutor**. Las recomendaciones y el prompt libre del docente leían
+`services.openai.model`, una clave inexistente, y caían siempre al literal `gpt-4o-mini` sin
+avisar. Los tres leen ya `openai.model` — `ESTADO_Y_PENDIENTES.md` §4, sesión 15/09/2026.
+
+De paso quedó anotado, sin tocar nada todavía, que **el `APP_KEY` del `.env` sigue siendo el
+mismo que está publicado en `.env.testing`** dentro de un repositorio público — ver S3.
 
 ## Avance al 13/09/2026
 
@@ -154,6 +168,16 @@ Primero decidir, después ejecutar. Al tomar la decisión, anotar **qué se elig
   - **El administrador queda fuera de la regla**: responde por la institución y necesita poder ordenar el calendario o retirar un recurso cuando quien lo subió ya no está.
   - ⚠️ **Entradas sin autor** (`created_by` es nullable y queda en `NULL` al borrarse la cuenta que lo creó): **solo las toca el administrador**. Dejarlas abiertas a cualquier docente reabriría el agujero por la puerta de atrás.
   - La regla vive en el trait `ExigeAutoria`, para que un endpoint nuevo la herede en vez de reinventarla.
+- [x] 🔴 **S7 · Superficie de inyección del tutor IA** — ✅ 15/09/2026 · **cerrada en los dos lados, entrada y salida**
+  - **Cuatro agujeros, no uno.** (1) `topic` se interpolaba dentro del token de control `[MODO: explicar '{$topic}']`: 200 caracteres libres del alumno con los que cerrar el corchete y escribir en el mismo renglón que la orden. (2) La directiva de modo viajaba **pegada al mensaje**, en el mismo turno `user`, así que bastaba escribir `[MODO: …]` para falsificar una. (3) La respuesta libre del alumno (`answer_text`) entraba cruda en el prompt de recomendaciones, y ese texto acaba en el **informe de estrategias del docente**: inyección de alumno a docente. (4) La salida del modelo se guardaba sin quitarle el marcado ejecutable.
+  - **Lo que NO estaba en juego, y conviene que conste en el informe:** el tutor no tiene herramientas ni acceso a datos ajenos, y la respuesta correcta de un examen nunca entra en su prompt. Por aquí no se roba nada ni se resuelve un examen. El riesgo real es **qué se le puede hacer decir a un modelo que habla con menores** y el salto alumno→docente del punto (3).
+  - **Entrada:** `AiInputSanitizer` (nuevo). `paraPrompt()` neutraliza la forma —corchetes, llaves, `<|im_start|>`, saltos de línea, caracteres de control— de **todo** dato de usuario que entre en un prompt: mensaje, tema, enunciado, respuesta del alumno, nombre de materia y título de examen. `pareceInyeccion()` detecta la intención en el texto libre y **corta antes de llamar a OpenAI**: no se paga la petición, no entra en el historial —donde contaminaría los 20 turnos siguientes— y queda registrada como incidencia.
+  - **Estructura:** la directiva de modo pasa a turno `system` propio y el mensaje del alumno viaja intacto como `user`; el historial almacenado se reduce a `role`+`content` con el rol forzado a `user`/`assistant`.
+  - **Prompt:** el system prompt del tutor cierra diciendo que todo lo que llegue después es contenido de un estudiante y nunca una orden; el de recomendaciones marca el bloque «Contexto» como datos de examen. Es la defensa que queda cuando el ataque está bien redactado y no tiene forma reconocible.
+  - **Salida:** `AiOutputValidator::sanitize()` quita etiquetas HTML, el cuerpo de `<script>`/`<style>` y los esquemas `javascript:`/`data:`. El backend no renderiza, pero **sí guarda**, y de ahí sale al alumno, al docente y al PDF: el XSS almacenado cruzaba de uno a otro. Se respeta el `<` suelto, que en primaria es «3 < 5».
+  - **Incidencias:** tipo nuevo `prompt_injection` (migración `2026_09_15_000001`, **ya aplicada**). **Queda fuera de `deValidacion()`**: mide lo que intenta el alumno, no lo que acierta el modelo, y sumarla hundiría el 75 % de [173] justo cuando el tutor está funcionando bien. Sale sola en el desglose del superadmin.
+  - ⚠️ **El filtro va deliberadamente estrecho.** Quien escribe tiene 6-12 años: «no entiendo las instrucciones del ejercicio, ignóralas» es una frase de deberes. `ignorar/olvidar` solo cuenta con un calificativo que señale al tutor («tus reglas», «las instrucciones anteriores»). La contrapartida asumida: **un ataque redactado con cuidado pasa el filtro** y lo para el prompt, no el regex.
+  - Cubierto por `tests/Unit/AI/AiInputSanitizerTest.php` (31 casos, la mitad falsos positivos de primaria) y `tests/Feature/AI/AiPromptInjectionTest.php` (8). Suite: **489 pasando**.
 - [ ] 🔴 **S2 · Cambiar la contraseña temporal del superadmin en producción**
   - `POST /api/password/change`. Antes de que haya usuarios reales.
 - [ ] 🔴 **S3 · Credencial de PostgreSQL en el historial de git**

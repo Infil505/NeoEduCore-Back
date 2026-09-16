@@ -28,12 +28,26 @@ enum AiIncidentType: string
     case ModelError = 'model_error';
 
     /**
+     * El mensaje del alumno intentaba reescribir las instrucciones del tutor.
+     *
+     * Es la única que se decide **antes** de llamar al modelo: el turno se
+     * bloquea en la entrada, así que no hay respuesta que validar ni petición
+     * que pagar. Ver `AiInputSanitizer`.
+     */
+    case PromptInjection = 'prompt_injection';
+
+    /**
      * Las que cuentan para el criterio del 75 %: son fallos de **validación**.
      * Un error de red de OpenAI no dice nada sobre la calidad del contenido, y
      * meterlo en el porcentaje mezclaría disponibilidad con seguridad.
      *
      * `BlockedUrl` tampoco entra: ahí la respuesta **sí se entrega**, con el
      * enlace sustituido. Se registra porque interesa saber cuántas veces pasa.
+     *
+     * `PromptInjection` tampoco: mide lo que intenta **el alumno**, no lo que
+     * acierta el modelo. Sumarla hundiría el porcentaje de calidad del tutor
+     * cada vez que alguien probara a saltárselo, que es justo cuando el tutor
+     * está funcionando bien.
      *
      * @return array<int,string>
      */

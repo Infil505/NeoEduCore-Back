@@ -3,7 +3,7 @@
 --
 
 
--- Dumped from database version 17.9
+-- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.9
 
 SET statement_timeout = 0;
@@ -63,7 +63,8 @@ CREATE TYPE public.ai_incident_type AS ENUM (
     'too_short',
     'too_long',
     'blocked_url',
-    'model_error'
+    'model_error',
+    'prompt_injection'
 );
 
 
