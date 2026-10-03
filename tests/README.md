@@ -183,6 +183,11 @@ php artisan test --verbose
 - ✅ Cada estilo del enum tiene su instrucción y son distintas; sin estilo no se añade nada
 - ✅ El chat y el diagnóstico envían la instrucción al modelo y devuelven `presentation`
 
+### Vídeo de apoyo del examen — `AI/VideoDelExamenTest` (7 tests)
+- ✅ `video_url` opcional al crear; solo YouTube (rechaza otros dominios, sufijos engañosos y esquemas no http); `null` al editar lo quita
+- ✅ El chat sobre el examen lo entrega a `visual` y `auditivo` (también en turnos siguientes de la sesión); `lector` y sin estilo reciben `video: null`
+- ✅ `GET /exam-attempts/{id}/recommendations` lo trae según el estilo
+
 ### Drift esquema↔migraciones — `Unit/SchemaDriftTest` (5 tests)
 - ✅ La comparación de `schema:check-drift` ignora solo las cabeceras de versión de `pg_dump` y los finales de línea; un cambio de columna o cualquier otro comentario sí cuenta
 - El comando completo (base temporal + `pg_dump`) se ejecuta a mano: `php artisan --env=testing schema:check-drift`

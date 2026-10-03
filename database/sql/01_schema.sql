@@ -342,7 +342,8 @@ CREATE TABLE public.exams (
     available_from timestamp(0) without time zone,
     available_until timestamp(0) without time zone,
     created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    video_url character varying(255)
 );
 
 

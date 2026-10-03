@@ -130,8 +130,10 @@ final class ApiSpec
         'POST api/exams' => [
             'title' => 'Parcial 2 - Matemáticas',
             'subject_id' => '{{subject_id}}',
-            'grade' => 10,
+            'grade' => 4,
             'instructions' => 'Responder todas las preguntas.',
+            // Opcional: el tutor lo entrega al alumnado visual o auditivo. Solo YouTube.
+            'video_url' => 'https://www.youtube.com/watch?v=VIDEO_ID',
             'duration_minutes' => 60,
             'max_attempts' => 2,
             'show_results_immediately' => true,

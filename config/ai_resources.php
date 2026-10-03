@@ -36,4 +36,18 @@ return [
         'britannica.com',
         'rae.es',
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Dominios del vídeo de apoyo del examen
+    |--------------------------------------------------------------------------
+    | `exams.video_url` lo pone el docente y el tutor se lo entrega al alumnado
+    | visual o auditivo. Más estricto que `allowed_domains`: solo plataformas de
+    | vídeo, porque el frontend lo va a incrustar como reproductor. Misma
+    | validación por sufijo de host ('youtube.com' admite 'www.' y 'm.').
+    */
+    'video_domains' => [
+        'youtube.com',
+        'youtu.be',
+    ],
 ];

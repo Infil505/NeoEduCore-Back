@@ -33,6 +33,9 @@ class Exam extends Model
         // RN-EXAM-002
         'instructions',
 
+        // Vídeo de apoyo opcional (03/10/2026); ver migración add_video_url_to_exams
+        'video_url',
+
         // RN-EXAM-004..007
         'duration_minutes',
 

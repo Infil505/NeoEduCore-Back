@@ -269,7 +269,7 @@ Lo que el backend ya dejó listo y falta consumir, más los cambios que lo rompe
 - [ ] **F6 · Saludo con el nombre del alumno en el tutor** (el backend ya no lo envía a OpenAI)
 - [ ] **F7 · Aviso de IA en cada respuesta del tutor** — 🔓 listo para consumir: el backend lo manda en `data.ai_notice` (D4)
 - [ ] **F18 · Campanita de notificaciones** — 🔓 backend listo (O1): `GET /api/notifications` (`meta.unread_count`), `PATCH /api/notifications/{id}/read`, `POST /api/notifications/read-all`. Hoy el único tipo es `exam_available`, con título, materia y ventana en `data`
-- [ ] **F19 · Presentar la respuesta del tutor según `presentation`** — 🔓 backend listo (O2): con `auditivo`, ofrecer leerla en voz alta (p. ej. Web Speech API); `visual` y `lector` llegan ya formateadas como texto
+- [ ] **F19 · Presentar la respuesta del tutor según `presentation`** — 🔓 backend listo (O2): con `auditivo`, ofrecer leerla en voz alta (p. ej. Web Speech API); `visual` y `lector` llegan ya formateadas como texto. Si viene `video` (visual/auditivo, lo puso el docente en el examen), incrustar el reproductor de YouTube; y en el formulario de crear/editar examen, campo opcional `video_url`
 - [ ] 🟠 **F17 · Panel de métricas del tutor IA para el superadmin**
   - Datos: `GET /platform/ai-tutor-metrics` (ventana, totales, `validation_pass_rate`, por tipo, por etapa, por institución y serie diaria).
   - El umbral de [173] es 75 %: que se vea de un vistazo si se cumple.

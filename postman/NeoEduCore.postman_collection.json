@@ -1740,7 +1740,7 @@
                         },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"title\": \"Parcial 2 - Matemáticas\",\n    \"subject_id\": \"{{subject_id}}\",\n    \"grade\": 10,\n    \"instructions\": \"Responder todas las preguntas.\",\n    \"duration_minutes\": 60,\n    \"max_attempts\": 2,\n    \"show_results_immediately\": true,\n    \"allow_review_after_submission\": true,\n    \"randomize_questions\": false,\n    \"group_ids\": [\n        \"{{group_id}}\"\n    ]\n}",
+                            "raw": "{\n    \"title\": \"Parcial 2 - Matemáticas\",\n    \"subject_id\": \"{{subject_id}}\",\n    \"grade\": 4,\n    \"instructions\": \"Responder todas las preguntas.\",\n    \"video_url\": \"https://www.youtube.com/watch?v=VIDEO_ID\",\n    \"duration_minutes\": 60,\n    \"max_attempts\": 2,\n    \"show_results_immediately\": true,\n    \"allow_review_after_submission\": true,\n    \"randomize_questions\": false,\n    \"group_ids\": [\n        \"{{group_id}}\"\n    ]\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"

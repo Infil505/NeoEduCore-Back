@@ -11,6 +11,7 @@ use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
 use App\Models\Exams\Question;
 use App\Services\AI\AiRecommendationService;
+use App\Services\AI\FormatoPorEstilo;
 use App\Services\Exams\ExamAttemptRulesService;
 use App\Services\Exams\ExamGradingService;
 use App\Services\Students\StudentProgressService;
@@ -369,10 +370,15 @@ class ExamAttemptController extends Controller
             ->orderBy('generated_at')
             ->get();
 
+        // El vídeo de apoyo que el docente puso en el examen, para el alumnado
+        // visual o auditivo. El examen ya está cargado; solo cuesta leer el estilo.
+        $estilo = Student::where('user_id', $user->id)->first()?->learning_style;
+
         return response()->json([
             'data' => [
                 'status'          => $attempt->ai_recommendations_status,
                 'recommendations' => $recomendaciones,
+                'video'           => app(FormatoPorEstilo::class)->videoPara($estilo, $attempt->exam),
             ],
         ]);
     }

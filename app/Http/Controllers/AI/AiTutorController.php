@@ -56,7 +56,22 @@ class AiTutorController extends Controller
         // O2: el estilo del alumno, para que el frontend sepa cómo presentar la
         // respuesta (p. ej. leerla en voz alta con `auditivo`). Sale del perfil
         // ya cargado arriba: no cuesta una consulta.
-        $result['presentation'] = app(FormatoPorEstilo::class)->presentacion($student->learning_style);
+        $formato = app(FormatoPorEstilo::class);
+        $result['presentation'] = $formato->presentacion($student->learning_style);
+
+        // El vídeo que el docente puso en el examen del que se está hablando:
+        // el de esta petición o, si no vino, el que la sesión ya tenía fijado.
+        // Solo se busca si el estilo lo recibe, para no gastar consultas.
+        $result['video'] = null;
+        if ($formato->recibeVideo($student->learning_style)) {
+            $examId = $data['exam_id']
+                ?? AiChatSession::whereKey($result['session_id'])->value('exam_id');
+
+            $result['video'] = $formato->videoPara(
+                $student->learning_style,
+                $examId ? Exam::find($examId) : null
+            );
+        }
 
         return response()->json(['data' => $result]);
     }

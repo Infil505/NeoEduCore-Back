@@ -203,6 +203,14 @@ return [
         |
         | Sin estilo en el perfil no se añade nada: el tutor responde como antes.
         */
+        /*
+         | Estilos a los que el tutor les entrega el vídeo de apoyo del examen
+         | (`exams.video_url`, opcional, lo pone el docente). Viaja aparte del
+         | texto, en el campo `video`, en el chat sobre ese examen y en sus
+         | recomendaciones.
+         */
+        'video_para_estilos' => ['visual', 'auditivo'],
+
         'formato' => [
             'visual' => 'Organiza la respuesta para que se entienda de un vistazo: pasos '
                 . 'numerados y cortos, una idea por línea, y si ayuda, un esquema sencillo '

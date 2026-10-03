@@ -9,6 +9,7 @@ use App\Http\Controllers\Concerns\RevelaRespuestas;
 use App\Enums\ExamStatus;
 use App\Jobs\NotificarExamenDisponible;
 use App\Models\Exams\Exam;
+use App\Rules\UrlDeVideo;
 use App\Models\Academic\Group;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -116,6 +117,8 @@ class ExamController extends Controller
             'subject_id' => ['required', 'uuid', Rule::exists('subjects', 'id')],
             'grade' => ['required', 'integer', 'between:' . config('academic.grade_min') . ',' . config('academic.grade_max')],
             'instructions' => ['nullable', 'string', 'max:2000'],
+            // Opcional: el tutor se lo da al alumnado visual o auditivo.
+            'video_url' => ['nullable', 'string', 'max:255', new UrlDeVideo()],
             'duration_minutes' => ['required', 'integer', 'between:1,300'],
 
             // Config avanzada RN-EXAM-034/035
@@ -154,6 +157,7 @@ class ExamController extends Controller
             'subject_id' => $data['subject_id'],
             'grade' => (int) $data['grade'],
             'instructions' => $data['instructions'] ?? null,
+            'video_url' => $data['video_url'] ?? null,
             'duration_minutes' => (int) $data['duration_minutes'],
 
             'status' => ExamStatus::Draft->value,
@@ -221,6 +225,8 @@ class ExamController extends Controller
             'subject_id' => ['sometimes', 'uuid', Rule::exists('subjects', 'id')],
             'grade' => ['sometimes', 'integer', 'between:' . config('academic.grade_min') . ',' . config('academic.grade_max')],
             'instructions' => ['nullable', 'string', 'max:2000'],
+            // `null` lo quita; omitirlo lo deja como está.
+            'video_url' => ['nullable', 'string', 'max:255', new UrlDeVideo()],
             'duration_minutes' => ['sometimes', 'integer', 'between:1,300'],
 
             'max_attempts' => ['sometimes', 'integer', 'between:1,10'],
