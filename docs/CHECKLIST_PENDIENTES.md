@@ -246,8 +246,8 @@ Dependen de P1–P2 salvo M4.
   - Fuente: `ANALISIS_CONCURRENCIA.md` §6.5
 - [ ] **M3 · Prueba de carga contra el despliegue real con Octane** (valida «200 concurrentes»)
   - `k6 run -e BASE_URL=https://<host>/api -e VUS=50 -e DURATION=60s k6/exam_peak.js`
-- [ ] 🟠 **M4 · Informe de cobertura ≥ 70 %**
-  - `php artisan test --coverage --min=70` (requiere Xdebug o PCOV).
+- [x] 🟠 **M4 · Informe de cobertura ≥ 70 %** — ✅ 03/10/2026 · **líneas 91,36 % (4271/4675)**, métodos 71,08 %, clases 47,06 %, sobre 565 tests (03/10/2026). `phpunit.xml` excluye del cómputo las herramientas de desarrollo (`app/Console` y `app/Support/ApiSpec.php`), que nunca atienden a un usuario; con ellas dentro y antes de los tests nuevos era 77,80 %. Detalle, cómo medir y hallazgos en [`COBERTURA_TESTS.md`](COBERTURA_TESTS.md). El requisito del TFG (≥ 70 %) se mide por líneas; «clases» solo cuenta las cubiertas al 100 %.
+  - Cómo repetirlo: ver `tests/README.md` → «Tests con coverage» (requiere PCOV o Xdebug).
 
 ---
 
@@ -385,11 +385,12 @@ Sin urgencia; ninguna bloquea el TFG.
 
 - [x] **O1 · Notificar al estudiante que tiene un examen disponible** — ✅ 03/10/2026 · aviso en la app al activar el examen (sin correo, decisión del usuario); falta pintarlo en el frontend (F18). Antes: (hoy no hay evento ni correo) — `ESTADO_Y_PENDIENTES.md` §3.1
 - [x] **O2 · Adaptar el formato de la respuesta del tutor al estilo de aprendizaje** — ✅ 03/10/2026 · formato por estilo en chat y diagnóstico + campo `presentation`; el frontend lo usa en F19. Antes: (hoy solo cambia el tono) — §3.2
-- [ ] **O3 · Bajar el coste fijo del submit de 22 a ~12 queries** (~170 entregas/s). Perfilar antes; candidato: `recalcFromAttempts` a la cola — `ANALISIS_CONCURRENCIA.md` §5.5
+- [x] **O3 · Bajar el coste fijo del submit de 22 a ~12 queries** — ✅ 03/10/2026 · 22 → 13, sin cola; tope de `QueryBudgetTest` en 14. Antes: (~170 entregas/s). Perfilar antes; candidato: `recalcFromAttempts` a la cola — `ANALISIS_CONCURRENCIA.md` §5.5
 - [x] **O4 · Comando `schema:check-drift` para CI** — ✅ 03/10/2026 · base temporal + migrate + dump + diff; primera ejecución sin drift. Falta un CI donde engancharlo (no hay pipeline en el repo)
 - [x] **O5 · `exclude_student_user_ids` en `POST /bulk/reassign-group`** — ✅ 03/10/2026 · solo con `from_group_id`; la respuesta trae `excluded`. 3 tests en `BulkReassignmentTest`
 - [x] **O6 · Cerrar el residual de ~13 ms de temporización en `/password/forgot`** — ✅ 03/10/2026 · la petición solo encola `EnviarEnlaceRecuperacion`; mismo trabajo exista o no la cuenta
-- [ ] **O7 · Mover las llamadas a OpenAI a la cola** (solo si crece el volumen del tutor)
+- [x] **O7 · Mover las llamadas a OpenAI a la cola** — ✅ 03/10/2026 · modo opcional `async: true` en el chat + `GET /ai/tutor/sessions/{id}`; el frontend decide cuándo usarlo (F20)
+- [ ] **F20 · Usar el chat asíncrono del tutor** — 🔓 backend listo (O7): mandar `async: true`, recibir 202 y consultar `GET /api/ai/tutor/sessions/{id}` hasta `awaiting_reply: false`; con 409 esperar a la respuesta anterior
 - [x] **O8 · Relaciones Eloquent faltantes** — ✅ 03/10/2026 · eran 9 modelos (también `StudentSubject`) + 3 FK posteriores; vigilado por `EloquentRelationsMatchFksTest`. (`belongsTo(Institution)` en 8 modelos, `hasMany` en `Institution` y `Subject`) — solo si el diagrama de clases se dibuja leyendo modelos — §3.5
 
 ---
@@ -429,5 +430,5 @@ Requisitos nuevos, anotados después de crear esta lista.
     - [x] Actualizar `ESTADO_Y_PENDIENTES.md` §2 Reportes y §6 Referencia de endpoints
   - Implementado el 13/09/2026: 382 tests pasando (7 nuevos en `tests/Feature/Crud/ReportExportsTest.php`), 119 endpoints. Cierra también **S4**, que tocaba el mismo servicio.
   - Queda abierto de aquí:
-    - [ ] **B1a · Zona horaria de los reportes.** Las fechas salen en **UTC** en los tres formatos. `institutions.settings.timezone` existe pero ningún reporte lo lee. Decidir si se convierte a la hora del centro (y entonces en CSV, XLSX y JSON a la vez, no en uno solo).
+    - [x] **B1a · Zona horaria de los reportes.** — ✅ 03/10/2026 · **decisión del usuario: se queda en UTC** en CSV, XLSX y JSON (`config/app.php` → `timezone = UTC`). Si el centro necesita su hora, la conversión la hace el frontend con `institutions.settings.timezone`. Texto original: Las fechas salen en **UTC** en los tres formatos. `institutions.settings.timezone` existe pero ningún reporte lo lee. Decidir si se convierte a la hora del centro (y entonces en CSV, XLSX y JSON a la vez, no en uno solo).
     - [ ] **B1b · Informe:** donde dice «PDF y CSV» ([236], [390], [732]) añadir XLSX. Ya está implementado, así que la frase puede ir en presente.

@@ -131,6 +131,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
             ->middleware(['throttle:ai-diagnosis', 'throttle:ai-global']);
         Route::patch('/ai/tutor/sessions/{sessionId}/end', [AiTutorController::class, 'endSession']);
         Route::get('/ai/tutor/sessions', [AiTutorController::class, 'sessions']);
+        // O7: aquí recoge el modo asíncrono la respuesta (`awaiting_reply`).
+        Route::get('/ai/tutor/sessions/{sessionId}', [AiTutorController::class, 'showSession'])
+            ->whereUuid('sessionId');
     });
 
     /*

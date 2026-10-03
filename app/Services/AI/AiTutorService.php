@@ -2,6 +2,7 @@
 
 namespace App\Services\AI;
 
+use App\Jobs\ResponderTutor;
 use App\Models\AI\AiChatSession;
 use App\Models\Students\Student;
 use Illuminate\Support\Facades\Cache;
@@ -79,30 +80,141 @@ class AiTutorService
     ): array {
         $session = $this->resolveSession($studentUserId, $sessionId, $subjectId, $examId);
 
-        $sanitizer = app(AiInputSanitizer::class);
-
-        /*
-        | El corte es **antes** de llamar a OpenAI, no después de validar lo que
-        | conteste: un intento de reescribir las reglas no se paga, no entra en
-        | el historial —donde contaminaría todos los turnos siguientes— y queda
-        | contado en la estadística del centro.
-        */
-        if ($sanitizer->pareceInyeccion($message) || $sanitizer->pareceInyeccion($topic)) {
-            $this->anotarIncidencia(
-                AiIncidentType::PromptInjection,
-                AiIncidentStage::Chat,
-                $studentUserId,
-                $session->id
-            );
-
-            return [
-                'session_id'    => $session->id,
-                'reply'         => (string) config('openai.tutor.injection_reply'),
-                'ai_notice'     => (string) config('openai.tutor.notice'),
-                'message_count' => count($session->messages ?? []),
-            ];
+        if ($this->esInyeccion($message, $topic)) {
+            return $this->respuestaAInyeccion($session, $studentUserId);
         }
 
+        return $this->responderTurno($session, $studentUserId, $message, $mode, $topic);
+    }
+
+    /**
+     * El mismo turno que `chat()`, pero la llamada a OpenAI va a la cola (O7).
+     *
+     * `chat()` retiene un worker HTTP mientras el modelo responde —hasta
+     * `OPENAI_REQUEST_TIMEOUT`, 15 s—, y con muchos alumnos a la vez eso se come
+     * los workers que necesita el flujo de examen. Aquí la petición resuelve la
+     * sesión, marca `awaiting_reply_since` y encola `ResponderTutor`; la
+     * respuesta llega a la sesión y el frontend la recoge con
+     * `GET /ai/tutor/sessions/{id}`.
+     *
+     * Devuelve null si la sesión ya tiene una respuesta en camino: un turno a la
+     * vez, o el historial con el que se arma el segundo no incluiría el primero.
+     * Una marca más vieja que `openai.tutor.async_stale_seconds` no bloquea: el
+     * job murió sin limpiarla y el alumno no puede quedarse atascado.
+     *
+     * El intento de inyección se contesta aquí mismo, como en `chat()`: no
+     * llama a OpenAI, así que no hay nada que encolar.
+     */
+    public function chatAsincrono(
+        string $studentUserId,
+        string $message,
+        ?string $sessionId = null,
+        ?string $subjectId = null,
+        string $mode = 'ask',
+        ?string $topic = null,
+        ?string $examId = null
+    ): ?array {
+        $session = $this->resolveSession($studentUserId, $sessionId, $subjectId, $examId);
+
+        if ($session->awaiting_reply_since
+            && $session->awaiting_reply_since->gt(now()->subSeconds($this->ajuste('async_stale_seconds')))) {
+            return null;
+        }
+
+        if ($this->esInyeccion($message, $topic)) {
+            return $this->respuestaAInyeccion($session, $studentUserId) + ['status' => 'done'];
+        }
+
+        $session->forceFill(['awaiting_reply_since' => now()])->save();
+
+        ResponderTutor::dispatch(
+            $session->id,
+            $studentUserId,
+            $session->institution_id,
+            $message,
+            $mode,
+            $topic
+        );
+
+        return [
+            'session_id'    => $session->id,
+            'status'        => 'pending',
+            'reply'         => null,
+            'ai_notice'     => (string) config('openai.tutor.notice'),
+            'message_count' => count($session->messages ?? []),
+        ];
+    }
+
+    /**
+     * Lo que hace `ResponderTutor` en el worker. Si la sesión desapareció
+     * mientras esperaba (se borró el alumno), no hay a quién responder.
+     */
+    public function responderPendiente(
+        string $sessionId,
+        string $studentUserId,
+        string $message,
+        string $mode,
+        ?string $topic
+    ): void {
+        $session = AiChatSession::where('id', $sessionId)
+            ->where('student_user_id', $studentUserId)
+            ->first();
+
+        if ($session) {
+            $this->responderTurno($session, $studentUserId, $message, $mode, $topic);
+        }
+    }
+
+    /**
+     * Si el job falla del todo, el alumno recibe el mensaje de reserva en vez de
+     * quedarse esperando: se anexa el turno y se quita la marca.
+     */
+    public function liberarPendiente(string $sessionId, string $message, string $mode): void
+    {
+        $this->anexarMensajes($sessionId, [
+            ['role' => 'user',      'content' => $message, 'mode' => $mode, 'created_at' => now()->toISOString()],
+            ['role' => 'assistant', 'content' => $this->fallbackReply(), 'created_at' => now()->toISOString()],
+        ]);
+    }
+
+    /*
+    | El corte es **antes** de llamar a OpenAI, no después de validar lo que
+    | conteste: un intento de reescribir las reglas no se paga, no entra en
+    | el historial —donde contaminaría todos los turnos siguientes— y queda
+    | contado en la estadística del centro.
+    */
+    private function esInyeccion(string $message, ?string $topic): bool
+    {
+        $sanitizer = app(AiInputSanitizer::class);
+
+        return $sanitizer->pareceInyeccion($message) || $sanitizer->pareceInyeccion($topic);
+    }
+
+    private function respuestaAInyeccion(AiChatSession $session, string $studentUserId): array
+    {
+        $this->anotarIncidencia(
+            AiIncidentType::PromptInjection,
+            AiIncidentStage::Chat,
+            $studentUserId,
+            $session->id
+        );
+
+        return [
+            'session_id'    => $session->id,
+            'reply'         => (string) config('openai.tutor.injection_reply'),
+            'ai_notice'     => (string) config('openai.tutor.notice'),
+            'message_count' => count($session->messages ?? []),
+        ];
+    }
+
+    /** El turno completo: prompt, llamada al modelo y anexado. Común a los dos modos. */
+    private function responderTurno(
+        AiChatSession $session,
+        string $studentUserId,
+        string $message,
+        string $mode,
+        ?string $topic
+    ): array {
         // El controlador ya verificó que el usuario tiene perfil de estudiante,
         // así que aquí solo hace falta el contexto para el prompt (cacheable).
         $systemPrompt = $this->systemPromptCacheado($studentUserId);
@@ -204,7 +316,8 @@ class AiTutorService
                             jsonb_array_length(messages || ?::jsonb) - ?
                         )
                     ),
-                    updated_at = ?
+                    updated_at = ?,
+                    awaiting_reply_since = NULL
               WHERE id = ?",
             [$delta, $delta, $this->ajuste('stored_messages'), now(), $sessionId]
         );

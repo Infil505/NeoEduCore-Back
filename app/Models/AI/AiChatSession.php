@@ -31,6 +31,8 @@ class AiChatSession extends Model
     protected $casts = [
         'messages' => 'array',
         'ended_at' => 'datetime',
+        // O7: hay una respuesta del modelo en la cola. Se escribe con forceFill.
+        'awaiting_reply_since' => 'datetime',
     ];
 
     public function institution()

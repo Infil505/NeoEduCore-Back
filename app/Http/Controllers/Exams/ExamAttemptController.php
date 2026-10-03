@@ -187,12 +187,18 @@ class ExamAttemptController extends Controller
             $exam,
             $attempt,
             $data,
+            $questions,
             $grading,
             $progressService,
             $aiService
         ) {
-            // 1) Calificar intento + guardar respuestas
-            $gradedAttempt = $grading->gradeAttempt($exam, $attempt, $data['answers']);
+            // 1) Calificar intento + guardar respuestas. Las preguntas viajan ya
+            // cargadas: se acaban de leer arriba para validar (O3).
+            $gradedAttempt = $grading->gradeAttempt($exam, $attempt, $data['answers'], $questions);
+
+            // El examen ya lo resolvió el binding de ruta: las recomendaciones
+            // no tienen por qué volver a pedirlo.
+            $gradedAttempt->setRelation('exam', $exam);
 
             // 2) Recalcular progreso (promedio por materia) si el examen tiene subject_id
             $progress = null;

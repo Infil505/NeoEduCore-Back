@@ -16,6 +16,17 @@
         <include>
             <directory>app</directory>
         </include>
+        <!--
+            Fuera del cálculo de cobertura: herramientas de desarrollo que solo se
+            ejecutan desde consola y nunca atienden a un usuario (generadores de
+            OpenAPI, Postman y diagramas, y el volcado y chequeo del esquema).
+            ApiSpec solo alimenta a esos generadores. La lógica de comparación de
+            schema:check-drift sí cuenta: vive en app/Support/SchemaDrift.php.
+        -->
+        <exclude>
+            <directory>app/Console</directory>
+            <file>app/Support/ApiSpec.php</file>
+        </exclude>
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>

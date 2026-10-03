@@ -389,4 +389,132 @@ class TeacherAssignmentsTest extends TestCase
         $this->postJson('/api/exams', $this->cuerpoExamen($materia->id, [$grupo->id]))
             ->assertCreated();
     }
+
+    // -------------------------------------------------------------------------
+    // Listar y retirar asignaciones — solo admin, solo su institución
+    // -------------------------------------------------------------------------
+
+    public function test_admin_lists_assignments_with_filters_and_never_another_institution(): void
+    {
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
+
+        $docenteA = User::factory()->teacher()->create(['institution_id' => $this->institution->id]);
+        $docenteB = User::factory()->teacher()->create(['institution_id' => $this->institution->id]);
+        $grupo1 = $this->grupo();
+        $grupo2 = $this->grupo();
+        $materia = $this->materia();
+
+        $this->asignarDocente($docenteA, $grupo1->id, $materia->id);
+        $this->asignarDocente($docenteA, $grupo2->id, $materia->id);
+        $this->asignarDocente($docenteB, $grupo1->id, $materia->id);
+
+        // Una asignación de otro centro no puede aparecer en ningún filtro.
+        $otro = Institution::factory()->create();
+        $ajeno = User::factory()->teacher()->create(['institution_id' => $otro->id]);
+        $this->asignarDocente(
+            $ajeno,
+            Group::factory()->create(['institution_id' => $otro->id])->id,
+            Subject::factory()->create(['institution_id' => $otro->id])->id
+        );
+
+        $this->assertSame(3, $this->getJson('/api/teacher-assignments')->assertOk()->json('data.total'));
+
+        $porDocente = $this->getJson("/api/teacher-assignments?teacher_user_id={$docenteA->id}")->json('data');
+        $this->assertSame(2, $porDocente['total']);
+        $this->assertSame($docenteA->full_name, $porDocente['data'][0]['teacher']['full_name']);
+
+        $this->assertSame(2, $this->getJson("/api/teacher-assignments?group_id={$grupo1->id}")->json('data.total'));
+        $this->assertSame(0, $this->getJson("/api/teacher-assignments?teacher_user_id={$ajeno->id}")->json('data.total'));
+    }
+
+    public function test_assigning_only_groups_of_another_institution_is_rejected(): void
+    {
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
+
+        $docente = User::factory()->teacher()->create(['institution_id' => $this->institution->id]);
+        $otro = Institution::factory()->create();
+
+        $this->postJson('/api/teacher-assignments', [
+            'teacher_user_id' => $docente->id,
+            'group_ids'       => [Group::factory()->create(['institution_id' => $otro->id])->id],
+            'subject_ids'     => [$this->materia()->id],
+        ])->assertStatus(422);
+
+        $this->assertSame(0, DB::table('teacher_assignments')->where('teacher_user_id', $docente->id)->count());
+    }
+
+    public function test_admin_removes_a_single_assignment(): void
+    {
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
+
+        $docente = User::factory()->teacher()->create(['institution_id' => $this->institution->id]);
+        $this->asignarDocente($docente, $this->grupo()->id, $this->materia()->id);
+        $id = DB::table('teacher_assignments')->where('teacher_user_id', $docente->id)->value('id');
+
+        $this->deleteJson("/api/teacher-assignments/{$id}")->assertOk();
+
+        $this->assertSame(0, DB::table('teacher_assignments')->where('id', $id)->count());
+    }
+
+    public function test_admin_cannot_remove_an_assignment_of_another_institution(): void
+    {
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
+
+        $otro = Institution::factory()->create();
+        $ajeno = User::factory()->teacher()->create(['institution_id' => $otro->id]);
+        $this->asignarDocente(
+            $ajeno,
+            Group::factory()->create(['institution_id' => $otro->id])->id,
+            Subject::factory()->create(['institution_id' => $otro->id])->id
+        );
+        $id = DB::table('teacher_assignments')->where('teacher_user_id', $ajeno->id)->value('id');
+
+        // TeacherAssignment es TenantScoped: el binding no la resuelve.
+        $this->deleteJson("/api/teacher-assignments/{$id}")->assertNotFound();
+        $this->assertSame(1, DB::table('teacher_assignments')->where('id', $id)->count());
+    }
+
+    public function test_bulk_removal_by_group_or_for_every_group_of_the_teacher(): void
+    {
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
+
+        $docente = User::factory()->teacher()->create(['institution_id' => $this->institution->id]);
+        $grupo1 = $this->grupo();
+        $grupo2 = $this->grupo();
+        $this->asignarDocente($docente, $grupo1->id, $this->materia()->id);
+        $this->asignarDocente($docente, $grupo1->id, $this->materia()->id);
+        $this->asignarDocente($docente, $grupo2->id, $this->materia()->id);
+
+        // Solo el grupo 1: sus dos materias.
+        $this->deleteJson('/api/teacher-assignments/bulk', [
+            'teacher_user_id' => $docente->id,
+            'group_id'        => $grupo1->id,
+        ])->assertOk()->assertJsonPath('data.retiradas', 2);
+
+        $this->assertSame(1, DB::table('teacher_assignments')->where('teacher_user_id', $docente->id)->count());
+
+        // Sin grupo: todo lo que le queda (p. ej. al dejar el centro).
+        $this->deleteJson('/api/teacher-assignments/bulk', ['teacher_user_id' => $docente->id])
+            ->assertOk()->assertJsonPath('data.retiradas', 1);
+
+        $this->assertSame(0, DB::table('teacher_assignments')->where('teacher_user_id', $docente->id)->count());
+    }
+
+    public function test_bulk_removal_does_not_reach_another_institution(): void
+    {
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
+
+        $otro = Institution::factory()->create();
+        $ajeno = User::factory()->teacher()->create(['institution_id' => $otro->id]);
+        $this->asignarDocente(
+            $ajeno,
+            Group::factory()->create(['institution_id' => $otro->id])->id,
+            Subject::factory()->create(['institution_id' => $otro->id])->id
+        );
+
+        $this->deleteJson('/api/teacher-assignments/bulk', ['teacher_user_id' => $ajeno->id])
+            ->assertOk()->assertJsonPath('data.retiradas', 0);
+
+        $this->assertSame(1, DB::table('teacher_assignments')->where('teacher_user_id', $ajeno->id)->count());
+    }
 }

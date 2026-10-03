@@ -125,8 +125,11 @@ class ExamVisibilityTest extends TestCase
 
         foreach (["/api/exams", "/api/exams/{$examen->id}"] as $ruta) {
             $res = $this->getJson($ruta)->assertOk();
-            $res->assertDontSee($this->teacher->email);
-            $res->assertSee($this->teacher->full_name);
+            // `false`: sin escapar como HTML. Por defecto assertSee busca
+            // «D&#039;Amore» y la respuesta es JSON con «D'Amore» tal cual: con
+            // un nombre de Faker con apóstrofo el test fallaba al azar.
+            $res->assertDontSee($this->teacher->email, false);
+            $res->assertSee($this->teacher->full_name, false);
         }
     }
 

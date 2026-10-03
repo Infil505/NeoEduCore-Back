@@ -5,6 +5,7 @@ namespace App\Services\Exams;
 use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Exams\Question;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -31,10 +32,13 @@ class ExamGradingService
     public function gradeAttempt(
         Exam $exam,
         ExamAttempt $attempt,
-        array $answersPayload
+        array $answersPayload,
+        ?Collection $questions = null
     ): ExamAttempt {
 
-        $questions = Question::where('exam_id', $exam->id)
+        // El submit ya las cargó (con opciones) para validar los tipos: se
+        // reutilizan en vez de pedirlas otra vez a la BD (O3, 2 queries menos).
+        $questions ??= Question::where('exam_id', $exam->id)
             ->with('options')
             ->get()
             ->keyBy('id');
@@ -132,13 +136,17 @@ class ExamGradingService
             DB::table('student_answer_options')->insert($lote);
         }
 
+        // Sin `fresh()` después: `update()` ya deja en memoria lo que acaba de
+        // escribir, y releer la fila era una query más en la operación de pico
+        // (O3). El segundo se trunca aquí porque la columna es timestamp(0): así
+        // la respuesta muestra lo mismo que quedó guardado.
         $attempt->update([
             'score' => round($totalScore, 2),
             'max_score' => round($maxScore, 2),
-            'submitted_at' => now(),
+            'submitted_at' => now()->startOfSecond(),
             'grade_status' => 'completed',
         ]);
 
-        return $attempt->fresh();
+        return $attempt;
     }
 }

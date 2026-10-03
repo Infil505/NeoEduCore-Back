@@ -226,7 +226,8 @@ CREATE TABLE public.ai_chat_sessions (
     ended_at timestamp(0) without time zone,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
-    messages jsonb DEFAULT '[]'::jsonb NOT NULL
+    messages jsonb DEFAULT '[]'::jsonb NOT NULL,
+    awaiting_reply_since timestamp(0) without time zone
 );
 
 

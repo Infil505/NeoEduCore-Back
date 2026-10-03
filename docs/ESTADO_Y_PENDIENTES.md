@@ -507,6 +507,7 @@ volvería a meter la llamada a OpenAI dentro de la petición.
 - **Diagnosis** `GET /api/ai/tutor/diagnosis` — resumen IA del progreso por materia
 - **Sessions** `GET /api/ai/tutor/sessions` — listado paginado (excluye JSONB `messages`)
 - **End session** `PATCH /api/ai/tutor/sessions/{id}/end`
+- **Sesión con mensajes** `GET /api/ai/tutor/sessions/{id}` — donde el modo asíncrono recoge la respuesta (O7, 03/10/2026)
 - Historial persistido en tabla `ai_chat_sessions` (messages JSONB, scoped por tenant)
 
 🔒 **Nada que identifique al estudiante sale hacia OpenAI** (desde 08/08/2026). Viajan
@@ -746,6 +747,7 @@ Las imágenes del documento `CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx` 
 - `GET /api/ai/tutor/diagnosis` — resumen IA del progreso
 - `GET /api/ai/tutor/sessions` — historial de sesiones paginado
 - `PATCH /api/ai/tutor/sessions/{id}/end` — cerrar sesión
+- **Modo asíncrono (O7, 03/10/2026):** POST /ai/tutor/chat con `"async": true` responde 202 sin esperar a OpenAI; el job `ResponderTutor` genera la respuesta en la cola y la anexa a la sesión, y el frontend la recoge con `GET /api/ai/tutor/sessions/{id}` (`awaiting_reply`). Un mensaje a la vez (409 si hay otro en camino); una marca de más de `async_stale_seconds` (120 s) no bloquea. Sin `async` el chat sigue siendo síncrono, así que no rompe a ningún cliente. Diagnóstico y `/ai/generate` siguen síncronos: son llamadas sueltas, no una conversación.
 - `learning_style` en perfil del estudiante adapta el prompt del tutor
 - Historial persistido en `ai_chat_sessions.messages` (JSONB, max 60 mensajes)
 - `POST /api/ai/generate` — prompt libre → respuesta OpenAI
@@ -1244,7 +1246,7 @@ La migración ya es idempotente ante eso, pero el comando correcto para regenera
 
 - [x] ~~**Exportar los reportes también en XLSX**~~ → **Resuelto el 13/09/2026 (B1).** Rutas `results.xlsx` e `history.xlsx`, con el mismo dataset y los mismos permisos que sus versiones CSV. Ver [§2 Reportes](#-reportes).
 - [x] ~~**Posible inyección de fórmulas en los CSV exportados**~~ → **Confirmado y corregido el 13/09/2026 (S4).** Se reprodujo con un `full_name` igual a `=HYPERLINK("http://…","clic")`: salía tal cual en el CSV. Ahora esas celdas se neutralizan en CSV y se escriben con tipo texto explícito en XLSX; lo cubre `tests/Feature/Crud/ReportExportsTest.php`.
-- [ ] **Fechas de los reportes en UTC, no en la hora del centro.** CSV, XLSX y JSON usan UTC. `institutions.settings.timezone` existe pero ningún reporte lo lee. Decisión pendiente: convertir en todos los formatos o dejarlo documentado.
+- [x] ✅ **Decidido el 03/10/2026 (B1a): se quedan en UTC.** Los tres formatos siguen en UTC, como fija `config/app.php`; mostrar la hora del centro le toca al frontend con `institutions.settings.timezone`. Texto original: **Fechas de los reportes en UTC, no en la hora del centro.** CSV, XLSX y JSON usan UTC. `institutions.settings.timezone` existe pero ningún reporte lo lee. Decisión pendiente: convertir en todos los formatos o dejarlo documentado.
 
 ### 📌 Pendientes abiertos (anotados 08/08/2026)
 
@@ -1261,7 +1263,7 @@ La migración ya es idempotente ante eso, pero el comando correcto para regenera
 ### 📌 Pendientes abiertos (anotados 31/07/2026)
 
 - [x] ~~**Cuello de botella de concurrencia: el submit de examen cuesta `20 + 3·N` queries**~~ → **Resuelto 31/07/2026 (G8).** `ExamGradingService::gradeAttempt` acumula las filas y hace dos INSERT por lotes: **22 queries constantes** (antes ~80 para 20 preguntas). Capacidad de entrega **de ~27/s a ~97/s**; el escenario de saturación desaparece del flujo de examen. `QueryBudgetTest` exige ahora coste plano. Nota: la mejora real fue ≈3,5×, no el ≈8× estimado, porque el coste fijo del endpoint (~20 queries) es ahora el que manda → nueva palanca en `ANALISIS_CONCURRENCIA.md` §5.5.
-- [ ] **Coste fijo del submit: ~20 de las 22 queries son overhead**, no corrección (auth, tenant, validación, `recalcFromAttempts`, recomendaciones). Bajarlo a ~12 daría ~170 entregas/s. No urgente. Perfilarlo antes de tocar; buena parte podría ser `recalcFromAttempts`, diferible a la cola. Ver §5.5.
+- [x] ✅ **Resuelto el 03/10/2026 (O3): 22 → 13 queries**, sin diferir nada a la cola. Desglose en `ANALISIS_CONCURRENCIA.md` §5.5 y tope en `QueryBudgetTest` (≤ 14). Texto original: **Coste fijo del submit: ~20 de las 22 queries son overhead**, no corrección (auth, tenant, validación, `recalcFromAttempts`, recomendaciones). Bajarlo a ~12 daría ~170 entregas/s. No urgente. Perfilarlo antes de tocar; buena parte podría ser `recalcFromAttempts`, diferible a la cola. Ver §5.5.
 - [x] ~~**El tutor IA puede dejar sin workers al resto del sistema**~~ → **Resuelto 03/08/2026 (G9).** Limitador global `ai-global` por institución en las 3 rutas de OpenAI + contexto cacheado (7→3 queries/turno) + escritura incremental del JSONB (bytes constantes) + timeout acotado a 15 s. Ver `ANALISIS_CONCURRENCIA.md` §5.3.
 - [x] ~~**Validar empíricamente el modelo de concurrencia**~~ → **Ejecutado 03/08/2026 (G11).** Prueba de carga con k6 contra base local desechable. Validado: coste por petición plano, throughput escala ×6,6 de 1 a 8 workers, saturación limpia sin errores 5xx, BD no es el cuello. Resultados en `ANALISIS_CONCURRENCIA.md` §6.
 - [ ] **Medir el RTT real desde el contenedor desplegado.** Es lo único que no se puede medir desde desarrollo (desde el portátil son ~152 ms) y es el parámetro que domina todo el modelo. `psql "$DATABASE_URL" -c '\timing on' -c 'SELECT 1;'` desde producción. Ver `ANALISIS_CONCURRENCIA.md` §6.5.
@@ -1394,6 +1396,7 @@ y el worker, o la variable, o una conexión aparte.
 | GET | `/api/ai-recommendations/me` | Mis recomendaciones IA |
 | POST | `/api/ai/tutor/chat` | Chat con tutor IA — contexto opcional `subject_id` y `exam_id` |
 | GET | `/api/ai/tutor/sessions` | Mis sesiones del tutor |
+| GET | `/api/ai/tutor/sessions/{id}` | Una sesión con sus mensajes y `awaiting_reply` (recoge el modo `async`) |
 | PATCH | `/api/ai/tutor/sessions/{id}/end` | Finalizar sesión del tutor |
 
 ### Autenticados — Admin, Profesor y Estudiante (lectura compartida)
@@ -1777,6 +1780,6 @@ Reverificadas contra el código el 05/08/2026:
 | ~~**Log de incidentes del tutor IA**~~ | ~~ALTA~~ ✅ | **Resuelto el 13/09/2026 (D5).** Tabla `ai_tutor_incidents` y `GET /platform/ai-tutor-metrics` para el superadmin: el criterio del 75 % de [173] pasó de no calculable a número que se mira. Detalle en [§2 Aviso de IA e incidencias](#-aviso-de-ia-e-incidencias-del-tutor). **Nota:** cubre el tutor (chat y diagnóstico); las recomendaciones post-examen no registran incidencia, su rastro es `ai_recommendations.generated_by` |
 | **Backups cifrados de la BD** | ALTA | Sin script ni documentación. Requisito no funcional de seguridad |
 | **Documentación OpenAPI** | ~~ALTA~~ ✅ | Resuelto el 05/08/2026: `php artisan openapi:generate` produce el documento desde las rutas reales — eran 103 endpoints entonces, **122 al 13/09/2026**. Antes había 6 anotados a mano. No se edita a mano y no se desincroniza |
-| **Medición de cobertura ≥70%** | ALTA | El TFG la exige; no hay reporte generado. `php artisan test --coverage --min=70` (requiere Xdebug o PCOV) |
+| ~~**Medición de cobertura ≥70%**~~ | ✅ | **líneas 91,36 % (4271/4675)**, métodos 71,08 %, clases 47,06 %, sobre 565 tests (03/10/2026). `phpunit.xml` excluye del cómputo las herramientas de desarrollo (`app/Console` y `app/Support/ApiSpec.php`), que nunca atienden a un usuario; con ellas dentro y antes de los tests nuevos era 77,80 %. Detalle, cómo medir y hallazgos en [`COBERTURA_TESTS.md`](COBERTURA_TESTS.md). |
 | **HTTPS/TLS documentado** | MEDIA | Lo resuelve Coolify, pero debe quedar escrito en `DEPLOY_COOLIFY.md` |
 | **Monitoreo y alertas de caída** | MEDIA | Requisito no funcional de disponibilidad; sin Sentry ni equivalente |

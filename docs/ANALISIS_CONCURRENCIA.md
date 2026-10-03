@@ -26,7 +26,7 @@ Palancas restantes, por orden de impacto:
 
 1. **Colocar app y BD en la misma región** (§5.2) — la latencia por query cae de ~18 ms a ~1-2 ms; multiplica por ~5-8 **todas** las capacidades de golpe. Es la de mayor alcance que queda.
 2. **Reducir el coste fijo del submit** (§5.5) — quedan ~20 queries de overhead que ahora dominan.
-3. **Mover OpenAI a la cola** (§5.3) — solo si el volumen de tutor crece hasta rozar el presupuesto global.
+3. ~~**Mover OpenAI a la cola** (§5.3)~~ — ✅ **hecho el 03/10/2026 (O7)** como modo opcional del chat (`async: true`).
 
 ---
 
@@ -224,9 +224,22 @@ Medido (bytes enviados a la BD por turno):
 
 > ⚠️ **`CACHE_STORE` era `array`.** Los rate limiters de Laravel viven en el caché: con `array` y Octane, **cada worker lleva su propio contador** y ningún throttle es realmente global — ni los nuevos ni los que ya existían. Corregido a `file`. **En producción hay que fijarlo en Coolify**, no basta con el `.env` local.
 
-Queda como mejora futura, si el volumen lo pide: mover las llamadas a OpenAI a la **cola** y devolver el resultado por polling/websocket, que es lo único que elimina el bloqueo de worker por completo.
+✅ **Aplicado el 03/10/2026 (O7):** POST /ai/tutor/chat con `"async": true` responde 202 sin esperar a OpenAI; el job `ResponderTutor` genera la respuesta en la cola y la anexa a la sesión, y el frontend la recoge con `GET /api/ai/tutor/sessions/{id}` (`awaiting_reply`). Un mensaje a la vez (409 si hay otro en camino); una marca de más de `async_stale_seconds` (120 s) no bloquea. Sin `async` el chat sigue siendo síncrono, así que no rompe a ningún cliente. Diagnóstico y `/ai/generate` siguen síncronos: son llamadas sueltas, no una conversación. El worker HTTP ya no queda bloqueado por el modelo cuando el cliente usa `async`.
 
-### 5.5 Reducir el coste fijo del submit
+### 5.5 Reducir el coste fijo del submit — ✅ **APLICADO (03/10/2026, O3): 22 → 13 queries**
+
+Perfilado consulta a consulta antes de tocar nada. Lo que sobraba, sin cambiar lo que ve el alumno y sin diferir nada a la cola:
+
+| Qué | Antes | Después |
+|---|---|---|
+| Preguntas y opciones: las cargaban el controlador y la corrección | 4 | 2 |
+| Releer el intento tras actualizarlo (`fresh()`) | 1 | 0 |
+| Progreso: `reset_at`, agregado, `updateOrCreate` (SELECT + INSERT/UPDATE) | 4 | 2 — corte como subconsulta del agregado + `INSERT … ON CONFLICT … RETURNING` |
+| Media general: AVG, COUNT y UPDATE de `students` | 3 | 1 — un UPDATE con subconsultas |
+| Recomendaciones: recargar el examen (`load`) e INSERT por fila | 3–4 | 2 — `loadMissing` + un INSERT en lote |
+
+El tope de `QueryBudgetTest::test_exam_submit_cost_is_flat_per_question_count` bajó de 26 a 14. Sigue sin depender del nº de preguntas. Texto original del apartado:
+
 
 Tras §5.1, de las 22 queries por entrega solo 2 son la corrección. Las otras ~20 son overhead del endpoint: resolución de auth y tenant, carga de examen/intento, validación, `recalcFromAttempts` y generación de recomendaciones. Bajarlo a ~12 llevaría la entrega de ~410 ms a ~230 ms (**~170 entregas/s**).
 

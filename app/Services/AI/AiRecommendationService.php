@@ -10,6 +10,8 @@ use App\Models\Academic\StudyResource;
 use App\Services\AI\AiInputSanitizer;
 use App\Services\AI\AiOutputValidator;
 use App\Services\AI\RegistroPorGrado;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use OpenAI\Laravel\Facades\OpenAI;
 
 class AiRecommendationService
@@ -43,13 +45,83 @@ class AiRecommendationService
     }
 
     /**
+     * Lo mismo que `create()` pero sin guardar: el modelo queda en memoria para
+     * que `guardarEnLote()` inserte todas las recomendaciones de una entrega con
+     * un solo INSERT (O3). Antes eran un INSERT por recomendación, en el submit.
+     */
+    private function nueva(
+        string $studentUserId,
+        string $subjectId,
+        ?string $examId,
+        string $type,
+        string $text,
+        ?array $resource = null,
+        ?string $attemptId = null,
+        string $generatedBy = AiGenerationSource::Heuristic->value
+    ): AiRecommendation {
+        $ahora = now();
+
+        return (new AiRecommendation())->forceFill([
+            // Sin `create()` no corre HasUuids: el id se genera igual que él.
+            'id'                  => (string) Str::orderedUuid(),
+            'student_user_id'     => $studentUserId,
+            'subject_id'          => $subjectId,
+            'exam_id'             => $examId,
+            'attempt_id'          => $attemptId,
+            'recommendation_type' => $type,
+            'recommendation_text' => $text,
+            'resource'            => $resource,
+            'generated_by'        => $generatedBy,
+            'generated_at'        => $ahora,
+            'created_at'          => $ahora,
+            'updated_at'          => $ahora,
+        ]);
+    }
+
+    /**
+     * Inserta en una sola sentencia los modelos de `nueva()` y los devuelve
+     * como si vinieran de `create()`.
+     *
+     * `institution_id` va explícito: el INSERT en lote no pasa por el hook de
+     * `TenantScoped` que lo rellena, y la columna es NOT NULL. Las columnas con
+     * cast (`resource`, enums, fechas) ya están serializadas en
+     * `getAttributes()`, porque `forceFill` aplica los casts al asignar.
+     *
+     * @param  AiRecommendation[]  $modelos
+     * @return AiRecommendation[]
+     */
+    private function guardarEnLote(array $modelos, string $institutionId): array
+    {
+        if ($modelos === []) {
+            return [];
+        }
+
+        foreach ($modelos as $modelo) {
+            $modelo->setAttribute('institution_id', $institutionId);
+        }
+
+        DB::table('ai_recommendations')->insert(
+            array_map(fn (AiRecommendation $m) => $m->getAttributes(), $modelos)
+        );
+
+        foreach ($modelos as $modelo) {
+            $modelo->exists = true;
+            $modelo->syncOriginal();
+        }
+
+        return $modelos;
+    }
+
+    /**
      * Generar recomendaciones (fallback SIN OpenAI), basadas en porcentaje del intento.
      * - No asume subject_id en StudyResource (porque tu modelo actual no lo tiene)
      * - Si hay recursos del tenant, sugiere uno de forma genérica
      */
     public function generateFromAttempt(ExamAttempt $attempt): array
     {
-        $attempt->load(['exam.subject']);
+        // `loadMissing` y no `load`: desde el submit el examen ya viene cargado,
+        // y `load` lo pedía otra vez a la BD (O3).
+        $attempt->loadMissing(['exam.subject']);
 
         $studentUserId = $attempt->student_user_id;
         $subjectId = $attempt->exam?->subject_id;
@@ -57,8 +129,8 @@ class AiRecommendationService
 
         if (!$subjectId) {
             // Si no hay materia, devolvemos una recomendación genérica
-            return [
-                $this->create(
+            return $this->guardarEnLote([
+                $this->nueva(
                     $studentUserId,
                     (string) ($subjectId ?? '00000000-0000-0000-0000-000000000000'), // nunca debería usarse
                     $examId,
@@ -67,7 +139,7 @@ class AiRecommendationService
                     null,
                     $attempt->id
                 ),
-            ];
+            ], $attempt->institution_id);
         }
 
         // percentage es accesor del modelo ExamAttempt
@@ -78,7 +150,7 @@ class AiRecommendationService
         $created = [];
 
         if ($pct >= 85) {
-            $created[] = $this->create(
+            $created[] = $this->nueva(
                 $studentUserId,
                 $subjectId,
                 $examId,
@@ -88,7 +160,7 @@ class AiRecommendationService
                 $attempt->id
             );
 
-            $created[] = $this->create(
+            $created[] = $this->nueva(
                 $studentUserId,
                 $subjectId,
                 $examId,
@@ -98,7 +170,7 @@ class AiRecommendationService
                 $attempt->id
             );
         } elseif ($pct >= 70) {
-            $created[] = $this->create(
+            $created[] = $this->nueva(
                 $studentUserId,
                 $subjectId,
                 $examId,
@@ -108,7 +180,7 @@ class AiRecommendationService
                 $attempt->id
             );
         } else {
-            $created[] = $this->create(
+            $created[] = $this->nueva(
                 $studentUserId,
                 $subjectId,
                 $examId,
@@ -121,7 +193,7 @@ class AiRecommendationService
             $resource = $this->recursoSugerido($attempt);
 
             if ($resource) {
-                $created[] = $this->create(
+                $created[] = $this->nueva(
                     $studentUserId,
                     $subjectId,
                     $examId,
@@ -138,7 +210,7 @@ class AiRecommendationService
                     $attempt->id
                 );
             } else {
-                $created[] = $this->create(
+                $created[] = $this->nueva(
                     $studentUserId,
                     $subjectId,
                     $examId,
@@ -150,7 +222,7 @@ class AiRecommendationService
             }
         }
 
-        return $created;
+        return $this->guardarEnLote($created, $attempt->institution_id);
     }
 
     /**

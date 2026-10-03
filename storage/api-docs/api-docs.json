@@ -234,7 +234,8 @@
                                 "subject_id": null,
                                 "exam_id": null,
                                 "mode": "explain",
-                                "topic": "fracciones"
+                                "topic": "fracciones",
+                                "async": false
                             }
                         }
                     }
@@ -303,6 +304,47 @@
                     },
                     "403": {
                         "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/ai/tutor/sessions/{sessionId}": {
+            "get": {
+                "tags": [
+                    "11 · IA (Tutor y Generación)"
+                ],
+                "summary": "Show session (AiTutorController)",
+                "description": "Controlador: `App\\Http\\Controllers\\AI\\AiTutorController@showSession`. **Roles permitidos:** student.",
+                "operationId": "get_api_ai_tutor_sessions_sessionId_",
+                "parameters": [
+                    {
+                        "name": "sessionId",
+                        "in": "path",
+                        "required": true,
+                        "description": "session_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
                     }
                 },
                 "security": [

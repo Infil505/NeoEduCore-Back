@@ -103,6 +103,13 @@ return [
         'context_ttl' => (int) env('OPENAI_CONTEXT_TTL', 300),
 
         /*
+         | Modo asíncrono del chat (O7): a partir de cuántos segundos una
+         | respuesta pendiente se da por perdida y deja enviar otro mensaje.
+         | Por encima del `timeout` del job (60 s) y de sus esperas en cola.
+         */
+        'async_stale_seconds' => (int) env('OPENAI_TUTOR_ASYNC_STALE_SECONDS', 120),
+
+        /*
          | Aviso de que quien responde es una IA ([397], decisión D4).
          |
          | Viaja en la respuesta de `POST /ai/tutor/chat` y de

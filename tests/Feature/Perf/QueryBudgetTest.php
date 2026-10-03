@@ -484,14 +484,16 @@ class QueryBudgetTest extends TestCase
             )
         );
 
-        // Medido 31/07/2026: 22 queries, constantes. De esas, solo 2 son la
-        // corrección (los dos INSERT por lotes); el resto es coste fijo del
-        // endpoint (auth, tenant, validación, recálculo de progreso,
-        // recomendaciones). Ese coste fijo es ahora la siguiente palanca.
+        // 31/07/2026: 22 queries. 03/10/2026 (O3): 13, sin diferir nada a la
+        // cola — preguntas cargadas una sola vez, sin `fresh()` del intento,
+        // progreso con upsert + RETURNING y el corte de repitentes dentro del
+        // agregado, media general en un único UPDATE, examen reutilizado y
+        // recomendaciones de plantilla en un solo INSERT. Desglose en
+        // docs/ANALISIS_CONCURRENCIA.md §5.5. El tope deja 1 de margen.
         $this->assertLessThanOrEqual(
-            26,
+            14,
             $con15,
-            "Presupuesto excedido en el submit: {$con15} queries"
+            "Presupuesto excedido en el submit: {$con15} queries (eran 13 tras O3)"
         );
     }
 }

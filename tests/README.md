@@ -89,9 +89,23 @@ php artisan test tests/Feature/Crud/StudentsCrudTest.php
 ```
 
 ### Tests con coverage
+
+Necesita un driver de cobertura: **PCOV** (recomendado, más rápido) o Xdebug. En Windows, PCOV para PHP 8.4 NTS x64:
+
+1. Descargar `php_pcov-1.0.12-8.4-nts-vs17-x64.zip` de https://downloads.php.net/~windows/pecl/releases/pcov/1.0.12/
+2. Copiar `php_pcov.dll` a `C:\php\ext` y añadir a `php.ini`: `extension=pcov` y `pcov.enabled=1`
+
 ```bash
-php artisan test --coverage
+php artisan test --coverage --min=70
 ```
+
+Sin tocar `php.ini`, cargándolo solo para esa ejecución:
+
+```bash
+php -d extension=/ruta/php_pcov.dll -d pcov.enabled=1 -d pcov.directory=app vendor/bin/phpunit --coverage-text --only-summary-for-coverage-text
+```
+
+Último resultado (03/10/2026, 565 tests): **líneas 91,36 %**, métodos 71,08 %, clases 47,06 %. `phpunit.xml` excluye `app/Console` y `app/Support/ApiSpec.php` (herramientas de desarrollo).
 
 ### Tests en modo verbose
 ```bash
@@ -187,6 +201,12 @@ php artisan test --verbose
 - ✅ `video_url` opcional al crear; solo YouTube (rechaza otros dominios, sufijos engañosos y esquemas no http); `null` al editar lo quita
 - ✅ El chat sobre el examen lo entrega a `visual` y `auditivo` (también en turnos siguientes de la sesión); `lector` y sin estilo reciben `video: null`
 - ✅ `GET /exam-attempts/{id}/recommendations` lo trae según el estilo
+
+### Chat asíncrono del tutor — `AI/TutorAsincronoTest` (7 tests)
+- ✅ `async: true` responde 202 y la respuesta llega a la sesión (`GET /ai/tutor/sessions/{id}`)
+- ✅ Con la respuesta en cola, `awaiting_reply: true` y un segundo mensaje da 409; una marca vieja no bloquea
+- ✅ La inyección se contesta al momento sin encolar; sin `async` sigue siendo síncrono; sesión ajena → 404
+- ✅ Si el job falla, el alumno recibe el mensaje de reserva y se desbloquea
 
 ### Drift esquema↔migraciones — `Unit/SchemaDriftTest` (5 tests)
 - ✅ La comparación de `schema:check-drift` ignora solo las cabeceras de versión de `pg_dump` y los finales de línea; un cambio de columna o cualquier otro comentario sí cuenta

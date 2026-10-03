@@ -106,6 +106,9 @@ class ProtectedRoutesRequireAuthTest extends TestCase
 
             ['GET',  '/api/platform/ai-tutor-metrics'],
 
+            // Sesión del tutor con sus mensajes (O7, modo asíncrono)
+            ['GET',   '/api/ai/tutor/sessions/9b2f1c3e-0000-4000-8000-000000000000'],
+
             // Notificaciones en la app (O1)
             ['GET',   '/api/notifications'],
             ['POST',  '/api/notifications/read-all'],

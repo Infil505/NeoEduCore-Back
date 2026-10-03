@@ -30,6 +30,8 @@ class AiTutorController extends Controller
             'exam_id'    => ['nullable', 'uuid'],
             'mode'       => ['nullable', 'string', 'in:ask,explain,practice'],
             'topic'      => ['nullable', 'string', 'max:200'],
+            // O7: true → 202 y la respuesta llega por GET /ai/tutor/sessions/{id}.
+            'async'      => ['nullable', 'boolean'],
         ]);
 
         // La materia debe existir y pertenecer a la institución del estudiante.
@@ -43,15 +45,27 @@ class AiTutorController extends Controller
             return response()->json(['message' => 'Examen no encontrado'], 422);
         }
 
-        $result = $tutorService->chat(
-            studentUserId: $user->id,
-            message:       $data['message'],
-            sessionId:     $data['session_id'] ?? null,
-            subjectId:     $data['subject_id'] ?? null,
-            mode:          $data['mode'] ?? 'ask',
-            topic:         $data['topic'] ?? null,
-            examId:        $data['exam_id'] ?? null
-        );
+        $argumentos = [
+            'studentUserId' => $user->id,
+            'message'       => $data['message'],
+            'sessionId'     => $data['session_id'] ?? null,
+            'subjectId'     => $data['subject_id'] ?? null,
+            'mode'          => $data['mode'] ?? 'ask',
+            'topic'         => $data['topic'] ?? null,
+            'examId'        => $data['exam_id'] ?? null,
+        ];
+
+        $asincrono = (bool) ($data['async'] ?? false);
+
+        $result = $asincrono
+            ? $tutorService->chatAsincrono(...$argumentos)
+            : $tutorService->chat(...$argumentos);
+
+        if ($result === null) {
+            return response()->json([
+                'message' => 'Todavía estoy respondiendo tu mensaje anterior. Espera un momento.',
+            ], 409);
+        }
 
         // O2: el estilo del alumno, para que el frontend sepa cómo presentar la
         // respuesta (p. ej. leerla en voz alta con `auditivo`). Sale del perfil
@@ -73,7 +87,46 @@ class AiTutorController extends Controller
             );
         }
 
-        return response()->json(['data' => $result]);
+        // 202 solo si de verdad quedó en la cola; un intento de inyección se
+        // contesta al momento aunque se pidiera async.
+        $codigo = ($result['status'] ?? null) === 'pending' ? 202 : 200;
+
+        return response()->json(['data' => $result], $codigo);
+    }
+
+    /**
+     * GET /api/ai/tutor/sessions/{id} — una sesión con sus mensajes (O7).
+     *
+     * Es donde el modo asíncrono recoge la respuesta: `awaiting_reply` dice si
+     * sigue en camino. Solo las sesiones propias; una ajena da 404, igual que
+     * una inexistente.
+     */
+    public function showSession(Request $request, string $sessionId)
+    {
+        $session = AiChatSession::where('id', $sessionId)
+            ->where('student_user_id', $request->user()->id)
+            ->first();
+
+        if (!$session) {
+            return response()->json(['message' => 'Sesión no encontrada'], 404);
+        }
+
+        $stale = now()->subSeconds((int) config('openai.tutor.async_stale_seconds'));
+
+        return response()->json(['data' => [
+            'id'                   => $session->id,
+            'subject_id'           => $session->subject_id,
+            'exam_id'              => $session->exam_id,
+            'ended_at'             => $session->ended_at,
+            'messages'             => $session->messages ?? [],
+            'message_count'        => count($session->messages ?? []),
+            // Una marca más vieja que el umbral es un job perdido: no se le
+            // dice al frontend que siga esperando para siempre.
+            'awaiting_reply'       => $session->awaiting_reply_since !== null
+                && $session->awaiting_reply_since->gt($stale),
+            'awaiting_reply_since' => $session->awaiting_reply_since,
+            'ai_notice'            => (string) config('openai.tutor.notice'),
+        ]]);
     }
 
     /**
