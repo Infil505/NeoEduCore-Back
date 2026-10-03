@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\AI;
 
+use App\Enums\AiGenerationSource;
 use App\Http\Controllers\Controller;
 use App\Models\Exams\Exam;
 use App\Models\Students\Student;
@@ -65,7 +66,11 @@ class AiController extends Controller
         // 🔥 Llamada a OpenAI (con manejo de error)
         try {
             $response = OpenAI::chat()->create([
-                'model' => config('services.openai.model', 'gpt-4o-mini'),
+                // `services.openai.model` no existe en config/services.php: esta
+                // llamada devolvía null y caía siempre al literal, así que
+                // OPENAI_MODEL no llegaba hasta aquí. La clave buena es la que
+                // ya usa el tutor.
+                'model' => config('openai.model'),
                 'messages' => [
                     [
                         'role' => 'system',
@@ -106,7 +111,12 @@ class AiController extends Controller
             $data['exam_id'] ?? null,
             $data['type'],
             $validator->sanitize($text),
-            $data['resource'] ?? null
+            $data['resource'] ?? null,
+            null,
+            // Este texto sale de OpenAI, aunque lo pida un docente con prompt
+            // libre: se marca como tal para que el origen sea comparable con el
+            // de las recomendaciones del intento.
+            AiGenerationSource::Ai->value
         );
 
         return response()->json([

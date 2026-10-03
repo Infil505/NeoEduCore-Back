@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Academic;
 
+use App\Http\Controllers\Concerns\ExigeAutoria;
 use App\Http\Controllers\Controller;
 use App\Models\Academic\CalendarEvent;
 use Illuminate\Http\Request;
@@ -9,6 +10,8 @@ use Illuminate\Validation\Rule;
 
 class CalendarEventController extends Controller
 {
+    use ExigeAutoria;
+
     /**
      * Listar eventos (con filtros)
      * Filtros: event_type, group_id, exam_id, from, to
@@ -101,6 +104,12 @@ class CalendarEventController extends Controller
      */
     public function update(Request $request, CalendarEvent $calendarEvent)
     {
+        // S6: el evento es de quien lo creó. El admin sí puede ordenar el
+        // calendario del centro.
+        if (! $this->esSuyoOEsAdmin($request->user(), $calendarEvent->created_by, 'este evento')) {
+            return $this->noAutorizadoPorAutoria('este evento');
+        }
+
         $data = $request->validate([
             'title'       => ['sometimes', 'string', 'min:2', 'max:150'],
             'description' => ['nullable', 'string', 'max:2000'],
@@ -139,8 +148,12 @@ class CalendarEventController extends Controller
     /**
      * Eliminar evento
      */
-    public function destroy(CalendarEvent $calendarEvent)
+    public function destroy(Request $request, CalendarEvent $calendarEvent)
     {
+        if (! $this->esSuyoOEsAdmin($request->user(), $calendarEvent->created_by, 'este evento')) {
+            return $this->noAutorizadoPorAutoria('este evento');
+        }
+
         $calendarEvent->delete();
 
         return response()->noContent();

@@ -10,7 +10,8 @@ tests/
 │   ├── Auth/
 │   │   ├── AuthSessionTest.php           (GET /auth/me, POST /auth/logout)
 │   │   ├── LoginRegisterTest.php         (Register, Login)
-│   │   └── PasswordResetTest.php         (Password reset & change)
+│   │   ├── PasswordResetTest.php         (Password reset & change)
+│   │   └── SesionInactivaTest.php        (D3: caducidad por inactividad)
 │   ├── Crud/
 │   │   ├── StudentsCrudTest.php          (All student endpoints)
 │   │   ├── GroupsCrudTest.php            (All group endpoints)
@@ -25,11 +26,14 @@ tests/
 │   │   ├── UsersTest.php                 (User management endpoints)
 │   │   ├── InstitutionsTest.php          (Institution endpoints)
 │   │   ├── AiRecommendationsTest.php     (AI recommendation endpoints)
-│   │   └── ReportsTest.php               (Report endpoints)
+│   │   ├── ReportsTest.php               (Report endpoints)
+│   │   └── ReportExportsTest.php         (B1/S4: XLSX y neutralización de fórmulas)
 │   ├── Academic/
 │   │   ├── BulkReassignmentTest.php      (Reasignación masiva: grupo y materias)
 │   │   ├── ResetProgressTest.php         (Reseteo de progreso para repitentes)
-│   │   └── GroupStudentsTest.php         (Alta/baja de estudiantes en un grupo)
+│   │   ├── GroupStudentsTest.php         (Alta/baja de estudiantes en un grupo)
+│   │   ├── CurricularMetadataTest.php    (D2: tema/indicador/dificultad y materia del recurso)
+│   │   └── TopicMasteryTest.php          (D2: dominio por tema y reporte al docente)
 │   ├── Exams/
 │   │   └── AnswerLeakTest.php            (El alumno no ve la respuesta antes de entregar)
 │   ├── Db/
@@ -45,9 +49,14 @@ tests/
 │   │   ├── Level6_SystemConfigTest.php   (Configuración del sistema)
 │   │   └── Level7_AcademicCycleTest.php  (Ciclo de fin de año end-to-end)
 │   ├── AI/
-│   │   └── AiTutorEfficiencyTest.php     (Caché de contexto, JSONB incremental, límite global)
+│   │   ├── AiTutorEfficiencyTest.php     (Caché de contexto, JSONB incremental, límite global)
+│   │   ├── AiTutorPrivacyTest.php        (Nada identificativo viaja a OpenAI)
+│   │   ├── AiRecommendationsQueueTest.php (D1: análisis de IA diferido a la cola)
+│   │   └── AiTutorIncidentsTest.php      (D4/D5: aviso de IA y registro de incidencias)
 │   ├── Perf/
 │   │   └── QueryBudgetTest.php           (Presupuesto de queries / guardia anti-N+1)
+│   ├── Security/
+│   │   └── AlcancePorRolTest.php         (S1: matriz de alcance por rol, endpoint por endpoint)
 │   └── Routes/
 │       ├── ProtectedRoutesRequireAuthTest.php
 │       └── PublicRoutesTest.php
@@ -57,7 +66,7 @@ tests/
 └── TestCase.php                          (Base test class)
 ```
 
-**Total: 265 tests, 944 assertions**
+**Total: 449 tests, 1519 assertions** (13/09/2026)
 
 ## Ejecución
 
@@ -208,6 +217,96 @@ php artisan test --verbose
 - ✅ GET /ai-recommendations/me
 - ✅ GET /ai-recommendations/{id}
 - ✅ POST /exam-attempts/{attempt}/recommendations/regenerate
+- ✅ El cupo de regeneraciones es por intento (`attempt_id`), no por examen+materia
+- ✅ El recurso sugerido corresponde al grado del alumno
+
+### Alcance por rol — `AlcancePorRolTest` (20 tests)
+Tarea S1. Recorre la matriz de los 122 endpoints contra los cuatro roles preguntando
+**qué ve cada uno cuando llega**, no solo si llega. Nació de encontrar una puerta
+paralela: `/students` estaba acotado y `/users` devolvía a los mismos menores.
+- ✅ Docente sin asignación: 0 alumnos en `/students`
+- ✅ Docente sin asignación: **ni un alumno en `/users`** (el hallazgo)
+- ✅ Docente sin asignación: 404 en la ficha `/users/{id}` de un alumno
+- ✅ Docente sin asignación: 403 en ficha, materias, analíticas y los 5 reportes del alumno
+- ✅ Docente sin asignación: sin progreso ni recomendaciones ajenas
+- ✅ Docente sin asignación: sin grupos, y 403 en la lista nominal del aula
+- ✅ Docente asignado: ve al suyo y no al de al lado, por `/students` **y** por `/users`
+- ✅ El docente sigue viendo al personal del centro (la frontera es la de los menores)
+- ✅ El docente solo ve las analíticas de sus materias; el admin, las de todas (S5)
+- ✅ Un docente no edita ni borra el evento ni el recurso de otro (S6)
+- ✅ El docente sí edita y borra lo suyo, y el admin puede con lo de cualquiera
+- ✅ Una entrada sin autor (`created_by` nulo) solo la toca el admin
+- ✅ El estudiante no abre el intento de otro (404/403)
+- ✅ El estudiante no entra a ninguna ruta de gestión
+- ✅ El admin no alcanza a nadie de otro centro
+- ✅ El superadmin no entra a los datos de una institución
+- ✅ El admin no entra a las rutas de plataforma
+
+### Caducidad de sesión por inactividad — `SesionInactivaTest` (6 tests)
+Decisión D3. Los dos casos que importan son opuestos y están los dos.
+- ✅ Token sin usar más de una hora → 401
+- ✅ Token usado hace 59 min → sigue valiendo
+- ✅ **Sesión de 5 h pero activa → no caduca** (es el examen largo)
+- ✅ Token recién emitido sin `last_used_at` → vale
+- ✅ El tope absoluto de 12 h manda aunque se acabe de usar
+- ✅ Con `inactivity_minutes = 0` la comprobación queda desactivada
+
+### Registro del tutor por grado — `RegistroPorGradoTest` (6 tests)
+Entre 1.º y 6.º hay seis años de diferencia lectora. Antes solo el chat sabía el
+grado, y como número suelto; diagnóstico y recomendaciones ni lo recibían.
+- ✅ Cada franja (1–2, 3–4, 5–6) tiene su registro y son distintos entre sí
+- ✅ Los tres prompts describen la etapa desde configuración (`primaria (6 a 12 años)`)
+- ✅ Sin grado se usa el registro conservador
+- ✅ El chat manda el registro del grado del alumno
+- ✅ El diagnóstico también
+- ✅ Y las recomendaciones post-examen
+
+### Aviso de IA e incidencias — `AiTutorIncidentsTest` (10 tests)
+Decisiones D4 y D5. El que más importa es el cuarto: la tabla de incidencias no
+puede acabar guardando el dato personal que motivó el bloqueo.
+- ✅ El chat devuelve `ai_notice`
+- ✅ El diagnóstico también
+- ✅ Un bloqueo por PII deja fila, con tipo, etapa, alumno e institución
+- ✅ **La incidencia no guarda el texto que la provocó**
+- ✅ Un enlace fuera de la lista blanca se registra aunque la respuesta sí se entregue
+- ✅ Un fallo de OpenAI se registra como `model_error`
+- ✅ El superadmin ve agregados, y ni el id ni el nombre del alumno
+- ✅ Sin mensajes la tasa es 100 %, y los tipos sin incidencias salen en 0
+- ✅ 403 para el admin de un centro
+- ✅ 403 para el docente
+
+### Metadatos curriculares — `CurricularMetadataTest` (8 tests)
+Decisión D2: `questions` gana tema, indicador y dificultad; `study_resources` gana materia.
+- ✅ Crear pregunta con `topic`, `indicator` y `difficulty`
+- ✅ Una dificultad fuera de los tres niveles se rechaza (422)
+- ✅ Los metadatos son opcionales: la pregunta sin ellos se sigue creando
+- ✅ `topic_normalized` la calcula la base, no el código (escritura directa por Eloquent)
+- ✅ Recurso con materia, y filtro `?subject_id=`
+- ✅ 422 al colgar un recurso de la materia de otro centro
+- ✅ El recurso sugerido es de la materia del examen, no el más reciente del centro
+- ✅ La materia pesa más que el grado cuando no hay nada del grado
+
+### Dominio por tema — `TopicMasteryTest` (9 tests)
+- ✅ «Fracciones», «fracciones » y «  FRACCIONES   » cuentan como un solo tema
+- ✅ Los espacios interiores de más tampoco crean temas nuevos
+- ✅ Un tema con menos de 3 respuestas no se reporta
+- ✅ Las preguntas sin `topic` se ignoran
+- ✅ Los temas salen del más flojo al más sólido
+- ✅ El docente solo ve los temas de sus grupos, y sin identificadores de alumno
+- ✅ El admin ve los de toda su institución
+- ✅ El diagnóstico del tutor menciona los temas flojos y nunca el nombre
+- ✅ 403 para el estudiante en `/reports/topics`
+
+### Análisis de IA en cola — `AiRecommendationsQueueTest` (7 tests)
+Decisión D1: la entrega deja plantillas y el análisis del modelo se encola al
+consultar los resultados. Lo que se vigila es el reparto entre los dos pasos.
+- ✅ La entrega no encola ni llama al modelo
+- ✅ Abrir los resultados encola el análisis, y recargar no vuelve a encolar
+- ✅ El job sustituye las plantillas por las 4 secciones del modelo y deja `ready`
+- ✅ **El prompt lleva tema, indicador y dificultad — y nunca la respuesta correcta**
+- ✅ Si el modelo no responde: no se escribe ni se borra nada, y `failed` solo tras agotar reintentos
+- ✅ 403 sobre el intento de otro alumno
+- ✅ 409 si el intento aún no se entregó
 
 ### Usuarios (6 tests)
 - ✅ GET /users
@@ -233,6 +332,17 @@ php artisan test --verbose
 - ✅ GET /reports/students/{student}/history.csv
 - ✅ GET /reports/students/{student}/summary — tendencia en orden cronológico
 - ✅ GET /reports/students/{student}/summary — parámetro `points` y su validación
+
+### Exportación de reportes a fichero (7 tests)
+`ReportExportsTest`. CSV y XLSX salen del mismo dataset, así que lo que se vigila
+es que no diverjan y que ninguna celda acabe siendo una fórmula.
+- ✅ GET /reports/exams/{exam}/results.xlsx — content-type y cabeceras idénticas al CSV
+- ✅ GET /reports/students/{student}/history.xlsx — cabeceras idénticas al CSV
+- ✅ El XLSX escribe la nota como número y `submitted_at` como fecha de Excel
+- ✅ Un `full_name` que empieza por `=` no se guarda como fórmula (CSV y XLSX)
+- ✅ Un título de examen que empieza por `=` tampoco
+- ✅ 403 para el docente ajeno al examen
+- ✅ 403 para el docente no asignado al estudiante
 
 ### Estrategias del tutor (7 tests)
 - ✅ `SECTIONS` cubre todo el enum `AiRecommendationType`
@@ -263,7 +373,7 @@ el arreglo** (neutralizando `Exam::scopeVisibleTo`).
 - ✅ Level 5 — Analíticas y reportes (9 tests): institution/subjects/student analytics, CSV, historial, tutor usage
 - ✅ Level 6 — Configuración del sistema (8 tests): lectura/escritura config, validaciones, roles
 
-**Total: 265 tests, 944 assertions**
+**Total: 449 tests, 1519 assertions** (13/09/2026)
 
 ## Helpers de Autenticación
 

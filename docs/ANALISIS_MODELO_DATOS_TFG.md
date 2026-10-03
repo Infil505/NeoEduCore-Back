@@ -1,7 +1,25 @@
 # Modelo de datos — el sistema construido y qué corregir en el informe
 
-**Fecha:** 3 de agosto de 2026 · revisado el 5 y el **8 de agosto de 2026**
-**Estado:** modelo de datos **cerrado** en código y en producción; **todo lo pendiente son correcciones al informe**
+**Fecha:** 3 de agosto de 2026 · revisado el 5 y el 8 de agosto y el **13 de septiembre de 2026**
+**Estado:** el modelo de datos dejó de estar cerrado el 13/09/2026: las decisiones **D1, D2, D3, D4, D5, D6 y D8** se resolvieron **añadiendo código**, no corrigiendo el informe
+
+> ### ⚠️ Al 13/09/2026 el criterio de abajo se aplicó al revés, y a propósito
+>
+> Este documento parte de que **manda el sistema y el informe se ajusta a él**. El
+> 13/09/2026 el usuario decidió lo contrario en cuatro puntos concretos: en vez de
+> recortar lo que el informe promete, se construyó lo que faltaba. Siete filas de
+> §10.2 —nº 1, 2, 3, 4, 5, 6 y 9— pasaron de «corregir el texto» a «✅ resuelto por
+> código», y con ellas cuatro migraciones nuevas.
+>
+> **No es una excepción al criterio, es la otra salida del mismo criterio.** «Manda
+> el sistema» decide quién tiene razón cuando código y documento discrepan; no
+> obliga a que la discrepancia se cierre siempre por el lado barato. Aquí se eligió
+> el caro porque lo prometido era, además, lo correcto: un tutor que analiza de
+> verdad, ítems con metadatos curriculares, un aviso de IA y un criterio de calidad
+> que se pueda medir.
+>
+> Lo que sigue vivo y sí se resuelve escribiendo: §10.1 entera, y de §10.2 las filas
+> 7, 8, 10 y 11 — la 9 también se cerró con código (D3, expiración por inactividad).
 
 > ## Criterio del documento
 >
@@ -496,7 +514,7 @@ El informe exige *«La API debe documentarse con OpenAPI»* (RNF de mantenibilid
 
 **Resuelto el 05/08/2026 invirtiendo el flujo.** En vez de anotar 97 endpoints a mano —más de 2.000 líneas de atributos dentro de los controladores, que además se desincronizan en cuanto alguien toca una ruta—, el documento se **deriva de las rutas reales** con `php artisan openapi:generate`, el mismo patrón que ya usaba la colección de Postman. De cada ruta se deducen método, path, parámetros, si exige token, **qué roles la pueden usar** (leyendo el middleware) y los códigos de respuesta que se siguen de eso.
 
-Cobertura resultante: **103/103 endpoints, 74 paths, 16 módulos** (al 08/08/2026, **107/107 endpoints, 77 paths, 17 módulos**, tras las rutas de asignación de docentes de §9.8.5 — el generador las recogió solas, que es la ventaja de derivarlo de las rutas). Los metadatos que no se pueden deducir de una ruta —nombre del módulo, cuerpo de ejemplo, si es pública— viven en `App\Support\ApiSpec`, **compartidos con el generador de Postman** para que los dos no se contradigan.
+Cobertura resultante: **103/103 endpoints, 74 paths, 16 módulos** al 05/08/2026, y **117/117 endpoints en 18 módulos** al cierre del 08/08 —tras las rutas de asignación de docentes (§9.8.5), las de superadmin (§9.6) y la de estado de examen que faltaba—. **El generador las recogió todas solo, sin tocarlo**: es la ventaja de derivar la documentación de las rutas reales en vez de anotarlas a mano. Los metadatos que no se pueden deducir de una ruta —nombre del módulo, cuerpo de ejemplo, si es pública— viven en `App\Support\ApiSpec`, **compartidos con el generador de Postman** para que los dos no se contradigan.
 
 Limitación honesta, que conviene declarar en el informe en vez de ocultar: **no hay esquema detallado de la respuesta 200**. Se documenta la superficie de la API (qué existe, quién puede llamarlo, qué devuelve como código), no la forma exacta de cada payload. Para eso está la colección de Postman, con cuerpos de ejemplo reales.
 
@@ -538,7 +556,7 @@ Dos decisiones que conviene declarar en el informe porque tienen efectos visible
 
 **Centralización.** Igual que §9.8.3 con `Exam::scopeVisibleTo()`, la regla vive en **un solo sitio** —el trait `AcotaAlDocente`— en lugar de repetida a mano en cada controlador, que es lo que permitió que cuatro endpoints se quedaran sin ella. En `ReportController::findStudent()` el parámetro del usuario es **obligatorio**, para que un endpoint nuevo no pueda omitirlo en silencio.
 
-**Cobertura añadida:** `TeacherAssignmentsTest` (18 casos), incluidos el borrador dirigido a un grupo ajeno, el grupo correcto con materia ajena, la retirada de la asignación y la baja del grupo. Suite completa: **327 pruebas en verde**.
+**Cobertura añadida:** `TeacherAssignmentsTest` (18 casos), incluidos el borrador dirigido a un grupo ajeno, el grupo correcto con materia ajena, la retirada de la asignación y la baja del grupo. La suite pasó de 305 a 327 con este cambio, y a **375 al cierre de la sesión** con el resto de correcciones del 08/08.
 
 **Lo aprovechable para el informe.** Es el tercer hallazgo de la misma familia, y el más ilustrativo: los dos anteriores eran *campos de más en una respuesta*; este era **una relación que el modelo de datos nunca llegó a tener**, sustituida por una inferencia que resultaba ser auto-otorgable. Muestra que la ausencia de una entidad en el modelo no es solo una omisión documental: el sistema la sustituye por lo que tenga a mano, y lo que tenía a mano era controlable por la parte a la que había que limitar.
 
@@ -572,7 +590,9 @@ Dos decisiones que conviene declarar en el informe porque tienen efectos visible
 
 > **Para qué es esta sección.** Dejar por escrito, con la cita y el número de párrafo, cada punto en el que el informe **se contradice a sí mismo** o **contradice al sistema entregado**, para que el equipo entre después a modificar el documento sin tener que volver a encontrarlas.
 >
-> No hay ninguna acción de código aquí: por el criterio de la cabecera, todas se resuelven escribiendo. Se separan las internas (§10.1) de las que enfrentan informe y sistema (§10.2) porque **las internas son las peligrosas en una defensa**: no hace falta abrir el repositorio para verlas, basta leer el propio informe.
+> Se separan las internas (§10.1) de las que enfrentan informe y sistema (§10.2) porque **las internas son las peligrosas en una defensa**: no hace falta abrir el repositorio para verlas, basta leer el propio informe.
+>
+> **Actualizado el 13/09/2026:** esta sección ya no se resuelve entera escribiendo. Las filas 1 a 6 y la 9 de §10.2 se cerraron **construyendo** lo que el informe prometía (decisiones D1, D2, D3, D4 y D5); ver la nota de la cabecera. Las internas de §10.1 y las filas 7, 8, 10 y 11 siguen siendo trabajo de documento.
 
 ### 10.1 El informe contra sí mismo
 
@@ -585,7 +605,7 @@ Dos decisiones que conviene declarar en el informe porque tienen efectos visible
 | **C5** | [419-420] vs [228-229] y [415-416] | «La conexión y la manipulación de los datos se realizó con **node.js, que actúa como un intermediario** entre la base de datos y el backend» | Laravel como backend principal, con PostgreSQL | Dos rutas de datos incompatibles en el mismo documento. La real es Laravel→PDO→PostgreSQL, sin intermediario (§9.1 nº 1) |
 | **C6** | [236] vs [732] | «La plataforma **genera** informes descargables en PDF y CSV» (presente, como hecho consumado) | «**Exportar** reportes en formatos PDF y CSV» (listado como requisito por implementar) | El mismo entregable aparece como terminado en un capítulo y como pendiente en otro. Hoy la afirmación en presente es **parcialmente falsa**: CSV sí, PDF lo compone el frontend y todavía no existe |
 | **C7** | [390] vs [732-733] | «Documentación y reportes: **Se generó** reportes automáticos en PDF y CSV con gráficos explicativos» | ídem | Igual que C6, en el capítulo de metodología y en pasado. Es el tiempo verbal el que afirma de más |
-| **C8** | [173] vs [396] | Criterios de éxito medibles: «cero incidentes de PII», «**más del 75 % de mensajes que superen validación**» | La validación pedagógica se describe como revisión humana periódica | Los dos mecanismos de control se solapan sin decir cuál manda. Y el criterio del 75 % **hoy no es calculable**: ver §10.2 nº 6 |
+| **C8** | [173] vs [396] | Criterios de éxito medibles: «cero incidentes de PII», «**más del 75 % de mensajes que superen validación**» | La validación pedagógica se describe como revisión humana periódica | Los dos mecanismos de control se solapan sin decir cuál manda. El criterio del 75 % **ya es calculable** desde el 13/09/2026 (D5, §10.2 nº 6); lo que sigue abierto es qué papel se le da a la revisión humana |
 
 ### 10.2 El informe contra el sistema entregado
 
@@ -593,15 +613,15 @@ Se listan solo las que **no** están ya recogidas en §9.1 (stack tecnológico) 
 
 | # | Párrafo | El informe dice | El sistema hace | Corrección sugerida |
 |---|---|---|---|---|
-| 1 | [122], [222], [255], [737] | El tutor analiza los resultados del diagnóstico y **genera recomendaciones personalizadas** | En el submit las genera un `if/elseif/else` sobre el porcentaje, **sin IA**. OpenAI solo interviene si el alumno pulsa regenerar | **Es la contradicción más expuesta del TFG**, porque el tutor es el diferenciador del proyecto. Redactar el diseño real: heurística inmediata + refinamiento IA bajo demanda, justificado por concurrencia y coste. Alternativa: diferir la generación IA a la cola (código). Comparadas en `ESTADO_Y_PENDIENTES.md` §3.6 nº 1 |
-| 2 | [171] y [222] | Banco de ítems «con metadatos de **tema, indicador y dificultad**» · sugerencias «alineadas con los **indicadores curriculares**» | `questions` tiene `question_text`, `question_type`, `points`, `correct_answer_text`, `order_index`. **Ni tema, ni indicador, ni dificultad.** La única señal es `mastery_percentage` **por materia** | Recortar la granularidad prometida en [171], [222], [263] y [276], o añadir las columnas. Bloquea además el entregable del banco de 60 ítems |
-| 3 | [263] y [276] | Personalización por área concreta: «si un estudiante tiene dificultad en **comprensión de lectura**…» | La personalización real es «Español 45 %, Ciencias 78 %» | Consecuencia directa del nº 2. Reformular con el nivel de detalle que el sistema sí da: por materia |
-| 4 | Figura 10 [816] | El tutor entrega «**recursos personalizados**» | Corregido el 08/08/2026: filtra por rango de grado y prefiere dificultad básica. **Sigue sin poder acotar por materia**: `study_resources` no tiene `subject_id` | Describir la personalización por grado y dificultad, sin prometer por materia |
-| 5 | [397] | «**Cada vez que el tutor virtual intervenga**, el sistema informa claramente que las sugerencias provienen de un modelo de lenguaje automatizado» | La respuesta de `/ai/tutor/chat` es `{session_id, reply, message_count}`. No hay campo de aviso | O el aviso viaja en la respuesta (código), o el informe lo atribuye explícitamente a la interfaz. Hoy no lo dice ninguno de los dos |
-| 6 | [173] | «registrará incidencias» · criterio de éxito «más del 75 % de mensajes que superen validación» | Los bloqueos por PII o enlace no permitido solo dejan `Log::warning`. **No se persiste ni el total validado ni el bloqueado** | El criterio **no es demostrable** tal como está escrito. O se añade el contador, o se sustituye por uno que sí se pueda medir |
+| 1 | [122], [222], [255], [737] | El tutor analiza los resultados del diagnóstico y **genera recomendaciones personalizadas** | ✅ **Resuelto por código el 13/09/2026 (D1).** La entrega deja plantillas al instante y, al abrir los resultados, un job de cola las **sustituye** por el análisis del modelo sobre las respuestas falladas | **Ya no hay que corregir el informe aquí.** Si acaso, precisar que el análisis se prepara al consultar los resultados —no al entregar— y por qué: el pico del sistema es una clase entera entregando a la vez |
+| 2 | [171] y [222] | Banco de ítems «con metadatos de **tema, indicador y dificultad**» · sugerencias «alineadas con los **indicadores curriculares**» | ✅ **Resuelto por código el 13/09/2026 (D2).** `questions` tiene `topic`, `indicator` y `difficulty`, más `topic_normalized` generada por PostgreSQL para poder agrupar | Nada que recortar. Desbloquea el banco de 60 ítems. Merece una línea sobre el límite real: el tema es texto libre normalizado, así que agrupa mayúsculas y espacios pero **no sinónimos** |
+| 3 | [263] y [276] | Personalización por área concreta: «si un estudiante tiene dificultad en **comprensión de lectura**…» | ✅ **Resuelto por código el 13/09/2026 (D2).** El diagnóstico del tutor lista los temas flojos con su porcentaje, y hay `GET /reports/topics` para el docente | El ejemplo del informe ya describe al sistema. Condicionado a que el profesorado etiquete los ítems: sin `topic`, el diagnóstico vuelve a hablar solo por materia |
+| 4 | Figura 10 [816] | El tutor entrega «**recursos personalizados**» | ✅ **Completado el 13/09/2026 (D2).** `study_resources` tiene `subject_id`: el recurso se elige por materia del examen → grado → dificultad, aflojando cada filtro si deja la búsqueda vacía | Describir las tres dimensiones. La materia pesa más que el grado, y conviene decirlo: es la decisión de diseño, no un detalle |
+| 5 | [397] | «**Cada vez que el tutor virtual intervenga**, el sistema informa claramente que las sugerencias provienen de un modelo de lenguaje automatizado» | ✅ **Resuelto por código el 13/09/2026 (D4).** `ai_notice` viaja en la respuesta del chat y del diagnóstico; el texto vive en `openai.tutor.notice` | El informe puede decirlo en presente. Vale la pena justificar por qué lo manda el sistema y no el frontend: el compromiso es del sistema y sobrevive a cualquier cliente nuevo |
+| 6 | [173] | «registrará incidencias» · criterio de éxito «más del 75 % de mensajes que superen validación» | ✅ **Resuelto por código el 13/09/2026 (D5).** Tabla `ai_tutor_incidents` y `GET /platform/ai-tutor-metrics` (solo superadmin) con `validation_pass_rate` contra el umbral de 75 | El criterio ya es demostrable. Conviene precisar qué cuenta: los fallos de **validación** (PII y longitud). El enlace bloqueado no entra —la respuesta sí se entrega— ni el fallo de OpenAI, que es disponibilidad y no calidad |
 | 7 | [173] | Recomendaciones «breves (**2–4 oraciones**)» | System prompt: «máximo 4 párrafos», 600 tokens (800 en modo práctica) | Ajustar la cifra del informe, o el prompt. La cifra del informe es la que se lee en la defensa |
 | 8 | [222] | «modelos **GPT-4** (variante ligera y de menor coste del sistema GPT-4 de OpenAI)» | `gpt-4o-mini`, que es variante de **GPT-4o**, no de GPT-4 | Nombrar el modelo exacto |
-| 9 | [758] | «Los tokens de sesión deben expirar tras **60 minutos** de inactividad» | `SANCTUM_TOKEN_EXPIRATION_MINUTES` = **12 h** | Aquí conviene **no** aplicar el criterio general: son cuentas de menores, posiblemente en equipos compartidos del centro. Es más defendible bajar la variable que relajar el requisito |
+| 9 | [758] | «Los tokens de sesión deben expirar tras **60 minutos** de inactividad» | ✅ **Resuelto por código el 13/09/2026 (D3).** Caduca a los 60 min **sin uso** (`last_used_at`), con el tope absoluto en 12 h | El informe ya describe al sistema. Conviene explicar la distinción, porque es el detalle que salva el requisito: bajar la expiración *absoluta* a 60 habría expulsado al alumno a mitad de un examen de hasta 300 minutos |
 | 10 | [771] | «La API debe documentarse con **OpenAPI 5.0**» | Esa versión **no existe**: la especificación va por 3.x, y lo generado es 3.0 | Corregir la versión |
 | 11 | [720] | «Asignar roles con diferentes permisos (**admin, docente, estudiante**)» | El enum `UserType` tiene **cuatro**: se suma **`superadmin`**, externo a las instituciones. El `parent` que había en su lugar se retiró el 08/08/2026 | Nombrar los cuatro y describir la frontera superadmin/admin (§9.6) |
 

@@ -17,7 +17,7 @@ class StudentFactory extends Factory
             'user_id'                => User::factory()->student(),
             // Alta entropía para evitar colisiones de unicidad al crear muchos estudiantes en la suite
             'student_code'           => fake()->unique()->numerify('STU-##########'),
-            'grade'                  => fake()->numberBetween(7, 12),
+            'grade'                  => fake()->numberBetween(config('academic.grade_min'), config('academic.grade_max')),
             'section'                => fake()->randomElement(['A', 'B', 'C']),
             'status'                 => 'active',
             'enrolled_at'            => now(),

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Exams;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\RevelaRespuestas;
+use App\Enums\Difficulty;
 use App\Enums\QuestionType;
 use App\Models\Exams\Exam;
 use App\Models\Exams\Question;
@@ -66,6 +67,13 @@ class QuestionController extends Controller
             ])],
             'points' => ['required', 'integer', 'between:1,10'],
             'order_index' => ['nullable', 'integer', 'min:1'],
+
+            // Metadatos curriculares (D2). Opcionales: obligarlos rompería todo
+            // examen ya creado y toda carga existente. El banco de ítems (E2) sí
+            // los exige, pero eso es criterio editorial, no del endpoint.
+            'topic' => ['nullable', 'string', 'max:120'],
+            'indicator' => ['nullable', 'string', 'max:255'],
+            'difficulty' => ['nullable', Rule::in(Difficulty::values())],
 
             // Para short_answer
             'correct_answer_text' => ['nullable', 'string', 'max:2000'],
@@ -138,6 +146,11 @@ class QuestionController extends Controller
                 'points' => (int) $data['points'],
                 'correct_answer_text' => $type === QuestionType::ShortAnswer->value ? $data['correct_answer_text'] : null,
                 'order_index' => (int) $orderIndex,
+
+                // D2: `topic_normalized` sale sola, la genera PostgreSQL.
+                'topic' => $data['topic'] ?? null,
+                'indicator' => $data['indicator'] ?? null,
+                'difficulty' => $data['difficulty'] ?? null,
             ]);
 
             // Crear opciones si aplica
@@ -179,6 +192,11 @@ class QuestionController extends Controller
             'question_text' => ['sometimes', 'string', 'min:3', 'max:2000'],
             'points' => ['sometimes', 'integer', 'between:1,10'],
             'order_index' => ['sometimes', 'integer', 'min:1'],
+
+            // Metadatos curriculares (D2)
+            'topic' => ['nullable', 'string', 'max:120'],
+            'indicator' => ['nullable', 'string', 'max:255'],
+            'difficulty' => ['nullable', Rule::in(Difficulty::values())],
 
             'correct_answer_text' => ['nullable', 'string', 'max:2000'],
 

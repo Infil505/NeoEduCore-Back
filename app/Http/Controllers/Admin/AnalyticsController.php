@@ -46,7 +46,27 @@ class AnalyticsController extends Controller
      */
     public function subjects(Request $request)
     {
-        $subjects   = Subject::query()->select('id', 'name')->get();
+        $query = Subject::query()->select('id', 'name');
+
+        /*
+        | Decisión S5: **el docente ve el rendimiento de las materias que
+        | imparte; el administrador, el de todas.**
+        |
+        | Antes devolvía el centro entero a cualquiera de los dos. No era una
+        | fuga de datos personales —son agregados sin nombres, y [173] le
+        | concede al docente «métricas agregadas»— pero sí le ponía delante el
+        | desempeño de las clases de sus colegas, que no es asunto suyo. Es la
+        | misma frontera que ya aplica el resto del sistema: se alcanza lo que
+        | se tiene asignado.
+        |
+        | Un docente sin asignaciones recibe una lista vacía, igual que en
+        | `/students` o `/groups`.
+        */
+        if ($this->esDocente($request->user())) {
+            $query->whereIn('id', $this->materiasDelDocente($request->user()->id));
+        }
+
+        $subjects   = $query->get();
         $subjectIds = $subjects->pluck('id');
 
         $progressStats = StudentProgress::whereIn('subject_id', $subjectIds)

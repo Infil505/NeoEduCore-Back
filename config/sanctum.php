@@ -51,6 +51,31 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Inactividad (decisión D3)
+    |--------------------------------------------------------------------------
+    |
+    | Minutos sin usar un token antes de darlo por caducado. **No es lo mismo
+    | que `expiration`**, y la diferencia es justo lo que hacía falta aquí:
+    |
+    |   - `expiration` cuenta desde que se emitió el token, pase lo que pase.
+    |   - esto cuenta desde la última petición hecha con él.
+    |
+    | El informe [758] exige «expirar tras 60 minutos **de inactividad**». Bajar
+    | `expiration` a 60 no es eso: un examen admite hasta 300 minutos
+    | (`duration_minutes between:1,300`), así que habría echado al alumno a mitad
+    | de la prueba y le habría costado el intento. Con la inactividad medida de
+    | verdad, quien está trabajando nunca pierde la sesión y quien deja el equipo
+    | del aula abierto la pierde en una hora, que es el riesgo que [758] quiere
+    | cubrir: son cuentas de menores en máquinas compartidas.
+    |
+    | La expiración absoluta se queda en 12 h como tope duro de la jornada.
+    |
+    | En 0 se desactiva la comprobación.
+    */
+    'inactivity_minutes' => (int) env('SANCTUM_TOKEN_INACTIVITY_MINUTES', 60),
+
+    /*
+    |--------------------------------------------------------------------------
     | Token Prefix
     |--------------------------------------------------------------------------
     |

@@ -97,7 +97,12 @@ class AiTutorController extends Controller
 
         $text = $tutorService->getDiagnosis($user->id);
 
-        return response()->json(['data' => ['diagnosis' => $text]]);
+        return response()->json(['data' => [
+            'diagnosis' => $text,
+            // El diagnóstico también lo redacta el modelo, así que lleva el
+            // mismo aviso que el chat ([397], D4).
+            'ai_notice' => (string) config('openai.tutor.notice'),
+        ]]);
     }
 
     public function sessions(Request $request)

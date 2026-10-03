@@ -101,6 +101,10 @@ class Exam extends Model
                 'groups.id',
                 \Illuminate\Support\Facades\DB::table('group_students')
                     ->select('group_id')
+                    // El examen ya viene acotado por TenantScoped, así que la
+                    // subconsulta no podía traer nada ajeno; dicho así, no hay
+                    // que deducirlo.
+                    ->where('institution_id', $user->institution_id)
                     ->where('student_user_id', $user->id)
             ));
     }

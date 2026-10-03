@@ -7,9 +7,15 @@
 |
 | Estaban como constantes de clase en `StudentController` y
 | `ExamAttemptRulesService`. Salen de ahí porque **describen el sistema
-| educativo de un país concreto**, no una regla universal: los grados 6-12 y
-| las secciones A-D son la estructura de secundaria de Costa Rica, y un centro
-| con sección E o un despliegue en otro país no encajaban sin tocar código.
+| educativo de un país concreto**, no una regla universal: un centro con
+| sección E o un despliegue en otro país no encajaban sin tocar código.
+|
+| ⚠️ **Corregido el 13/09/2026:** el valor por defecto era 6-12 («secundaria de
+| Costa Rica»), pero el sistema es de **primaria, 1.º a 6.º**. La contradicción
+| llevaba tiempo: los prompts del tutor decían «primaria» mientras la
+| configuración describía secundaria, `GroupController` validaba 6-12 a mano y
+| `ExamController` 7-12 — de modo que no se podía crear un examen de 6.º aunque
+| sí el grupo. Ahora los tres salen de aquí.
 |
 | ⚠️ Los multiplicadores de adecuación no son un parámetro de rendimiento: son
 | **tiempo adicional al que un estudiante tiene derecho** por su adecuación
@@ -24,8 +30,22 @@ return [
      | Rango de grados que admite la institución. Acota la validación de
      | `students.grade` y de `groups.grade`.
      */
-    'grade_min' => (int) env('ACADEMIC_GRADE_MIN', 6),
-    'grade_max' => (int) env('ACADEMIC_GRADE_MAX', 12),
+    'grade_min' => (int) env('ACADEMIC_GRADE_MIN', 1),
+    'grade_max' => (int) env('ACADEMIC_GRADE_MAX', 6),
+
+    /*
+     | Cómo se le describe la etapa al modelo en los prompts del tutor.
+     |
+     | Estaba escrita a mano —«un estudiante de primaria»— en los **tres**
+     | prompts (chat, diagnóstico y recomendaciones), que es exactamente la
+     | misma trampa que tenían los rangos de grado: tres copias que nadie
+     | actualiza a la vez. Un centro que despliegue esto para secundaria cambia
+     | esta línea y el rango de arriba, y no toca código.
+     |
+     | La edad importa y por eso va dentro: al modelo le dice más «6 a 12 años»
+     | que «primaria», que es una etiqueta que cambia de país a país.
+     */
+    'etapa' => env('ACADEMIC_STAGE_LABEL', 'primaria (6 a 12 años)'),
 
     /*
      | Secciones válidas. Lista separada por comas en el `.env`

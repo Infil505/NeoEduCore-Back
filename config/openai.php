@@ -71,6 +71,12 @@ return [
     | `config/services.php`: la llamada devolvía null y caía siempre al valor por
     | defecto, así que el modelo estaba fijado de hecho. Cambiar de modelo —lo
     | primero que se toca si sube el precio o sale uno mejor— exigía desplegar.
+    |
+    | El tutor se pasó a esta clave en su momento, pero las recomendaciones
+    | (`AiRecommendationService`) y el prompt libre del docente (`AiController`)
+    | se quedaron atrás hasta el 15/09/2026: `OPENAI_MODEL` cambiaba el modelo de
+    | uno de los tres caminos y los otros dos seguían en el literal. **Ya son los
+    | tres**, así que esta es la única clave del modelo en todo el sistema.
     */
     'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
 
@@ -95,6 +101,88 @@ return [
 
         // Vigencia (segundos) del prompt de sistema cacheado por estudiante.
         'context_ttl' => (int) env('OPENAI_CONTEXT_TTL', 300),
+
+        /*
+         | Aviso de que quien responde es una IA ([397], decisión D4).
+         |
+         | Viaja en la respuesta de `POST /ai/tutor/chat` y de
+         | `GET /ai/tutor/diagnosis`, en vez de quedar como un rótulo fijo del
+         | frontend: el compromiso es del sistema, y así el día que haya una app
+         | móvil o un segundo cliente no hay que acordarse de repetirlo.
+         |
+         | Está en configuración porque es texto que se ajusta —es para menores
+         | de primaria— sin tocar código.
+         */
+        'notice' => env(
+            'OPENAI_TUTOR_NOTICE',
+            'Esta respuesta la escribió un asistente de inteligencia artificial. '
+            . 'Puede equivocarse: si algo no te cuadra, preguntale a tu docente.'
+        ),
+
+        /*
+         | Lo que se responde cuando el mensaje intenta reescribir las reglas
+         | del tutor (`AiInputSanitizer::pareceInyeccion()`).
+         |
+         | Ese turno no llega a OpenAI, así que este texto es literalmente lo
+         | que lee el alumno. Va en configuración por lo mismo que `notice`: es
+         | texto para menores de primaria y lo afina el profesorado, no el
+         | desarrollador. La negativa se ofrece con salida —«pero sí puedo…»—
+         | porque casi siempre quien lo escribe es un crío probando qué pasa,
+         | no un atacante.
+         */
+        'injection_reply' => env(
+            'OPENAI_TUTOR_INJECTION_REPLY',
+            'Esa parte no la puedo hacer: mis instrucciones no se cambian. '
+            . 'Pero sí puedo ayudarte con tus materias. ¿Qué tema quieres repasar?'
+        ),
+
+        /*
+        |----------------------------------------------------------------------
+        | Registro de lenguaje por grado
+        |----------------------------------------------------------------------
+        |
+        | Entre 1.º y 6.º de primaria hay seis años de diferencia lectora, y el
+        | tutor los trataba igual: el prompt mandaba «grado 3» y una instrucción
+        | vaga («adapta el nivel de detalle al perfil»), así que el registro lo
+        | improvisaba el modelo. Para 1.º eso no es un matiz de estilo — a esa
+        | edad muchos apenas leen con fluidez, y un párrafo denso no es poco
+        | adaptado: es inservible.
+        |
+        | Cada franja describe **cómo escribir**, no qué enseñar. Va aquí y no
+        | en el código porque es texto pedagógico: quien mejor lo ajusta es el
+        | profesorado del centro, y no debería hacer falta desplegar para ello.
+        |
+        | `hasta` es el grado máximo al que aplica la franja; se evalúan en
+        | orden. `null` es el texto para cuando no se conoce el grado, que pasa
+        | con el alumnado cargado en masa sin ese dato.
+        */
+        'registro' => [
+            'franjas' => [
+                [
+                    'hasta' => 2,
+                    'texto' => 'Escribe para alguien de 6 a 8 años que está aprendiendo a leer: '
+                        . 'frases muy cortas, una idea por frase, vocabulario cotidiano y ningún '
+                        . 'tecnicismo. Apóyate en objetos y situaciones que conozca. No uses más '
+                        . 'de tres frases seguidas sin cortar.',
+                ],
+                [
+                    'hasta' => 4,
+                    'texto' => 'Escribe para alguien de 8 a 10 años que ya lee para aprender: '
+                        . 'frases cortas y directas. Puedes usar un término propio de la materia '
+                        . 'si lo explicas con palabras suyas la primera vez. Las instrucciones, '
+                        . 'en pasos de dos o tres.',
+                ],
+                [
+                    'hasta' => 6,
+                    'texto' => 'Escribe para alguien de 10 a 12 años que puede seguir una '
+                        . 'explicación de varios pasos: vocabulario académico básico, y puedes '
+                        . 'pedirle que justifique su razonamiento o que compare dos caminos.',
+                ],
+            ],
+
+            'sin_grado' => 'No sabes en qué grado está: usa lenguaje sencillo de primaria, '
+                . 'evita tecnicismos y no des por supuesta una lectura rápida.',
+        ],
     ],
 
     /*

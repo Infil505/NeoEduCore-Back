@@ -1610,6 +1610,31 @@
                     ]
                 },
                 {
+                    "name": "GET /api/exam-attempts/{attempt}/recommendations",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/exam-attempts/{{attempt_id}}/recommendations",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "exam-attempts",
+                                "{{attempt_id}}",
+                                "recommendations"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
                     "name": "POST /api/exam-attempts/{attempt}/recommendations/regenerate",
                     "request": {
                         "method": "POST",
@@ -3130,6 +3155,32 @@
                     "response": []
                 },
                 {
+                    "name": "GET /api/reports/exams/{exam}/results.xlsx",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/reports/exams/{{exam_id}}/results.xlsx",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "reports",
+                                "exams",
+                                "{{exam_id}}",
+                                "results.xlsx"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
                     "name": "GET /api/reports/exams/{exam}/summary",
                     "request": {
                         "method": "GET",
@@ -3234,6 +3285,32 @@
                     "response": []
                 },
                 {
+                    "name": "GET /api/reports/students/{student_user_id}/history.xlsx",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/reports/students/{{student_user_id}}/history.xlsx",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "reports",
+                                "students",
+                                "{{student_user_id}}",
+                                "history.xlsx"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
                     "name": "GET /api/reports/students/{student_user_id}/strategies",
                     "request": {
                         "method": "GET",
@@ -3280,6 +3357,30 @@
                                 "students",
                                 "{{student_user_id}}",
                                 "summary"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "GET /api/reports/topics",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/reports/topics",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "reports",
+                                "topics"
                             ]
                         }
                     },
@@ -3651,6 +3752,35 @@
                                 "institution-admins",
                                 "{{institutionAdmin}}",
                                 "status"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "99 · Platform",
+            "item": [
+                {
+                    "name": "GET /api/platform/ai-tutor-metrics",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/platform/ai-tutor-metrics",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "platform",
+                                "ai-tutor-metrics"
                             ]
                         }
                     },

@@ -286,13 +286,16 @@ class QueryBudgetTest extends TestCase
     }
 
     /**
-     * Exportación CSV de resultados.
+     * Exportación de resultados a fichero, en los dos formatos.
      *
      * El informe del TFG exige generar un reporte de 1000 estudiantes en menos
      * de 5 s. Medido con 1000 intentos reales: 3.790 ms → **1.068 ms** tras
      * cambiar `cursor()` por `lazy()`. `cursor()` **ignora el eager loading**
      * (va fila a fila, no puede resolver los ids por adelantado), así que el
      * `with(['student.user'])` no se aplicaba y cada fila costaba 2 queries.
+     *
+     * El XLSX entra en el mismo presupuesto porque consume el mismo dataset: si
+     * alguien le escribiera una consulta propia, aquí se notaría.
      */
     public function test_csv_export_does_not_scale_with_row_count(): void
     {
@@ -319,26 +322,30 @@ class QueryBudgetTest extends TestCase
             }
         };
 
-        $descargar = function () use ($exam) {
-            $res = $this->get("/api/reports/exams/{$exam->id}/results.csv");
-            $res->assertOk();
-            // streamDownload no ejecuta el callback hasta que se consume
-            $res->streamedContent();
+        $descargar = function (string $formato) use ($exam) {
+            return function () use ($exam, $formato) {
+                $res = $this->get("/api/reports/exams/{$exam->id}/results.{$formato}");
+                $res->assertOk();
+                // streamDownload no ejecuta el callback hasta que se consume
+                $res->streamedContent();
+            };
         };
 
-        $crearIntentos(3);
-        $pocos = $this->contarQueries($descargar);
+        foreach (['csv', 'xlsx'] as $formato) {
+            $crearIntentos(3);
+            $pocos = $this->contarQueries($descargar($formato));
 
-        $crearIntentos(40);
-        $muchos = $this->contarQueries($descargar);
+            $crearIntentos(40);
+            $muchos = $this->contarQueries($descargar($formato));
 
-        // 43 filas no deben costar más queries que 3: el eager load va por lotes
-        $this->assertSame(
-            $pocos,
-            $muchos,
-            "El CSV vuelve a tener N+1: 3 filas={$pocos} queries, 43 filas={$muchos}. "
-            . '¿Se cambió lazy() por cursor()?'
-        );
+            // 43 filas no deben costar más queries que 3: el eager load va por lotes
+            $this->assertSame(
+                $pocos,
+                $muchos,
+                "El {$formato} vuelve a tener N+1: 3 filas={$pocos} queries, 43 filas={$muchos}. "
+                . '¿Se cambió lazy() por cursor()?'
+            );
+        }
     }
 
     /**

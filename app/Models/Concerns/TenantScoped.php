@@ -11,9 +11,21 @@ trait TenantScoped
         static::addGlobalScope('tenant', function (Builder $builder) {
 
             if (!app()->bound('tenant_id') || !app('tenant_id')) {
-                // En CLI (artisan, migrations, seeds, tests, queue workers) es esperado.
-                // En HTTP es un bug: el middleware SetTenantFromAuth no corrió.
-                if (!app()->runningInConsole()) {
+                /*
+                | En CLI (artisan, migraciones, seeders, tests, worker de cola) es
+                | esperado. En HTTP es un bug: el middleware SetTenantFromAuth no
+                | corrió, y seguir adelante devolvería filas de TODAS las
+                | instituciones.
+                |
+                | La condición mira la marca que pone `MarcaContextoHttp`, no
+                | `app()->runningInConsole()`. Ese método mira `PHP_SAPI`, y
+                | **Octane arranca desde consola**: con `--server=swoole` o
+                | `roadrunner` el SAPI es `cli` en plena petición HTTP, así que
+                | esta guarda se habría apagado sola y en silencio. Con FrankenPHP
+                | —lo que fija hoy el Dockerfile— no pasa, pero era una palabra del
+                | `CMD` de distancia, y el `CMD` se toca al desplegar.
+                */
+                if (app()->bound('contexto_http')) {
                     throw new \RuntimeException(
                         'Modelo ' . $builder->getModel()::class . ' consultado sin contexto ' .
                         'de tenant. Verifica que SetTenantFromAuth esté activo en la ruta.'

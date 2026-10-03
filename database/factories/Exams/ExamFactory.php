@@ -18,7 +18,7 @@ class ExamFactory extends Factory
             'created_by_teacher_id'       => User::factory()->teacher(),
             'title'                       => fake()->sentence(5),
             'subject_id'                  => Subject::factory(),
-            'grade'                       => fake()->numberBetween(7, 12),
+            'grade'                       => fake()->numberBetween(config('academic.grade_min'), config('academic.grade_max')),
             'instructions'                => fake()->optional()->sentence(),
             'duration_minutes'            => fake()->randomElement([30, 45, 60, 90]),
             'status'                      => 'draft',

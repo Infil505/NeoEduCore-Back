@@ -21,6 +21,7 @@ use App\Http\Controllers\AI\AiRecommendationController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\InstitutionController;
 use App\Http\Controllers\Admin\InstitutionAdminController;
+use App\Http\Controllers\Admin\PlatformMetricsController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\SystemConfigController;
@@ -96,6 +97,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::patch('/exams/{exam}/attempts/{attempt}/pause', [ExamAttemptController::class, 'pause']);
         Route::patch('/exams/{exam}/attempts/{attempt}/resume', [ExamAttemptController::class, 'resume']);
         Route::get('/exams/{exam}/attempts/{attempt}', [ExamAttemptController::class, 'show']);
+        // Resultados del intento. Es lo que abre el alumno al terminar, y la
+        // primera consulta encola el análisis de IA (D1): no se encola en la
+        // entrega para no meter a OpenAI en el pico de entregas simultáneas.
+        Route::get('/exam-attempts/{attempt}/recommendations',
+            [ExamAttemptController::class, 'recommendations']
+        );
         Route::post('/exam-attempts/{attempt}/recommendations/regenerate',
             [ExamAttemptController::class, 'regenerateRecommendations']
         )->middleware('throttle:ai-regenerate');
@@ -215,14 +222,20 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Reportes
         Route::get('/reports/exams/{exam}/results', [ReportController::class, 'examResults']);
         Route::get('/reports/exams/{exam}/results.csv', [ReportController::class, 'exportExamResultsCsv']);
+        Route::get('/reports/exams/{exam}/results.xlsx', [ReportController::class, 'exportExamResultsXlsx']);
         Route::get('/reports/students/{student_user_id}/history', [ReportController::class, 'studentHistory']);
         Route::get('/reports/students/{student_user_id}/history.csv', [ReportController::class, 'exportStudentHistoryCsv']);
+        Route::get('/reports/students/{student_user_id}/history.xlsx', [ReportController::class, 'exportStudentHistoryXlsx']);
 
         // Resúmenes agregados para los gráficos y el PDF que arma el frontend.
         // Van aparte de los listados paginados: quien solo quiere la tabla no
         // paga los agregados, y quien solo quiere los gráficos no pagina.
         Route::get('/reports/exams/{exam}/summary', [ReportController::class, 'examSummary']);
         Route::get('/reports/students/{student_user_id}/summary', [ReportController::class, 'studentSummary']);
+
+        // Temas a reforzar, agregados y sin nombres (D2). El docente los ve de
+        // sus grupos asignados; el admin, de toda la institución.
+        Route::get('/reports/topics', [ReportController::class, 'topicMastery']);
 
         // Estrategias del tutor de un alumno. El docente solo ve las nacidas de
         // exámenes suyos; el chat con el tutor no sale por aquí nunca ([175]).
@@ -264,6 +277,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Administradores de institución. El alta cuelga de la institución
         // porque un admin no existe fuera de un centro.
         Route::post('/institutions/{institution}/admins', [InstitutionAdminController::class, 'store']);
+
+        // Métricas de plataforma del tutor IA (D5): hace medible el criterio de
+        // [173] («>75 % de mensajes que superen validación»). Solo agregados —
+        // ni un identificador de alumno sale de aquí.
+        Route::get('/platform/ai-tutor-metrics', [PlatformMetricsController::class, 'aiTutor']);
 
         Route::get('/institution-admins', [InstitutionAdminController::class, 'index']);
         Route::get('/institution-admins/{institutionAdmin}', [InstitutionAdminController::class, 'show']);

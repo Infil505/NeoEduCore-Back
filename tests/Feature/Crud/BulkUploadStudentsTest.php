@@ -34,7 +34,7 @@ class BulkUploadStudentsTest extends TestCase
         return $this->post('/api/students/bulk-upload', ['file' => $file]);
     }
 
-    private function aula(Institution $institution, string $code, int $grade = 10, string $section = 'A'): Group
+    private function aula(Institution $institution, string $code, int $grade = 4, string $section = 'A'): Group
     {
         return Group::factory()->create([
             'institution_id' => $institution->id,
@@ -51,12 +51,12 @@ class BulkUploadStudentsTest extends TestCase
         $institution = Institution::factory()->create();
         $this->signInAdmin(['institution_id' => $institution->id]);
 
-        $aulaA = $this->aula($institution, '10A2026', 10, 'A');
-        $aulaB = $this->aula($institution, '11B2026', 11, 'B');
+        $aulaA = $this->aula($institution, '4A2026', 4, 'A');
+        $aulaB = $this->aula($institution, '5B2026', 5, 'B');
 
         $csv = self::HEADER . "\n"
-            . "Ana Solis,ana.solis@ejemplo.com,,EST-0001,10A2026,active,,,,\n"
-            . "Luis Mora,luis.mora@ejemplo.com,,EST-0002,11B2026,active,,,,\n";
+            . "Ana Solis,ana.solis@ejemplo.com,,EST-0001,4A2026,active,,,,\n"
+            . "Luis Mora,luis.mora@ejemplo.com,,EST-0002,5B2026,active,,,,\n";
 
         $res = $this->uploadCsv($csv);
 
@@ -84,9 +84,9 @@ class BulkUploadStudentsTest extends TestCase
             'user_id'        => $ana->id,
             'institution_id' => $institution->id,
             'student_code'   => 'EST-0001',
-            'grade'          => 10,
+            'grade'          => 4,
             'section'        => 'A',
-            'group_code'     => '10A2026',
+            'group_code'     => '4A2026',
         ]);
 
         // Y queda MATRICULADA, que es lo que le da visibilidad al docente.
@@ -107,7 +107,7 @@ class BulkUploadStudentsTest extends TestCase
     {
         $institution = Institution::factory()->create();
         $this->signInAdmin(['institution_id' => $institution->id]);
-        $this->aula($institution, '10A2026');
+        $this->aula($institution, '4A2026');
 
         $csv = "full_name,email,student_code\n"
             . "Ana Solis,ana.solis@ejemplo.com,EST-0001\n";
@@ -123,7 +123,7 @@ class BulkUploadStudentsTest extends TestCase
 
         $institution = Institution::factory()->create();
         $this->signInAdmin(['institution_id' => $institution->id]);
-        $this->aula($institution, '10A2026');
+        $this->aula($institution, '4A2026');
 
         $csv = self::HEADER . "\n"
             . "Ana Solis,ana.sinaula@ejemplo.com,,EST-SINAULA,,active,,,,\n";
@@ -142,7 +142,7 @@ class BulkUploadStudentsTest extends TestCase
 
         $institution = Institution::factory()->create();
         $this->signInAdmin(['institution_id' => $institution->id]);
-        $this->aula($institution, '10A2026');
+        $this->aula($institution, '4A2026');
 
         $csv = self::HEADER . "\n"
             . "Ana Solis,ana.typoaula@ejemplo.com,,EST-TYPO,10A2O26,active,,,,\n";
@@ -160,7 +160,7 @@ class BulkUploadStudentsTest extends TestCase
         $this->signInAdmin(['institution_id' => $institution->id]);
 
         $csv = self::HEADER . "\n"
-            . "Ana Solis,ana.sinaulas@ejemplo.com,,EST-SINAULAS,10A2026,active,,,,\n";
+            . "Ana Solis,ana.sinaulas@ejemplo.com,,EST-SINAULAS,4A2026,active,,,,\n";
 
         $this->uploadCsv($csv)
             ->assertStatus(422)
@@ -178,17 +178,17 @@ class BulkUploadStudentsTest extends TestCase
         $institution = Institution::factory()->create();
         $this->signInAdmin(['institution_id' => $institution->id]);
 
-        $origen  = $this->aula($institution, '10A2026', 10, 'A');
-        $destino = $this->aula($institution, '11B2026', 11, 'B');
+        $origen  = $this->aula($institution, '4A2026', 4, 'A');
+        $destino = $this->aula($institution, '5B2026', 5, 'B');
 
         $alta = self::HEADER . "\n"
-            . "Ana Solis,ana.traslado@ejemplo.com,,EST-TRASLADO,10A2026,active,,,,\n";
+            . "Ana Solis,ana.traslado@ejemplo.com,,EST-TRASLADO,4A2026,active,,,,\n";
         $this->uploadCsv($alta)->assertOk();
 
         $ana = User::where('email', 'ana.traslado@ejemplo.com')->first();
 
         $traslado = self::HEADER . "\n"
-            . "Ana Solis,ana.traslado@ejemplo.com,,EST-TRASLADO,11B2026,active,,,,\n";
+            . "Ana Solis,ana.traslado@ejemplo.com,,EST-TRASLADO,5B2026,active,,,,\n";
 
         $res = $this->uploadCsv($traslado);
 
@@ -222,7 +222,7 @@ class BulkUploadStudentsTest extends TestCase
         // La ficha sigue al aula nueva.
         $this->assertDatabaseHas('students', [
             'user_id' => $ana->id,
-            'grade'   => 11,
+            'grade'   => 5,
             'section' => 'B',
         ]);
 
@@ -238,10 +238,10 @@ class BulkUploadStudentsTest extends TestCase
 
         $institution = Institution::factory()->create();
         $this->signInAdmin(['institution_id' => $institution->id]);
-        $aula = $this->aula($institution, '10A2026');
+        $aula = $this->aula($institution, '4A2026');
 
         $csv = self::HEADER . "\n"
-            . "Ana Solis,ana.noop@ejemplo.com,,EST-NOOP,10A2026,active,,,,\n";
+            . "Ana Solis,ana.noop@ejemplo.com,,EST-NOOP,4A2026,active,,,,\n";
 
         $this->uploadCsv($csv)->assertOk();
         $res = $this->uploadCsv($csv);
@@ -263,7 +263,7 @@ class BulkUploadStudentsTest extends TestCase
         $this->signInTeacher(['institution_id' => $institution->id]);
 
         $csv = self::HEADER . "\n"
-            . "Ana Solis,ana.docente@ejemplo.com,,EST-DOCENTE,10A2026,active,,,,\n";
+            . "Ana Solis,ana.docente@ejemplo.com,,EST-DOCENTE,4A2026,active,,,,\n";
 
         $this->uploadCsv($csv)->assertStatus(403);
     }
@@ -274,13 +274,13 @@ class BulkUploadStudentsTest extends TestCase
 
         $institution = Institution::factory()->create();
         $this->signInAdmin(['institution_id' => $institution->id]);
-        $aula = $this->aula($institution, '9C2026', 9, 'C');
+        $aula = $this->aula($institution, '3C2026', 3, 'C');
 
         // Usuario existente (mismo tenant) sin perfil de estudiante todavía
         $existing = User::factory()->student()->create(['institution_id' => $institution->id]);
 
         $csv = self::HEADER . "\n"
-            . ",,{$existing->id},EST-9001,9C2026,active,,,,\n";
+            . ",,{$existing->id},EST-9001,3C2026,active,,,,\n";
 
         $res = $this->uploadCsv($csv);
 
@@ -314,13 +314,13 @@ class BulkUploadStudentsTest extends TestCase
         $institutionA = Institution::factory()->create();
         $institutionB = Institution::factory()->create();
         $this->signInAdmin(['institution_id' => $institutionA->id]);
-        $this->aula($institutionA, '8A2026', 8, 'A');
+        $this->aula($institutionA, '2A2026', 2, 'A');
 
         // Usuario de OTRA institución
         $foreign = User::factory()->student()->create(['institution_id' => $institutionB->id]);
 
         $csv = self::HEADER . "\n"
-            . ",,{$foreign->id},EST-CROSS,8A2026,active,,,,\n";
+            . ",,{$foreign->id},EST-CROSS,2A2026,active,,,,\n";
 
         $res = $this->uploadCsv($csv);
 

@@ -2,6 +2,8 @@
 
 namespace App\Services\AI;
 
+use App\Enums\AiIncidentType;
+
 class AiOutputValidator
 {
     /**
@@ -26,6 +28,17 @@ class AiOutputValidator
         return $inyectado ?? (int) config("openai.output.{$clave}");
     }
 
+    /**
+     * Un enlace en texto libre. Los cierres habituales de markdown y de
+     * puntuación no son parte del host, pero sí los capturaría un `\S+`, así
+     * que se excluyen del match.
+     *
+     * Vive como constante porque lo usan dos caminos —sustituir enlaces y
+     * contarlos— y dos regex que se separen dan dos verdades distintas sobre
+     * lo mismo.
+     */
+    private const PATRON_URL = '#\bhttps?://[^\s<>"\'\)\]]+#i';
+
     /** Lo que queda en el texto donde había un enlace fuera de la lista blanca. */
     public const URL_BLOQUEADA = '[enlace no permitido]';
 
@@ -46,34 +59,99 @@ class AiOutputValidator
 
     public function validate(string $text): ?string
     {
+        return match ($this->motivo($text)) {
+            AiIncidentType::TooShort => 'La respuesta del modelo es demasiado corta.',
+            AiIncidentType::TooLong  => 'La respuesta del modelo excede el tamaño máximo permitido.',
+            AiIncidentType::Pii      => 'La respuesta del modelo contiene posibles datos personales y fue bloqueada.',
+            default                  => null, // null = válido
+        };
+    }
+
+    /**
+     * El mismo veredicto que `validate()`, pero tipado.
+     *
+     * Existe porque el registro de incidencias (D5) necesita **clasificar** el
+     * fallo, y hacerlo comparando el mensaje en castellano ataría la estadística
+     * a la redacción de una cadena. `validate()` se queda para quien solo quiere
+     * el texto que enseñarle a alguien.
+     */
+    public function motivo(string $text): ?AiIncidentType
+    {
         $text = trim($text);
 
         if (strlen($text) < $this->limite('min_length')) {
-            return 'La respuesta del modelo es demasiado corta.';
+            return AiIncidentType::TooShort;
         }
 
         if (strlen($text) > $this->limite('max_length')) {
-            return 'La respuesta del modelo excede el tamaño máximo permitido.';
+            return AiIncidentType::TooLong;
         }
 
         foreach (self::PATTERNS_PII as $pattern) {
             if (preg_match($pattern, $text)) {
-                return 'La respuesta del modelo contiene posibles datos personales y fue bloqueada.';
+                return AiIncidentType::Pii;
             }
         }
 
-        return null; // null = válido
+        return null;
+    }
+
+    /**
+     * Cuántos enlaces se sustituirían por el aviso. Lo usa el registro de
+     * incidencias: a diferencia de los otros casos, aquí la respuesta **sí se
+     * entrega** —solo pierde el enlace—, así que el bloqueo no se nota por
+     * ningún otro lado si nadie lo cuenta.
+     */
+    public function contarUrlsBloqueadas(string $text): int
+    {
+        preg_match_all(self::PATRON_URL, $text, $m);
+
+        return collect($m[0] ?? [])
+            ->reject(fn (string $url) => $this->isUrlAllowed($url))
+            ->count();
     }
 
     public function sanitize(string $text): string
     {
-        $text = $this->sanitizeUrls(trim($text));
+        $text = $this->sanitizeUrls($this->sinMarcado(trim($text)));
 
         if (strlen($text) > $this->limite('max_length')) {
             $text = mb_substr($text, 0, $this->limite('max_length'));
         }
 
         return $text;
+    }
+
+    /**
+     * Quita del texto del modelo lo que un navegador ejecutaría.
+     *
+     * El backend no renderiza nada —es una API pura— pero esto **se guarda**:
+     * en `ai_chat_sessions.messages` y en `ai_recommendations`, de donde sale
+     * hacia el alumno, hacia el informe de estrategias del docente y hacia el
+     * PDF que compone el frontend. Si el modelo escribe `<img onerror=...>`
+     * porque alguien le convenció de hacerlo, el backend lo almacenaba tal cual
+     * y el XSS quedaba guardado, cruzando además de un alumno a su docente.
+     *
+     * Confiar en que el cliente escape es exactamente la suposición que produce
+     * estos fallos: hay un frontend web hoy, y puede haber otro cliente mañana.
+     * El dato sale limpio de aquí.
+     *
+     * Se quitan **etiquetas**, no el signo `<` suelto: «3 < 5» es una frase
+     * perfectamente normal en un tutor de primaria y no hay razón para
+     * estropearla. Por eso el patrón exige una letra o una barra tras el signo.
+     */
+    private function sinMarcado(string $text): string
+    {
+        // Etiquetas HTML/XML, incluido el contenido de <script> y <style>: dejar
+        // el cuerpo suelto convertiría el script en texto visible.
+        $text = (string) preg_replace('#<(script|style)\b[^>]*>.*?</\1\s*>#is', '', $text);
+        $text = (string) preg_replace('#</?[a-z][^>]*>#i', '', $text);
+
+        // Esquemas ejecutables en lo que quede: `PATRON_URL` solo mira http(s),
+        // así que un `javascript:` en prosa no pasaba por ningún filtro.
+        $text = (string) preg_replace('#\b(javascript|vbscript|data)\s*:#i', '', $text);
+
+        return trim($text);
     }
 
     /**
@@ -92,10 +170,8 @@ class AiOutputValidator
      */
     public function sanitizeUrls(string $text): string
     {
-        // Los cierres habituales de markdown y de puntuación no son parte del
-        // host, pero sí los captura un `\S+`, así que se excluyen del match.
         return (string) preg_replace_callback(
-            '#\bhttps?://[^\s<>"\'\)\]]+#i',
+            self::PATRON_URL,
             fn (array $m) => $this->isUrlAllowed($m[0]) ? $m[0] : self::URL_BLOQUEADA,
             $text
         );

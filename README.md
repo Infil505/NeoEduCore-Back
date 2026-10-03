@@ -6,6 +6,9 @@ El frontend es un proyecto aparte (React + Vite + TypeScript): este repositorio 
 
 | Documento | Para qué |
 |---|---|
+| `docs/CHECKLIST_PENDIENTES.md` | Checklist marcable de todo lo pendiente (código, producción, frontend, informe y entregables) |
+| `docs/CHECKLIST_PENDIENTES.xlsx` | La misma checklist en Excel, con estado por desplegable y hoja de resumen de avance |
+| `docs/TALLER_AULA.md` | Aula de 4.º sembrada para el taller: credenciales, qué contiene y guion sugerido |
 | `docs/ESTADO_Y_PENDIENTES.md` | Estado por módulo, brechas, TODO priorizado y referencia de endpoints |
 | `docs/ANALISIS_MODELO_DATOS_TFG.md` | Modelo de datos y qué corregir del informe del TFG |
 | `docs/ANALISIS_CONCURRENCIA.md` | Modelo de capacidad y prueba de carga |
@@ -106,6 +109,16 @@ php artisan schema:dump-sql        # regenera 01_schema.sql (necesita PG_DUMP_PA
 # commit de la migración Y del schema, siempre juntos
 ```
 
+> 🛡️ **El Row Level Security ya viaja en el esquema.** Hasta el 13/09/2026 lo ponía
+> Supabase por su cuenta y ninguna migración lo declaraba, así que `schema:dump-sql` lo
+> borraba en cada regeneración y había que volver a pegar el bloque a mano. Desde la
+> migración `2026_09_13_000004` (decisión **D8**) las 26 tablas lo declaran, el volcado lo
+> recoge solo y un PostgreSQL que no sea Supabase queda igual de cerrado.
+>
+> Activar RLS **sin políticas** no afecta a la aplicación: el rol que usa es propietario de
+> las tablas y las bypasea. Lo que cierra es la API REST automática que Supabase expone
+> sobre la misma base. El aislamiento entre instituciones lo sigue haciendo `TenantScoped`.
+
 ---
 
 ## Comandos útiles
@@ -119,7 +132,7 @@ composer run dev                    # servidor + worker de cola + logs
 php artisan queue:work
 
 # Documentación
-php artisan openapi:generate        # OpenAPI (117 endpoints) → /api/documentation
+php artisan openapi:generate        # OpenAPI (122 endpoints) → /api/documentation
 
 # Crear el operador de la plataforma (no hay ruta de API que lo cree)
 php artisan superadmin:create --email=ops@ejemplo.com --name="Operaciones"
