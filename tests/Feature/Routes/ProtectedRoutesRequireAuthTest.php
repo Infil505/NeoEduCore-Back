@@ -106,6 +106,11 @@ class ProtectedRoutesRequireAuthTest extends TestCase
 
             ['GET',  '/api/platform/ai-tutor-metrics'],
 
+            // Notificaciones en la app (O1)
+            ['GET',   '/api/notifications'],
+            ['POST',  '/api/notifications/read-all'],
+            ['PATCH', '/api/notifications/9b2f1c3e-0000-4000-8000-000000000000/read'],
+
             ['GET',  '/api/reports/topics'],
 
             ['GET',  '/api/reports/exams/1/results'],

@@ -7,6 +7,8 @@ use App\Enums\AiRecommendationType;
 use App\Models\Students\Student;
 use App\Models\Academic\Subject;
 use App\Models\Exams\Exam;
+use App\Models\Exams\ExamAttempt;
+use App\Models\Admin\Institution;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -45,6 +47,11 @@ class AiRecommendation extends Model
      | Relaciones
      ========================= */
 
+    public function institution()
+    {
+        return $this->belongsTo(Institution::class);
+    }
+
     public function student()
     {
         return $this->belongsTo(Student::class, 'student_user_id', 'user_id');
@@ -58,5 +65,10 @@ class AiRecommendation extends Model
     public function exam()
     {
         return $this->belongsTo(Exam::class);
+    }
+
+    public function attempt()
+    {
+        return $this->belongsTo(ExamAttempt::class, 'attempt_id');
     }
 }

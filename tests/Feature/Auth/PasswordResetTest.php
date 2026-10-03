@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Jobs\EnviarEnlaceRecuperacion;
 use App\Models\Admin\User;
 use App\Models\Admin\Institution;
 use Tests\TestCase;
@@ -9,6 +10,7 @@ use Tests\Traits\ApiAuth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 
 class PasswordResetTest extends TestCase
 {
@@ -263,51 +265,66 @@ class PasswordResetTest extends TestCase
      | BCRYPT_ROUNDS=10: 91 ms para un correo registrado frente a 3 ms para uno
      | inexistente. Cronometrando se podía extraer la lista de altas.
      |
-     | El test no compara los dos caminos entre sí (sería inestable según la
-     | carga de la máquina): comprueba el MECANISMO, que el camino del correo
-     | inexistente pague igualmente un bcrypt, calibrando cuánto cuesta uno en
-     | la máquina donde se está ejecutando.
+     | Igualar el bcrypt dejó un residual de ~13 ms (el INSERT del token y el
+     | encolado del correo), así que desde el 03/10/2026 (O6) la petición no
+     | hace NADA que dependa de la cuenta: encola `EnviarEnlaceRecuperacion` y
+     | responde. Todo lo demás corre en el worker.
+     |
+     | El test no cronometra (sería inestable según la carga de la máquina):
+     | comprueba el MECANISMO, que los dos caminos ejecuten exactamente las
+     | mismas consultas y encolen lo mismo.
      ===================================================================== */
 
-    public function test_forgot_password_hashes_even_for_unknown_emails(): void
+    public function test_forgot_password_does_the_same_work_for_known_and_unknown_emails(): void
     {
-        Mail::fake();
+        Queue::fake();
         $this->withoutMiddleware(\Illuminate\Routing\Middleware\ThrottleRequests::class);
 
-        // En tests BCRYPT_ROUNDS=4; se sube para que el coste sea medible.
-        config(['hashing.bcrypt.rounds' => 10]);
+        $institution = Institution::factory()->create();
+        $registrado = User::factory()->create([
+            'institution_id' => $institution->id,
+            'email'          => 'registrado@mail.com',
+            'status'         => 'active',
+        ]);
 
-        // Calentamiento: la primera petición carga clases y falsea la medida.
+        // Calentamiento: la primera petición puede cargar cosas que las demás no.
         $this->postJson('/api/password/forgot', ['email' => 'calentamiento@mail.com']);
 
-        // Calibración: cuánto cuesta UN bcrypt aquí y ahora.
-        $t = microtime(true);
-        Hash::make('calibracion');
-        $costeDeUnBcrypt = (microtime(true) - $t) * 1000;
+        $consultasDe = function (string $email): array {
+            $sql = [];
+            DB::listen(function ($q) use (&$sql) {
+                $sql[] = $q->sql;
+            });
+            $this->postJson('/api/password/forgot', ['email' => $email])->assertOk();
 
-        // Mediana de 5 peticiones con un correo que no existe.
-        $tiempos = [];
-        for ($i = 0; $i < 5; $i++) {
-            $t = microtime(true);
-            $this->postJson('/api/password/forgot', ['email' => "fantasma{$i}@mail.com"])->assertOk();
-            $tiempos[] = (microtime(true) - $t) * 1000;
-        }
-        sort($tiempos);
-        $mediana = $tiempos[2];
+            return $sql;
+        };
 
-        $this->assertGreaterThan(
-            $costeDeUnBcrypt * 0.5,
-            $mediana,
-            sprintf(
-                'Un correo inexistente se resolvió en %.1f ms, por debajo del coste de un bcrypt (%.1f ms): '
-                . 'el camino vuelve a saltarse el hash y el tiempo delata qué cuentas existen.',
-                $mediana,
-                $costeDeUnBcrypt
-            )
+        $conCuenta = $consultasDe($registrado->email);
+        $sinCuenta = $consultasDe('fantasma@mail.com');
+
+        $this->assertSame(
+            $conCuenta,
+            $sinCuenta,
+            'La petición hace distinto trabajo según exista la cuenta: el tiempo vuelve a delatarla.'
         );
 
-        // Y sigue sin crearse token ni enviarse correo para quien no existe.
-        $this->assertDatabaseMissing('password_reset_tokens', ['email' => 'fantasma0@mail.com']);
+        foreach ($conCuenta as $sql) {
+            $this->assertStringNotContainsString('password_reset_tokens', $sql);
+            $this->assertDoesNotMatchRegularExpression('/\bfrom "?users"?/i', $sql);
+        }
+
+        Queue::assertPushed(EnviarEnlaceRecuperacion::class, fn ($job) => $job->email === $registrado->email);
+        Queue::assertPushed(EnviarEnlaceRecuperacion::class, fn ($job) => $job->email === 'fantasma@mail.com');
+    }
+
+    public function test_recovery_job_ignores_unknown_emails(): void
+    {
+        Mail::fake();
+
+        (new EnviarEnlaceRecuperacion('fantasma@mail.com'))->handle();
+
+        $this->assertDatabaseMissing('password_reset_tokens', ['email' => 'fantasma@mail.com']);
         Mail::assertNothingQueued();
     }
 

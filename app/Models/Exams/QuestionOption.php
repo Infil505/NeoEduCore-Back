@@ -2,6 +2,7 @@
 
 namespace App\Models\Exams;
 
+use App\Models\Admin\Institution;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Models\Concerns\TenantScoped;
@@ -48,6 +49,11 @@ class QuestionOption extends Model
         'option_index' => 'integer',
         'is_correct'   => 'boolean',
     ];
+
+    public function institution()
+    {
+        return $this->belongsTo(Institution::class);
+    }
 
     public function question()
     {

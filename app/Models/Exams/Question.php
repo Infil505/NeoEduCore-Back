@@ -3,6 +3,7 @@
 namespace App\Models\Exams;
 
 use App\Enums\QuestionType;
+use App\Models\Admin\Institution;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -57,6 +58,11 @@ class Question extends Model
     /* =========================
      | Relaciones
      ========================= */
+
+    public function institution()
+    {
+        return $this->belongsTo(Institution::class);
+    }
 
     public function exam()
     {

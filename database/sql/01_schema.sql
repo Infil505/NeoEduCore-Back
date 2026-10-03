@@ -496,6 +496,22 @@ ALTER SEQUENCE public.migrations_id_seq OWNED BY public.migrations.id;
 
 
 --
+-- Name: notifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notifications (
+    id uuid NOT NULL,
+    type character varying(255) NOT NULL,
+    notifiable_type character varying(255) NOT NULL,
+    notifiable_id uuid NOT NULL,
+    data jsonb NOT NULL,
+    read_at timestamp(0) without time zone,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone
+);
+
+
+--
 -- Name: password_reset_tokens; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -916,6 +932,14 @@ ALTER TABLE ONLY public.migrations
 
 
 --
+-- Name: notifications notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: password_reset_tokens password_reset_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1307,6 +1331,13 @@ CREATE INDEX jobs_queue_index ON public.jobs USING btree (queue);
 
 
 --
+-- Name: notifications_destinatario_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notifications_destinatario_idx ON public.notifications USING btree (notifiable_id, read_at);
+
+
+--
 -- Name: password_reset_tokens_created_at_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1616,6 +1647,14 @@ ALTER TABLE ONLY public.groups
 
 
 --
+-- Name: notifications notifications_notifiable_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_notifiable_id_foreign FOREIGN KEY (notifiable_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: question_options question_options_institution_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1908,6 +1947,12 @@ ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.migrations ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: notifications; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: password_reset_tokens; Type: ROW SECURITY; Schema: public; Owner: -

@@ -3,7 +3,10 @@
 namespace App\Models\Academic;
 
 use App\Models\Admin\Institution;
+use App\Models\AI\AiChatSession;
+use App\Models\AI\AiRecommendation;
 use App\Models\Exams\Exam;
+use App\Models\Students\StudentProgress;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -37,5 +40,35 @@ class Subject extends Model
     public function exams()
     {
         return $this->hasMany(Exam::class);
+    }
+
+    public function studentSubjects()
+    {
+        return $this->hasMany(StudentSubject::class);
+    }
+
+    public function teacherAssignments()
+    {
+        return $this->hasMany(TeacherAssignment::class);
+    }
+
+    public function studyResources()
+    {
+        return $this->hasMany(StudyResource::class);
+    }
+
+    public function studentProgress()
+    {
+        return $this->hasMany(StudentProgress::class);
+    }
+
+    public function aiRecommendations()
+    {
+        return $this->hasMany(AiRecommendation::class);
+    }
+
+    public function aiChatSessions()
+    {
+        return $this->hasMany(AiChatSession::class);
     }
 }

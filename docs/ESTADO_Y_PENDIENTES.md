@@ -32,6 +32,8 @@
 > la cabecera de `ANALISIS_MODELO_DATOS_TFG.md`— y tiene una consecuencia que conviene no
 > perder de vista: **el sistema depende ahora del worker de cola**. Sin `queue:work`
 > (P1) ningún alumno pasa de las recomendaciones de plantilla.
+> Desde O6 (03/10/2026) tampoco sale **ningún correo de recuperación ni de activación**:
+> `/password/forgot` solo encola `EnviarEnlaceRecuperacion`, y el token se crea en el worker.
 >
 > **Ya no queda ninguna decisión bloqueante abierta:** D1–D8 están todas cerradas. Lo siguiente es S1 (revisión de seguridad por rol) y P1–P2 (despliegue), en ese orden.
 
@@ -114,7 +116,7 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 - CRUD completo: `GET`/`POST`/`GET {id}`/`PUT`/`DELETE` + `PATCH {id}/toggle`
 - Ruta: `/api/institutions` — **cerrada al admin de institución**. Antes estaba bajo `role:admin` y `index()` no filtraba por institución, de modo que el administrador de un centro listaba **todos los centros del SaaS** con su código, dirección y contacto
 - El admin de institución configura lo suyo por `GET`/`PUT /api/system/config`
-- `DELETE /api/institutions/{id}` — **irreversible**: cascada a las 18 tablas de dominio del centro (estudiantes, exámenes, intentos, resultados). Los `users` se borran **a mano y primero** en el controlador, porque `users.institution_id` es `ON DELETE SET NULL` y la cascada sola dejaría cuentas vivas sin institución —e indistinguibles del superadmin por ese campo—. Deja `Log::warning` con quién borró qué, que es la única traza que queda
+- `DELETE /api/institutions/{id}` — **irreversible**: cascada a las 19 tablas de dominio del centro (estudiantes, exámenes, intentos, resultados). Los `users` se borran **a mano y primero** en el controlador, porque `users.institution_id` es `ON DELETE SET NULL` y la cascada sola dejaría cuentas vivas sin institución —e indistinguibles del superadmin por ese campo—. Deja `Log::warning` con quién borró qué, que es la única traza que queda
 
 ---
 
@@ -724,7 +726,7 @@ Las imágenes del documento `CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx` 
 | Paso | ¿Implementado? | Notas |
 |------|---------------|-------|
 | Crear examen (draft/programado) | ✅ | |
-| Notificar disponibilidad al estudiante | ❌ | No hay evento ni notificación push/email |
+| Notificar disponibilidad al estudiante | ✅ | **03/10/2026 (O1).** Al pasar a `active`, el job `NotificarExamenDisponible` deja un aviso en la app (`notifications`, tipo `exam_available`) a los miembros vigentes de los grupos destino con cuenta activa. Sin correo: el alumnado tiene 6–12 años. Endpoints `GET /api/notifications`, `PATCH /api/notifications/{id}/read`, `POST /api/notifications/read-all`. Requiere `queue:work` |
 | Iniciar examen (EnProgreso) | ✅ | `started_at` registrado |
 | Temporizador activo | ✅ | `duration_minutes` validado en submit con 30 s de gracia |
 | Pausar examen | ✅ | `PATCH /attempts/{id}/pause` — registra `paused_at` |
@@ -751,8 +753,8 @@ Las imágenes del documento `CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx` 
 
 **Lo que falta:**
 - [ ] Carga automática del diagnóstico al iniciar sesión del tutor (hoy es una llamada aparte que dispara el frontend)
-- [ ] Generación de ejemplos por tipo de aprendizaje (gráficos/audio alternativo) — el estilo condiciona el *tono* del prompt, no el *formato* de la respuesta, que siempre es texto
-- [ ] Registro de incidencias del tutor: los bloqueos por PII o enlace no permitido solo dejan `Log::warning`, sin tabla ni contador (ver §9.3)
+- [x] ✅ **03/10/2026 (O2): el estilo decide la forma de la respuesta.** Instrucción de formato por estilo en chat y diagnóstico (`config/openai.php` → `tutor.formato`, resuelta por `FormatoPorEstilo`): `visual` pasos y esquemas de texto, `auditivo` texto para leer en voz alta (sin tablas, viñetas ni emojis), `lector` idea principal + lista + definiciones. Las respuestas de `POST /ai/tutor/chat` y `GET /ai/tutor/diagnosis` llevan `presentation` (`visual`/`auditivo`/`lector`/`null`) para que el frontend sepa cómo mostrarla. Generar imágenes o audio se descartó (coste, moderación con menores y backend sin capa de presentación). Texto original: Generación de ejemplos por tipo de aprendizaje (gráficos/audio alternativo) — el estilo condiciona el *tono* del prompt, no el *formato* de la respuesta, que siempre es texto
+- [x] ✅ **Resuelto el 13/09/2026 (D5)** — tabla `ai_tutor_incidents` + `GET /api/platform/ai-tutor-metrics`. Texto original: Registro de incidencias del tutor: los bloqueos por PII o enlace no permitido solo dejan `Log::warning`, sin tabla ni contador (ver §9.3)
 
 > **Corregido el 08/08/2026:** este apartado listaba «flujos interactivos estructurados»
 > como pendiente mientras la [sección 5](#-brechas-vs-tfg--completado-09052026) los daba
@@ -797,26 +799,33 @@ documento lleva al informe se quedaron desfasadas al aplicarse su propia migraci
 
 #### Cifras reales, para la figura de modelo de datos del informe
 
-| Magnitud | Decía `ANALISIS_MODELO_DATOS_TFG.md` §9.2 | Real (tras H1 y H8) |
-|---|---|---|
-| Claves foráneas | 42 | **47** |
-| Entidades | 17 | **15** |
-| Tablas pivote | 4 | **4** |
+| Magnitud | Decía `ANALISIS_MODELO_DATOS_TFG.md` §9.2 | Real al 08/08 (tras H1 y H8) | Real al 03/10/2026 |
+|---|---|---|---|
+| Claves foráneas | 42 | 47 | **56** (+1 de `notifications`, framework) |
+| Entidades | 17 | 15 | **17** |
+| Tablas pivote | 4 | 4 | **4** |
+
+> **Revisado el 03/10/2026.** Desde el 08/08 se sumaron dos entidades —`teacher_assignments`
+> (+4 FK) y `ai_tutor_incidents` (+3 FK)— y dos FK en tablas existentes:
+> `ai_recommendations.attempt_id` y `study_resources.subject_id`. Que vuelva a haber
+> 17 entidades es coincidencia: no son las 17 que decía §9.2. Desglose por migración en
+> §1.1 de `ANALISIS_MODELO_DATOS_TFG.md`.
 
 - Las 42 eran el conteo **previo** a `align_fk_constraints_with_tfg_model`, que añadió 3;
   el 08/08 se añadieron 2 más (H8). §2 de aquel documento sí acierta al decir «36 en el
   boceto, 42 en la implementación» como foto histórica; §9.2 lo repetía como si fuera el
   estado actual. **Ya corregido allí.**
-- **19 tablas de dominio** = 15 entidades + 4 pivotes (`group_students`, `exam_targets`,
-  `student_answer_options`, `student_subjects`). Aparte, 5 de framework: `migrations`,
-  `jobs`, `failed_jobs`, `password_reset_tokens`, `personal_access_tokens`.
-- 16 tienen modelo Eloquent (las 15 entidades + `StudentSubject`); 3 pivotes no lo tienen.
+- **21 tablas de dominio** = 17 entidades + 4 pivotes (`group_students`, `exam_targets`,
+  `student_answer_options`, `student_subjects`). Aparte, 6 de framework: `migrations`,
+  `jobs`, `failed_jobs`, `password_reset_tokens`, `personal_access_tokens` y `notifications`
+  (03/10/2026, O1; su FK `notifiable_id → users` es la 57.ª).
+- 18 tienen modelo Eloquent (las 17 entidades + `StudentSubject`); 3 pivotes no lo tienen.
 
 Reproducible:
 
 ```bash
-grep -c "ADD CONSTRAINT .* FOREIGN KEY" database/sql/01_schema.sql   # 47
-grep -c "^CREATE TABLE public\." database/sql/01_schema.sql          # 24 (19 + 5)
+grep -c "ADD CONSTRAINT .* FOREIGN KEY" database/sql/01_schema.sql   # 57 (56 dominio + 1 notifications)
+grep -c "^CREATE TABLE public\." database/sql/01_schema.sql          # 27 (21 + 6)
 ```
 
 #### Lo que sí se sostiene
@@ -834,6 +843,8 @@ alineación se ciñó a lo que declaraba el boceto del TFG, y el boceto no las c
 
 Estado final: **las 18 con FK**, 17 en `CASCADE` y solo `users.institution_id` en
 `SET NULL` — deliberado, dar de baja un centro no borra a las personas.
+**Al 03/10/2026 son 20** (se sumaron `teacher_assignments` y `ai_tutor_incidents`, ambas
+en `CASCADE`): 19 en `CASCADE` y `users` en `SET NULL`.
 
 Las dos que pasaron a `CASCADE` eran **inalcanzables** (no hay `DELETE /institutions`,
 solo `toggle`). Se arreglaron por eso precisamente: el día que ese endpoint exista,
@@ -852,7 +863,13 @@ fila que rompe.
 `ANALISIS_MODELO_DATOS_TFG.md` §3.4 la presenta al informe como relación real del
 sistema. **Cableada el 08/08/2026** (H4): `POST /ai/tutor/chat` acepta `exam_id`.
 
-#### Relaciones Eloquent que faltan respecto a las FK
+#### Relaciones Eloquent que faltan respecto a las FK → ✅ cerrado el 03/10/2026 (O8)
+
+Cada FK del esquema tiene ahora su `belongsTo` (eran **9** modelos sin `institution()`, con
+`StudentSubject`, más `AiRecommendation::attempt()` y `AiTutorIncident::student()/session()`),
+e `Institution` y `Subject` declaran un `hasMany` por cada FK que les apunta. Lo vigila
+`tests/Feature/Db/EloquentRelationsMatchFksTest.php`, que lee `pg_constraint` y falla si una
+FK nueva no tiene relación. Texto original, para contexto:
 
 No son fallos, pero si el diagrama de clases (§9.3 de aquel documento) se dibuja
 leyendo los modelos, saldrá incompleto:
@@ -1233,11 +1250,11 @@ La migración ya es idempotente ante eso, pero el comando correcto para regenera
 
 > 📄 Contexto y evidencia en [§3.5](#35-las-relaciones-informe-vs-sistema-revisado-08082026) y [§3.6](#36-el-tutor-lo-que-hace-vs-lo-que-el-informe-dice).
 
-- [ ] 🔴 **Decidir qué dice el informe sobre las recomendaciones post-examen.** Hoy el submit las genera con plantillas, no con IA; el informe afirma lo contrario en cuatro pasajes ([122], [222], [255], [736]). Opciones: (a) diferir la generación IA a la cola, o (b) redactar el diseño real. **Es la decisión más expuesta del TFG** y condiciona la redacción del capítulo del tutor.
-- [ ] 🔴 **`questions` no tiene tema, indicador ni dificultad**, y `study_resources` no tiene `subject_id`. Sin esos metadatos no hay diagnóstico por tema, ni «temas más recomendados» para el docente ([173]), ni recurso por materia. Bloquea también el entregable «banco de 60 ítems con metadatos» de [171]. Decisión de alcance: añadir las columnas o recortar la promesa en [171], [222], [263] y [276].
-- [ ] 🟡 **El aviso de que la respuesta viene de una IA no está en el contrato.** [397] promete que el sistema lo informa «cada vez que el tutor intervenga»; la respuesta del chat es `{session_id, reply, message_count}`. O viaja en la respuesta, o queda como responsabilidad escrita del frontend.
+- [x] ✅ **Resuelto el 13/09/2026 (D1)** — opción (a): el análisis IA se difiere a la cola (`defer_ai_recommendations_to_queue`). Texto original: 🔴 **Decidir qué dice el informe sobre las recomendaciones post-examen.** Hoy el submit las genera con plantillas, no con IA; el informe afirma lo contrario en cuatro pasajes ([122], [222], [255], [736]). Opciones: (a) diferir la generación IA a la cola, o (b) redactar el diseño real. **Es la decisión más expuesta del TFG** y condiciona la redacción del capítulo del tutor.
+- [x] ✅ **Resuelto el 13/09/2026** — `questions.topic/indicator/difficulty` y `study_resources.subject_id` (`add_curricular_metadata`). Texto original: 🔴 **`questions` no tiene tema, indicador ni dificultad**, y `study_resources` no tiene `subject_id`. Sin esos metadatos no hay diagnóstico por tema, ni «temas más recomendados» para el docente ([173]), ni recurso por materia. Bloquea también el entregable «banco de 60 ítems con metadatos» de [171]. Decisión de alcance: añadir las columnas o recortar la promesa en [171], [222], [263] y [276].
+- [x] ✅ **Resuelto (D4)** — la respuesta del tutor trae `ai_notice`. Texto original: 🟡 **El aviso de que la respuesta viene de una IA no está en el contrato.** [397] promete que el sistema lo informa «cada vez que el tutor intervenga»; la respuesta del chat es `{session_id, reply, message_count}`. O viaja en la respuesta, o queda como responsabilidad escrita del frontend.
 - [x] ~~**`students.institution_id` y `group_students.institution_id` en NO ACTION**~~ → **Resuelto (H8).** Ver también §7.2 de `ANALISIS_MODELO_DATOS_TFG.md`.
-- [x] ~~**Corregir las cifras del modelo de datos en `ANALISIS_MODELO_DATOS_TFG.md` §9.2**~~ → **Corregidas.** Son **47 FK** y 19 tablas de dominio (15 entidades + 4 pivotes), y el estado final está ahora en §1.1 de aquel documento.
+- [x] ~~**Corregir las cifras del modelo de datos en `ANALISIS_MODELO_DATOS_TFG.md` §9.2**~~ → **Corregidas.** Eran **47 FK** y 19 tablas de dominio (15 entidades + 4 pivotes) al 08/08; **actualizadas el 03/10/2026 a 56 FK y 21 tablas de dominio (17 entidades + 4 pivotes)**. El estado final está en §1.1 de aquel documento.
 - [x] ~~**Aplicar a producción las dos migraciones del 08/08 y regenerar `01_schema.sql`**~~ → **Hecho el 08/08/2026.** `migrate --force` + `schema:dump-sql` contra Supabase. Verificado en `pg_constraint`: 47 FK, las 5 tocadas correctas, y de las 18 columnas `institution_id` la única que no cascadea es `users` (`SET NULL`, deliberado). Datos idénticos antes y después (73 usuarios, 65 estudiantes, 206 materias, 3 intentos). **`ENABLE ROW LEVEL SECURITY` conservado en las 24 tablas** — era el riesgo de regenerar el artefacto. El dump solo reordenó dos bloques respecto a la edición a mano (pg_dump ordena por nombre de constraint); el contenido coincidía.
 - [ ] 📄 **Llevar al `.docx` las contradicciones de `ANALISIS_MODELO_DATOS_TFG.md` §10.** Ocho internas (§10.1) y once contra el sistema (§10.2). ⚠️ **Los números de párrafo de la §9 están desfasados**: el `.docx` se editó después. Equivalencias en §10.3, y la recomendación es buscar por texto, no por índice.
 
@@ -1249,7 +1266,7 @@ La migración ya es idempotente ante eso, pero el comando correcto para regenera
 - [x] ~~**Validar empíricamente el modelo de concurrencia**~~ → **Ejecutado 03/08/2026 (G11).** Prueba de carga con k6 contra base local desechable. Validado: coste por petición plano, throughput escala ×6,6 de 1 a 8 workers, saturación limpia sin errores 5xx, BD no es el cuello. Resultados en `ANALISIS_CONCURRENCIA.md` §6.
 - [ ] **Medir el RTT real desde el contenedor desplegado.** Es lo único que no se puede medir desde desarrollo (desde el portátil son ~152 ms) y es el parámetro que domina todo el modelo. `psql "$DATABASE_URL" -c '\timing on' -c 'SELECT 1;'` desde producción. Ver `ANALISIS_CONCURRENCIA.md` §6.5.
 
-- [ ] **Detección de drift esquema↔migraciones no automatizada.** El drift de `tokenable_id` (G3) vivió meses sin detectarse porque `SchemaIntegrityTest` corre sobre `01_schema.sql`, no contra las migraciones. El chequeo real hay que hacerlo a mano: BD limpia → `php artisan migrate` apuntando ahí → `php artisan schema:dump-sql --output=<tmp>` → `git diff --no-index` contra el artefacto. Si aparece algo más que la línea de versión de `pg_dump`, hay drift. **Pendiente:** empaquetarlo como comando `schema:check-drift` para poder correrlo en CI. *(Desde D8 el `ENABLE ROW LEVEL SECURITY` ya está en las migraciones, así que dejó de ser una excepción esperada en esta comparación.)*
+- [x] ✅ **Resuelto el 03/10/2026 (O4): `php artisan schema:check-drift`.** Crea una base temporal en el mismo servidor, la migra desde cero, la vuelca con `schema:dump-sql` y la compara con el artefacto ignorando solo las dos cabeceras de versión de `pg_dump`; borra la base pase lo que pase. Sale con 1 si hay drift y muestra el diff. Se niega con la configuración cacheada y, salvo `--allow-remote`, con un host que no sea local (no corre contra Supabase por accidente). Uso local: `php artisan --env=testing schema:check-drift` (con `PG_DUMP_PATH` si `pg_dump` no está en el PATH). Primera ejecución: **sin drift**. Texto original: **Detección de drift esquema↔migraciones no automatizada.** El drift de `tokenable_id` (G3) vivió meses sin detectarse porque `SchemaIntegrityTest` corre sobre `01_schema.sql`, no contra las migraciones. El chequeo real hay que hacerlo a mano: BD limpia → `php artisan migrate` apuntando ahí → `php artisan schema:dump-sql --output=<tmp>` → `git diff --no-index` contra el artefacto. Si aparece algo más que la línea de versión de `pg_dump`, hay drift. **Pendiente:** empaquetarlo como comando `schema:check-drift` para poder correrlo en CI. *(Desde D8 el `ENABLE ROW LEVEL SECURITY` ya está en las migraciones, así que dejó de ser una excepción esperada en esta comparación.)*
 - [x] ~~**`ENABLE ROW LEVEL SECURITY` fuera de las migraciones**~~ → **Resuelto el 13/09/2026 (D8).** La migración `2026_09_13_000004` lo declara sobre **26 tablas** (las 20 de dominio, incluida la nueva `ai_tutor_incidents`, más las 5 del framework y `institutions`). Es idempotente, así que en Supabase —donde ya estaba— no cambió nada; verificado tras aplicarla: la app sigue leyendo con normalidad. **Efecto colateral que quita una trampa:** `schema:dump-sql` ya recoge el RLS desde la propia base, así que dejó de haber que repegar el bloque a mano tras cada regeneración.
   - ⚠️ **Corrección del 15/09/2026:** «la app sigue leyendo con normalidad» no era la buena noticia que parecía. Seguía leyendo porque **el RLS no la afecta** (rol con `rolbypassrls`) y porque **no hay ni una sola política** (`pg_policies` = 0 sobre las 26 tablas). Lo que este RLS hace es denegar todo **a los demás roles**; el aislamiento entre instituciones no lo da la base. Ver §5.1.
 
@@ -1353,6 +1370,9 @@ y el worker, o la variable, o una conexión aparte.
 | GET | `/api/auth/me` | Usuario autenticado |
 | POST | `/api/auth/logout` | Revocar el token actual |
 | POST | `/api/password/change` | Cambiar la propia contraseña |
+| GET | `/api/notifications` | Mis notificaciones en la app (`?unread=1`; `meta.unread_count`) — cualquier rol |
+| PATCH | `/api/notifications/{id}/read` | Marcar una como leída (ajena o inexistente → 404) |
+| POST | `/api/notifications/read-all` | Marcar todas como leídas (`data.marked`) |
 
 > También existe `GET /api/documentation` (interfaz Swagger servida por L5-Swagger
 > sobre el `api-docs.json` que genera `php artisan openapi:generate`). No es un
@@ -1460,7 +1480,7 @@ y el worker, o la variable, o una conexión aparte.
 | GET | `/api/institutions/{id}` | Ver institución + recuento de cuentas por rol |
 | PUT | `/api/institutions/{id}` | Editar institución |
 | PATCH | `/api/institutions/{id}/toggle` | Activar/desactivar institución |
-| DELETE | `/api/institutions/{id}` | ⚠️ **Irreversible**: cascada a las 18 tablas del centro + borra sus cuentas |
+| DELETE | `/api/institutions/{id}` | ⚠️ **Irreversible**: cascada a las 19 tablas del centro + borra sus cuentas |
 | POST | `/api/institutions/{institution}/admins` | Crear administrador del centro (nace inactivo, recibe enlace) |
 | GET | `/api/institution-admins` | Lista administradores (filtros: `institution_id`, `status`, `q`) |
 | GET/PUT | `/api/institution-admins/{id}` | Ver/editar administrador (404 si no es `user_type=admin`) |
@@ -1499,11 +1519,13 @@ Ambos endpoints aceptan el lote por **`student_user_ids`** (lista de uuid) **o**
 ```jsonc
 {
   "student_user_ids": ["uuid", "..."],   // o "from_group_id": "uuid"
+  "exclude_student_user_ids": ["uuid"],  // opcional, SOLO con from_group_id (422 con lista)
   "to_group_id": "uuid",                 // requerido
   "sync_student_fields": true            // opcional (default true)
 }
 ```
 
+- `exclude_student_user_ids` (03/10/2026, O5) quita ids del grupo origen antes de mover; los excluidos conservan su membresía. La respuesta trae `excluded` con los que **de verdad** se quitaron (un id que no estaba en el grupo no cuenta). Si se excluye a todos: 422 con `excluded`.
 - Cierra con `left_at` las membresías activas en otros grupos (conserva historial).
 - Da de alta en el destino; si el estudiante ya estuvo ahí y se fue, reabre la fila con `joined_at` nuevo.
 - Los que **ya están activos** en el destino no se tocan (salen como `already_in_group`, no como `moved`).
@@ -1578,7 +1600,10 @@ Notas del paso 5 y sus efectos sobre repitentes:
    ```
    `POST /api/bulk/reset-progress`. Sin `subject_ids` resetea todas sus materias; con `subject_ids` solo las indicadas (útil si arrastra únicamente algunas).
 
-> **Mejora opcional no implementada:** un `exclude_student_user_ids` en `reassign-group` permitiría hacer los pasos 2 y 3 sin depender del orden. Con el orden de arriba no es necesario.
+> **Alternativa sin depender del orden (03/10/2026, O5):** `exclude_student_user_ids` en `reassign-group` permite hacer el paso 3 de una vez, excluyendo a los repitentes, y moverlos después con el paso 2:
+> ```jsonc
+> { "from_group_id": "<7A-2026>", "exclude_student_user_ids": ["<repitentes>"], "to_group_id": "<8A-2027>" }
+> ```
 
 ---
 
@@ -1678,6 +1703,7 @@ Ya puede entrar → POST /api/auth/login  (exige status === active)
 Reglas que sostienen el flujo:
 
 - **`/password/forgot` responde a cuentas `active` e `inactive`, nunca a `suspended`.** Sin esto, quien perdiera el correo de alta quedaba bloqueado para siempre. Una cuenta suspendida la bloqueó un administrador a propósito y no debe tener vía de vuelta.
+- **La petición no hace nada que dependa de la cuenta (O6, 03/10/2026).** Solo valida y encola `EnviarEnlaceRecuperacion($email)`; buscar al usuario, crear el token y enviar el correo ocurre en el worker. Antes, aun con el bcrypt igualado, quedaban ~13 ms de diferencia (INSERT del token + encolado del correo) con los que se podía saber qué correos están registrados. Lo vigila un test que exige **las mismas consultas** para un correo registrado y uno inexistente. Consecuencia: sin `queue:work` no llega el enlace.
 - **El correo se elige según el estado:** `inactive` recibe `PasswordSetupMail` («activá tu cuenta»); el resto, `PasswordResetMail`. A quien nunca tuvo contraseña no se le habla de recuperarla.
 - **Solo se activa desde `inactive`.** Un reset sobre una cuenta `suspended` cambia la contraseña pero **no la reactiva**.
 - La columna `users.status` pasó a `DEFAULT 'inactive'` (migración `2026_08_07_000001`) para que la base no contradiga la regla. **No modifica filas existentes.**

@@ -217,8 +217,8 @@ npm run validar-diagramas      # scripts/validar-diagramas.mjs
 <code>Object.defineProperty</code>, no con una asignación directa.</p>
 </blockquote>
 <p>Si cambia el esquema, las cifras de la §1 se recomprueban con:</p>
-<pre><code class="language-bash">grep -c &quot;ADD CONSTRAINT .* FOREIGN KEY&quot; database/sql/01_schema.sql   # 51
-grep -c &quot;^CREATE TABLE public\.&quot;        database/sql/01_schema.sql   # 25 (20 dominio + 5 framework)
+<pre><code class="language-bash">grep -c &quot;ADD CONSTRAINT .* FOREIGN KEY&quot; database/sql/01_schema.sql   # 57 (56 dominio + 1 notifications)
+grep -c &quot;^CREATE TABLE public\.&quot;        database/sql/01_schema.sql   # 27 (21 dominio + 6 framework)
 </code></pre>
 <hr />
 <h2>Índice</h2>
@@ -235,12 +235,13 @@ grep -c &quot;^CREATE TABLE public\.&quot;        database/sql/01_schema.sql   #
 </ol>
 <hr />
 <h2>1. Modelo entidad-relación</h2>
-<p><strong>20 tablas de dominio</strong> — 15 entidades y 5 pivotes — con <strong>51 claves foráneas</strong>. Aparte
-quedan 5 tablas de framework (<code>migrations</code>, <code>jobs</code>, <code>failed_jobs</code>, <code>password_reset_tokens</code>,
-<code>personal_access_tokens</code>), que no son del dominio.</p>
-<p>Va en <strong>cuatro vistas</strong>, y no por capricho de maquetación: un ERD de 20 entidades con todos
+<p><strong>21 tablas de dominio</strong> — 17 entidades y 4 pivotes — con <strong>56 claves foráneas</strong>. Aparte
+quedan 6 tablas de framework (<code>migrations</code>, <code>jobs</code>, <code>failed_jobs</code>, <code>password_reset_tokens</code>,
+<code>personal_access_tokens</code> y <code>notifications</code>), que no son del dominio; <code>notifications</code> aporta
+la 57.ª FK (<code>notifiable_id → users</code>).</p>
+<p>Va en <strong>cuatro vistas</strong>, y no por capricho de maquetación: un ERD de 21 tablas con todos
 sus atributos es ilegible a cualquier tamaño. La §1.1 da la forma completa del modelo; las
-§1.2 a §1.4 entran al detalle por área. Entre las tres detalladas están las 20 tablas, sin
+§1.2 a §1.4 entran al detalle por área. Entre las tres detalladas están las 21 tablas, sin
 repetir ninguna.</p>
 <p>En las cuatro <strong>se omiten las aristas de <code>institution_id</code></strong>: las lleva <em>toda</em> tabla de dominio
 y saturarían la figura. Van en la <a href="#2-aislamiento-multi-tenant">§2</a>, que es donde además
@@ -296,7 +297,12 @@ enseñar el conjunto de un vistazo.</p>
     exams ||--o{ ai_recommendations : &quot;SET NULL&quot;
     exams ||--o{ ai_chat_sessions : &quot;SET NULL&quot;
     exams ||--o{ calendar_events : &quot;SET NULL&quot;
-    groups ||--o{ calendar_events : &quot;SET NULL&quot;</pre>
+    groups ||--o{ calendar_events : &quot;SET NULL&quot;
+
+    exam_attempts ||--o{ ai_recommendations : &quot;origina, CASCADE&quot;
+    subjects ||--o{ study_resources : &quot;SET NULL&quot;
+    ai_chat_sessions ||--o{ ai_tutor_incidents : &quot;SET NULL&quot;
+    users ||--o{ ai_tutor_incidents : &quot;SET NULL&quot;</pre>
   </div>
 </figure>
 <h3>1.2 Personas y estructura académica</h3>
@@ -452,6 +458,9 @@ autor tenga asignación <strong>en la materia del examen</strong>.</p>
         uuid id PK
         uuid exam_id FK
         text question_text
+        string topic &quot;nullable, eje del diagnóstico por tema&quot;
+        string indicator &quot;nullable, indicador curricular&quot;
+        string difficulty &quot;basic intermediate advanced, nullable&quot;
         enum question_type &quot;multiple_choice true_false short_answer essay&quot;
         int points
         text correct_answer_text &quot;oculto al estudiante&quot;
@@ -481,6 +490,7 @@ autor tenga asignación <strong>en la materia del examen</strong>.</p>
         numeric score
         numeric max_score
         enum grade_status &quot;pending graded completed&quot;
+        enum ai_recommendations_status &quot;preparing ready failed, cola&quot;
     }
     student_answers {
         uuid id PK
@@ -501,7 +511,13 @@ autor tenga asignación <strong>en la materia del examen</strong>.</p>
 </figure>
 <h3>1.4 Seguimiento, tutor IA y apoyo</h3>
 <p>Lo que se deriva de la evaluación —el dominio por materia y las recomendaciones— más el
-material de estudio y el calendario.</p>
+registro de incidencias del tutor, el material de estudio y el calendario.</p>
+<blockquote>
+<p><strong><code>ai_tutor_incidents</code> apunta a <code>users</code>, no a <code>students</code>, y con <code>SET NULL</code>.</strong> Es una
+métrica de calidad del tutor (criterio del 75 % de mensajes válidos): tiene que sobrevivir
+a que se borre el estudiante o la sesión, así que solo <code>institution_id</code> cascadea. No guarda
+el texto del mensaje, solo el tipo y la etapa.</p>
+</blockquote>
 <figure class="figura" id="figura-4">
   <div class="figura__barra">
     <span class="figura__n">Diagrama 4</span>
@@ -520,10 +536,14 @@ material de estudio y el calendario.</p>
     students ||--o{ ai_recommendations : &quot;recibe&quot;
     subjects ||--o{ ai_recommendations : &quot;sobre&quot;
     exams ||--o{ ai_recommendations : &quot;SET NULL&quot;
+    exam_attempts ||--o{ ai_recommendations : &quot;origina, CASCADE&quot;
     students ||--o{ ai_chat_sessions : &quot;conversa&quot;
     subjects ||--o{ ai_chat_sessions : &quot;SET NULL&quot;
     exams ||--o{ ai_chat_sessions : &quot;SET NULL&quot;
+    ai_chat_sessions ||--o{ ai_tutor_incidents : &quot;SET NULL&quot;
+    users ||--o{ ai_tutor_incidents : &quot;SET NULL&quot;
     users ||--o{ study_resources : &quot;publica, SET NULL&quot;
+    subjects ||--o{ study_resources : &quot;SET NULL&quot;
     exams ||--o{ calendar_events : &quot;SET NULL&quot;
     groups ||--o{ calendar_events : &quot;SET NULL&quot;
 
@@ -539,6 +559,8 @@ material de estudio y el calendario.</p>
         uuid student_user_id FK
         uuid subject_id FK
         uuid exam_id FK &quot;nullable, SET NULL&quot;
+        uuid attempt_id FK &quot;nullable, CASCADE&quot;
+        enum generated_by &quot;heuristic ai&quot;
         enum recommendation_type &quot;strength weakness resource action&quot;
         text recommendation_text
         json resource &quot;URL de la lista blanca&quot;
@@ -552,8 +574,17 @@ material de estudio y el calendario.</p>
         jsonb messages &quot;recortado a los últimos 60&quot;
         timestamp ended_at
     }
+    ai_tutor_incidents {
+        uuid id PK
+        uuid student_user_id FK &quot;users, nullable, SET NULL&quot;
+        uuid session_id FK &quot;nullable, SET NULL&quot;
+        timestamp occurred_at
+        enum type &quot;pii too_short too_long blocked_url model_error prompt_injection&quot;
+        enum stage &quot;chat diagnosis&quot;
+    }
     study_resources {
         uuid id PK
+        uuid subject_id FK &quot;nullable, SET NULL&quot;
         string title
         enum resource_type &quot;video article exercise book pdf link other&quot;
         string url &quot;validado contra lista blanca&quot;
@@ -616,7 +647,7 @@ material de estudio y el calendario.</p>
 </table>
 <hr />
 <h2>2. Aislamiento multi-tenant</h2>
-<p>Cada fila del dominio lleva <code>institution_id</code>. <strong>Las 19 columnas tienen clave foránea</strong>, y
+<p>Cada fila del dominio lleva <code>institution_id</code>. <strong>Las 20 columnas tienen clave foránea</strong>, y
 todas cascadean menos una.</p>
 <figure class="figura" id="figura-5">
   <div class="figura__barra">
@@ -633,12 +664,12 @@ todas cascadean menos una.</p>
     <pre class="mermaid">flowchart TB
     INST[&quot;institutions&lt;br/&gt;&lt;i&gt;raíz del tenant&lt;/i&gt;&quot;]
 
-    subgraph CASCADE[&quot;18 tablas · ON DELETE CASCADE&quot;]
+    subgraph CASCADE[&quot;19 tablas · ON DELETE CASCADE&quot;]
         direction LR
         A[&quot;students · groups · subjects&lt;br/&gt;exams · questions · question_options&quot;]
         B[&quot;exam_attempts · student_answers&lt;br/&gt;student_answer_options · student_progress&quot;]
         C[&quot;ai_recommendations · ai_chat_sessions&lt;br/&gt;student_subjects · group_students · exam_targets&quot;]
-        D[&quot;study_resources · calendar_events · teacher_assignments&quot;]
+        D[&quot;study_resources · calendar_events · teacher_assignments · ai_tutor_incidents&quot;]
     end
 
     SETNULL[&quot;users&lt;br/&gt;&lt;b&gt;ON DELETE SET NULL&lt;/b&gt;&quot;]
@@ -665,6 +696,9 @@ en la aplicación — si detecta contexto HTTP sin <code>institution_id</code>, 
 vez de devolver datos de más. Las claves foráneas lo respaldan en la base: sin ellas era
 posible escribir un <code>institution_id</code> de una institución inexistente y romper el aislamiento
 por debajo del ORM.</p>
+<p>Una excepción en la capa de aplicación: <strong><code>ai_tutor_incidents</code> cascadea como las demás, pero
+su modelo no lleva <code>TenantScoped</code></strong> porque solo la consulta el superadmin, y en agregado. Ver
+la §3.3.</p>
 <p><strong>El superadmin es la excepción, y por omisión en vez de por permiso.</strong> Es el operador de la
 plataforma —da de alta centros y a sus administradores— y no pertenece a ninguna institución:
 su <code>institution_id</code> es <code>NULL</code>. Eso significa que <code>SetTenantFromAuth</code> nunca llega a vincular un
@@ -677,7 +711,7 @@ un centro listaba todos los centros del SaaS. Hoy el admin de institución no ti
 ruta hacia <code>/api/institutions</code>; gestiona lo suyo por <code>/api/system/config</code>.</p>
 <hr />
 <h2>3. Diagrama de clases</h2>
-<p>16 modelos Eloquent: las 15 entidades más <code>StudentSubject</code>. Los 3 pivotes restantes
+<p>18 modelos Eloquent: las 17 entidades más <code>StudentSubject</code>. Los 3 pivotes restantes
 (<code>group_students</code>, <code>exam_targets</code>, <code>student_answer_options</code>) se manipulan por <em>query builder</em>
 y no tienen modelo.</p>
 <p>Va en tres vistas por la misma razón que el ERD. La §3.1 incluye los <em>traits</em>, que son lo que
@@ -903,6 +937,7 @@ y <code>ReportStrategyService</code>.</p>
     }
     class AiRecommendation {
         +AiRecommendationType recommendation_type
+        +AiGenerationSource generated_by
         +text recommendation_text
         +json resource
         +timestamp generated_at
@@ -917,6 +952,12 @@ y <code>ReportStrategyService</code>.</p>
         +subject()
         +exam()
     }
+    class AiTutorIncident {
+        +AiIncidentType type
+        +AiIncidentStage stage
+        +timestamp occurred_at
+        +institution()
+    }
     class StudyResource {
         +ResourceType resource_type
         +string url
@@ -924,6 +965,7 @@ y <code>ReportStrategyService</code>.</p>
         +int grade_min
         +int grade_max
         +institution()
+        +subject()
         +creator()
     }
     class CalendarEvent {
@@ -943,6 +985,11 @@ y <code>ReportStrategyService</code>.</p>
     TenantScoped &lt;|.. CalendarEvent</pre>
   </div>
 </figure>
+<p><strong><code>AiTutorIncident</code> no usa <code>TenantScoped</code>, igual que <code>User</code> e <code>Institution</code>, y es
+deliberado.</strong> Lo lee el superadmin, que no tiene <code>tenant_id</code>: con el <em>global scope</em> puesto, toda consulta suya
+fallaría. El aislamiento se sostiene porque <code>institution_id</code> se escribe siempre explícito,
+desde el alumno que originó la incidencia, y el único endpoint que la expone
+(<code>GET /api/platform/ai-tutor-metrics</code>) devuelve solo agregados.</p>
 <p>Los tres <em>traits</em> son lo que no se ve en el esquema y sostiene la seguridad por rol:
 <code>RevelaRespuestas</code> y <code>AcotaExamenAlEstudiante</code> deciden <strong>qué campos ve cada rol</strong> sobre las
 mismas filas, y <code>Exam::scopeVisibleTo()</code> centraliza qué exámenes puede ver un alumno —
@@ -1468,7 +1515,7 @@ promovidos. Así no hace falta ningún parámetro de exclusión.</p>
 <tr>
 <td>— <em>(no existe)</em></td>
 <td>§1 Modelo entidad-relación</td>
-<td><strong>Nueva.</strong> El informe no tiene ERD pese a tener 20 tablas y 51 FK</td>
+<td><strong>Nueva.</strong> El informe no tiene ERD pese a tener 21 tablas y 56 FK</td>
 </tr>
 <tr>
 <td>— <em>(no existe)</em></td>
@@ -1478,7 +1525,7 @@ promovidos. Así no hace falta ningún parámetro de exclusión.</p>
 <tr>
 <td>Figura 2 · Diagrama de clases</td>
 <td>§3</td>
-<td>Rehacer: faltan <code>AiChatSession</code>, <code>StudentSubject</code> y <code>TeacherAssignment</code></td>
+<td>Rehacer: faltan <code>AiChatSession</code>, <code>StudentSubject</code>, <code>TeacherAssignment</code> y <code>AiTutorIncident</code></td>
 </tr>
 <tr>
 <td>Figura 7 y 8 · Arquitectura</td>

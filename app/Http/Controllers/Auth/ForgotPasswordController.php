@@ -5,15 +5,12 @@ namespace App\Http\Controllers\Auth;
 use App\Domain\Auth\PasswordPolicy;
 use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
-use App\Mail\PasswordResetMail;
-use App\Mail\PasswordSetupMail;
+use App\Jobs\EnviarEnlaceRecuperacion;
 use App\Models\Admin\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 
 class ForgotPasswordController extends Controller
@@ -90,60 +87,18 @@ class ForgotPasswordController extends Controller
     ]);
 
     try {
-        $user = User::where('email', $email)->first();
-
         /*
-         | Se envía tanto a cuentas activas como a las que están INACTIVAS, y
-         | nunca a las suspendidas.
+         | La petición hace lo MISMO exista la cuenta o no: encolar un job con
+         | el correo. Buscar al usuario, generar el token y enviar el enlace
+         | ocurre en el worker, donde el tiempo no lo ve quien pregunta.
          |
-         | «Inactiva» significa aquí «dada de alta pero su dueño todavía no ha
-         | definido contraseña». Si no se les enviara, quien perdiera el correo
-         | de alta quedaría bloqueado para siempre, sin más salida que pedirle
-         | al administrador que lo reenvíe.
-         |
-         | «Suspendida» es otra cosa: la bloqueó un administrador a propósito, y
-         | un enlace de recuperación sería una vía para volver a entrar.
+         | Antes todo eso corría aquí, y aunque la respuesta era genérica el
+         | tiempo delataba qué correos están dados de alta: primero 91 ms frente
+         | a 3 ms (bcrypt solo para los registrados), y tras igualar el bcrypt,
+         | todavía ~13 ms (el INSERT del token y el encolado del correo). Detalle
+         | en `EnviarEnlaceRecuperacion`.
          */
-        $puedeRecibirlo = $user !== null && $user->status !== UserStatus::Suspended;
-
-        /*
-         | El token se genera y se hashea SIEMPRE, exista la cuenta o no.
-         |
-         | La respuesta ya era genérica, pero el TIEMPO delataba: se salía por
-         | un `return` temprano cuando el correo no existía, saltándose el
-         | `Hash::make`, que es bcrypt y domina el coste de la petición. Medido
-         | con BCRYPT_ROUNDS=10: **91 ms para un correo registrado frente a 3 ms
-         | para uno inexistente**, 28x de diferencia. Cronometrando las
-         | respuestas se podía sacar la lista de correos dados de alta.
-         |
-         | Pagando el bcrypt en los dos caminos, la diferencia que queda es un
-         | INSERT y el encolado del correo: unos pocos ms sobre una base de ~95,
-         | por debajo del ruido de red.
-         */
-        $tokenPlain = Str::random(64);
-        $tokenHash  = Hash::make($tokenPlain);
-
-        // También se ejecuta siempre: si el correo no existe borra 0 filas.
-        DB::table('password_reset_tokens')->where('email', $email)->delete();
-
-        if ($puedeRecibirlo) {
-            DB::table('password_reset_tokens')->insert([
-                'email'      => $email,
-                'token'      => $tokenHash,
-                'created_at' => now(),
-            ]);
-
-            // El correo que toca según el caso: quien nunca activó su cuenta
-            // recibe «activá tu cuenta», no «recuperar contraseña» — que le
-            // hablaría de una contraseña que nunca llegó a tener.
-            // Ambos Mailables son ShouldQueue: el envío real lo hace el worker,
-            // la request no se bloquea esperando al SMTP.
-            $correo = $user->status === UserStatus::Inactive
-                ? new PasswordSetupMail($tokenPlain, $user)
-                : new PasswordResetMail($tokenPlain, $user);
-
-            Mail::to($email)->queue($correo);
-        }
+        EnviarEnlaceRecuperacion::dispatch($email);
 
         return $genericResponse;
 

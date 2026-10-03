@@ -8,6 +8,7 @@ use App\Enums\LearningStyle;
 use App\Models\Admin\User;
 use App\Models\Academic\Group;
 use App\Models\Exams\ExamAttempt;
+use App\Models\Admin\Institution;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -72,6 +73,11 @@ class Student extends Model
     /* =========================
      | Relaciones
      ========================= */
+
+    public function institution()
+    {
+        return $this->belongsTo(Institution::class);
+    }
 
     public function user()
     {

@@ -3,6 +3,7 @@
 namespace App\Models\Students;
 
 use App\Models\Academic\Subject;
+use App\Models\Admin\Institution;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -42,6 +43,11 @@ class StudentProgress extends Model
         'reset_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
+
+    public function institution()
+    {
+        return $this->belongsTo(Institution::class);
+    }
 
     public function student()
     {

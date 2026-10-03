@@ -183,6 +183,41 @@ return [
             'sin_grado' => 'No sabes en qué grado está: usa lenguaje sencillo de primaria, '
                 . 'evita tecnicismos y no des por supuesta una lectura rápida.',
         ],
+
+        /*
+        |----------------------------------------------------------------------
+        | Formato de la respuesta por estilo de aprendizaje (O2)
+        |----------------------------------------------------------------------
+        |
+        | El estilo solo cambiaba el TONO («usa analogías sonoras»), y la
+        | respuesta era el mismo bloque de texto para todos. Aquí cambia la
+        | FORMA: cómo se organiza lo que se escribe.
+        |
+        | `auditivo` es el que más se separa, porque su respuesta está pensada
+        | para que el frontend la lea en voz alta: la respuesta lleva
+        | `presentation: "auditivo"` para que lo sepa. Por eso nada de tablas,
+        | símbolos ni emojis, que un lector de voz no sabe pronunciar.
+        |
+        | No se pide markdown (negritas, almohadillas): no está garantizado que
+        | el cliente lo renderice, y en crudo ensucia el texto de un niño.
+        |
+        | Sin estilo en el perfil no se añade nada: el tutor responde como antes.
+        */
+        'formato' => [
+            'visual' => 'Organiza la respuesta para que se entienda de un vistazo: pasos '
+                . 'numerados y cortos, una idea por línea, y si ayuda, un esquema sencillo '
+                . 'hecho con texto (por ejemplo con flechas →). Puedes usar uno o dos emojis '
+                . 'como marcadores, no más. Usa comparaciones con cosas que se pueden ver.',
+            'auditivo' => 'Tu respuesta se va a leer en voz alta, así que escribe como si '
+                . 'hablaras: frases cortas y completas, sin tablas, sin viñetas, sin emojis, '
+                . 'sin símbolos ni abreviaturas. Si hay pasos, nómbralos con palabras '
+                . '(«primero», «después», «por último»). Termina repitiendo la idea clave '
+                . 'en una sola frase.',
+            'lector' => 'Estructura la respuesta como un texto para leer con calma: empieza '
+                . 'con la idea principal en una frase, sigue con los detalles en una lista '
+                . 'ordenada y, si aparece una palabra nueva, da su definición. Termina con '
+                . 'una frase de resumen.',
+        ],
     ],
 
     /*

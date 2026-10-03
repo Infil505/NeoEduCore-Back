@@ -29,6 +29,7 @@ class BulkReassignmentController extends Controller
      * body: {
      *   "student_user_ids": ["uuid", ...]   // uno u otro, no ambos
      *   "from_group_id": "uuid",
+     *   "exclude_student_user_ids": ["uuid", ...] // opcional, solo con from_group_id
      *   "to_group_id": "uuid",
      *   "sync_student_fields": true          // opcional, default true
      * }
@@ -45,6 +46,10 @@ class BulkReassignmentController extends Controller
             'student_user_ids'   => ['required_without:from_group_id', 'prohibits:from_group_id', 'array', 'min:1'],
             'student_user_ids.*' => ['uuid'],
             'from_group_id'      => ['required_without:student_user_ids', 'uuid'],
+            // Solo tiene sentido sobre un grupo entero: con una lista explícita
+            // basta con no incluir a quien no se quiere mover.
+            'exclude_student_user_ids'   => ['nullable', 'array', 'prohibits:student_user_ids'],
+            'exclude_student_user_ids.*' => ['uuid'],
             'to_group_id'        => ['required', 'uuid'],
             'sync_student_fields' => ['nullable', 'boolean'],
         ]);
@@ -66,12 +71,23 @@ class BulkReassignmentController extends Controller
             ], 404);
         }
 
+        // Promoción de fin de año en un solo paso: el grupo entero menos los
+        // repitentes, sin depender de moverlos antes. Un id excluido que no
+        // esté en el grupo no cuenta: `excluded` es lo que de verdad se quitó.
+        $excluidos = 0;
+        if (!empty($data['exclude_student_user_ids'])) {
+            $antes      = count($studentIds);
+            $studentIds = array_values(array_diff($studentIds, $data['exclude_student_user_ids']));
+            $excluidos  = $antes - count($studentIds);
+        }
+
         if (empty($studentIds)) {
             return response()->json([
                 'message' => 'No hay estudiantes que reasignar.',
                 'data'    => [
                     'requested' => 0,
                     'moved'     => 0,
+                    'excluded'  => $excluidos,
                 ],
             ], 422);
         }
@@ -85,7 +101,7 @@ class BulkReassignmentController extends Controller
 
         return response()->json([
             'message' => 'Reasignación de grupo aplicada.',
-            'data'    => $resumen,
+            'data'    => $resumen + ['excluded' => $excluidos],
         ]);
     }
 

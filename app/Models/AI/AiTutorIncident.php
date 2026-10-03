@@ -5,6 +5,7 @@ namespace App\Models\AI;
 use App\Enums\AiIncidentStage;
 use App\Enums\AiIncidentType;
 use App\Models\Admin\Institution;
+use App\Models\Admin\User;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -51,5 +52,16 @@ class AiTutorIncident extends Model
     public function institution()
     {
         return $this->belongsTo(Institution::class);
+    }
+
+    /** Apunta a `users`, no a `students`: la incidencia sobrevive al perfil (`SET NULL`). */
+    public function student()
+    {
+        return $this->belongsTo(User::class, 'student_user_id');
+    }
+
+    public function session()
+    {
+        return $this->belongsTo(AiChatSession::class, 'session_id');
     }
 }

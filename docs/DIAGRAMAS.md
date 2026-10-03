@@ -40,8 +40,8 @@ npm run validar-diagramas      # scripts/validar-diagramas.mjs
 Si cambia el esquema, las cifras de la §1 se recomprueban con:
 
 ```bash
-grep -c "ADD CONSTRAINT .* FOREIGN KEY" database/sql/01_schema.sql   # 51
-grep -c "^CREATE TABLE public\."        database/sql/01_schema.sql   # 25 (20 dominio + 5 framework)
+grep -c "ADD CONSTRAINT .* FOREIGN KEY" database/sql/01_schema.sql   # 57 (56 dominio + 1 notifications)
+grep -c "^CREATE TABLE public\."        database/sql/01_schema.sql   # 27 (21 dominio + 6 framework)
 ```
 
 ---
@@ -62,13 +62,14 @@ grep -c "^CREATE TABLE public\."        database/sql/01_schema.sql   # 25 (20 do
 
 ## 1. Modelo entidad-relación
 
-**20 tablas de dominio** — 15 entidades y 5 pivotes — con **51 claves foráneas**. Aparte
-quedan 5 tablas de framework (`migrations`, `jobs`, `failed_jobs`, `password_reset_tokens`,
-`personal_access_tokens`), que no son del dominio.
+**21 tablas de dominio** — 17 entidades y 4 pivotes — con **56 claves foráneas**. Aparte
+quedan 6 tablas de framework (`migrations`, `jobs`, `failed_jobs`, `password_reset_tokens`,
+`personal_access_tokens` y `notifications`), que no son del dominio; `notifications` aporta
+la 57.ª FK (`notifiable_id → users`).
 
-Va en **cuatro vistas**, y no por capricho de maquetación: un ERD de 20 entidades con todos
+Va en **cuatro vistas**, y no por capricho de maquetación: un ERD de 21 tablas con todos
 sus atributos es ilegible a cualquier tamaño. La §1.1 da la forma completa del modelo; las
-§1.2 a §1.4 entran al detalle por área. Entre las tres detalladas están las 20 tablas, sin
+§1.2 a §1.4 entran al detalle por área. Entre las tres detalladas están las 21 tablas, sin
 repetir ninguna.
 
 En las cuatro **se omiten las aristas de `institution_id`**: las lleva *toda* tabla de dominio
@@ -118,6 +119,11 @@ erDiagram
     exams ||--o{ ai_chat_sessions : "SET NULL"
     exams ||--o{ calendar_events : "SET NULL"
     groups ||--o{ calendar_events : "SET NULL"
+
+    exam_attempts ||--o{ ai_recommendations : "origina, CASCADE"
+    subjects ||--o{ study_resources : "SET NULL"
+    ai_chat_sessions ||--o{ ai_tutor_incidents : "SET NULL"
+    users ||--o{ ai_tutor_incidents : "SET NULL"
 ```
 
 ### 1.2 Personas y estructura académica
@@ -253,6 +259,9 @@ erDiagram
         uuid id PK
         uuid exam_id FK
         text question_text
+        string topic "nullable, eje del diagnóstico por tema"
+        string indicator "nullable, indicador curricular"
+        string difficulty "basic intermediate advanced, nullable"
         enum question_type "multiple_choice true_false short_answer essay"
         int points
         text correct_answer_text "oculto al estudiante"
@@ -282,6 +291,7 @@ erDiagram
         numeric score
         numeric max_score
         enum grade_status "pending graded completed"
+        enum ai_recommendations_status "preparing ready failed, cola"
     }
     student_answers {
         uuid id PK
@@ -303,7 +313,12 @@ erDiagram
 ### 1.4 Seguimiento, tutor IA y apoyo
 
 Lo que se deriva de la evaluación —el dominio por materia y las recomendaciones— más el
-material de estudio y el calendario.
+registro de incidencias del tutor, el material de estudio y el calendario.
+
+> **`ai_tutor_incidents` apunta a `users`, no a `students`, y con `SET NULL`.** Es una
+> métrica de calidad del tutor (criterio del 75 % de mensajes válidos): tiene que sobrevivir
+> a que se borre el estudiante o la sesión, así que solo `institution_id` cascadea. No guarda
+> el texto del mensaje, solo el tipo y la etapa.
 
 ```mermaid
 erDiagram
@@ -312,10 +327,14 @@ erDiagram
     students ||--o{ ai_recommendations : "recibe"
     subjects ||--o{ ai_recommendations : "sobre"
     exams ||--o{ ai_recommendations : "SET NULL"
+    exam_attempts ||--o{ ai_recommendations : "origina, CASCADE"
     students ||--o{ ai_chat_sessions : "conversa"
     subjects ||--o{ ai_chat_sessions : "SET NULL"
     exams ||--o{ ai_chat_sessions : "SET NULL"
+    ai_chat_sessions ||--o{ ai_tutor_incidents : "SET NULL"
+    users ||--o{ ai_tutor_incidents : "SET NULL"
     users ||--o{ study_resources : "publica, SET NULL"
+    subjects ||--o{ study_resources : "SET NULL"
     exams ||--o{ calendar_events : "SET NULL"
     groups ||--o{ calendar_events : "SET NULL"
 
@@ -331,6 +350,8 @@ erDiagram
         uuid student_user_id FK
         uuid subject_id FK
         uuid exam_id FK "nullable, SET NULL"
+        uuid attempt_id FK "nullable, CASCADE"
+        enum generated_by "heuristic ai"
         enum recommendation_type "strength weakness resource action"
         text recommendation_text
         json resource "URL de la lista blanca"
@@ -344,8 +365,17 @@ erDiagram
         jsonb messages "recortado a los últimos 60"
         timestamp ended_at
     }
+    ai_tutor_incidents {
+        uuid id PK
+        uuid student_user_id FK "users, nullable, SET NULL"
+        uuid session_id FK "nullable, SET NULL"
+        timestamp occurred_at
+        enum type "pii too_short too_long blocked_url model_error prompt_injection"
+        enum stage "chat diagnosis"
+    }
     study_resources {
         uuid id PK
+        uuid subject_id FK "nullable, SET NULL"
         string title
         enum resource_type "video article exercise book pdf link other"
         string url "validado contra lista blanca"
@@ -379,19 +409,19 @@ erDiagram
 
 ## 2. Aislamiento multi-tenant
 
-Cada fila del dominio lleva `institution_id`. **Las 19 columnas tienen clave foránea**, y
+Cada fila del dominio lleva `institution_id`. **Las 20 columnas tienen clave foránea**, y
 todas cascadean menos una.
 
 ```mermaid
 flowchart TB
     INST["institutions<br/><i>raíz del tenant</i>"]
 
-    subgraph CASCADE["18 tablas · ON DELETE CASCADE"]
+    subgraph CASCADE["19 tablas · ON DELETE CASCADE"]
         direction LR
         A["students · groups · subjects<br/>exams · questions · question_options"]
         B["exam_attempts · student_answers<br/>student_answer_options · student_progress"]
         C["ai_recommendations · ai_chat_sessions<br/>student_subjects · group_students · exam_targets"]
-        D["study_resources · calendar_events · teacher_assignments"]
+        D["study_resources · calendar_events · teacher_assignments · ai_tutor_incidents"]
     end
 
     SETNULL["users<br/><b>ON DELETE SET NULL</b>"]
@@ -419,6 +449,10 @@ vez de devolver datos de más. Las claves foráneas lo respaldan en la base: sin
 posible escribir un `institution_id` de una institución inexistente y romper el aislamiento
 por debajo del ORM.
 
+Una excepción en la capa de aplicación: **`ai_tutor_incidents` cascadea como las demás, pero
+su modelo no lleva `TenantScoped`** porque solo la consulta el superadmin, y en agregado. Ver
+la §3.3.
+
 **El superadmin es la excepción, y por omisión en vez de por permiso.** Es el operador de la
 plataforma —da de alta centros y a sus administradores— y no pertenece a ninguna institución:
 su `institution_id` es `NULL`. Eso significa que `SetTenantFromAuth` nunca llega a vincular un
@@ -435,7 +469,7 @@ ruta hacia `/api/institutions`; gestiona lo suyo por `/api/system/config`.
 
 ## 3. Diagrama de clases
 
-16 modelos Eloquent: las 15 entidades más `StudentSubject`. Los 3 pivotes restantes
+18 modelos Eloquent: las 17 entidades más `StudentSubject`. Los 3 pivotes restantes
 (`group_students`, `exam_targets`, `student_answer_options`) se manipulan por *query builder*
 y no tienen modelo.
 
@@ -634,6 +668,7 @@ classDiagram
     }
     class AiRecommendation {
         +AiRecommendationType recommendation_type
+        +AiGenerationSource generated_by
         +text recommendation_text
         +json resource
         +timestamp generated_at
@@ -648,6 +683,12 @@ classDiagram
         +subject()
         +exam()
     }
+    class AiTutorIncident {
+        +AiIncidentType type
+        +AiIncidentStage stage
+        +timestamp occurred_at
+        +institution()
+    }
     class StudyResource {
         +ResourceType resource_type
         +string url
@@ -655,6 +696,7 @@ classDiagram
         +int grade_min
         +int grade_max
         +institution()
+        +subject()
         +creator()
     }
     class CalendarEvent {
@@ -673,6 +715,12 @@ classDiagram
     TenantScoped <|.. StudyResource
     TenantScoped <|.. CalendarEvent
 ```
+
+**`AiTutorIncident` no usa `TenantScoped`, igual que `User` e `Institution`, y es
+deliberado.** Lo lee el superadmin, que no tiene `tenant_id`: con el *global scope* puesto, toda consulta suya
+fallaría. El aislamiento se sostiene porque `institution_id` se escribe siempre explícito,
+desde el alumno que originó la incidencia, y el único endpoint que la expone
+(`GET /api/platform/ai-tutor-metrics`) devuelve solo agregados.
 
 Los tres *traits* son lo que no se ve en el esquema y sostiene la seguridad por rol:
 `RevelaRespuestas` y `AcotaExamenAlEstudiante` deciden **qué campos ve cada rol** sobre las
@@ -1128,9 +1176,9 @@ promovidos. Así no hace falta ningún parámetro de exclusión.
 
 | Figura del informe | Aquí | Estado |
 |---|---|---|
-| — *(no existe)* | §1 Modelo entidad-relación | **Nueva.** El informe no tiene ERD pese a tener 20 tablas y 51 FK |
+| — *(no existe)* | §1 Modelo entidad-relación | **Nueva.** El informe no tiene ERD pese a tener 21 tablas y 56 FK |
 | — *(no existe)* | §2 Aislamiento multi-tenant | **Nueva.** Es la decisión de arquitectura más transversal del sistema, y ahora incluye la frontera superadmin/institución |
-| Figura 2 · Diagrama de clases | §3 | Rehacer: faltan `AiChatSession`, `StudentSubject` y `TeacherAssignment` |
+| Figura 2 · Diagrama de clases | §3 | Rehacer: faltan `AiChatSession`, `StudentSubject`, `TeacherAssignment` y `AiTutorIncident` |
 | Figura 7 y 8 · Arquitectura | §4 | Rehacer: el informe describe Node.js y Next.js, que no existen |
 | Figura 6 · Flujo de autenticación | §5 | Rehacer: es Sanctum con tokens opacos, no JWT |
 | Figura 4 · Flujo de examen | §6 | Rehacer: añadir pausa/reanudación y adecuación curricular |

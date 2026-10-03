@@ -7,6 +7,7 @@ use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Concerns\AcotaExamenAlEstudiante;
 use App\Http\Controllers\Concerns\RevelaRespuestas;
 use App\Enums\ExamStatus;
+use App\Jobs\NotificarExamenDisponible;
 use App\Models\Exams\Exam;
 use App\Models\Academic\Group;
 use Illuminate\Http\Request;
@@ -336,6 +337,13 @@ class ExamController extends Controller
 
         $exam->status = $next;
         $exam->save();
+
+        // O1: al activarse, el alumnado de los grupos destino recibe el aviso.
+        // `active` solo se alcanza una vez (no hay vuelta desde `completed`),
+        // así que no puede llegar duplicado.
+        if ($next === ExamStatus::Active->value) {
+            NotificarExamenDisponible::dispatch($exam->id);
+        }
 
         return response()->json([
             'data' => $exam,

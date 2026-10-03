@@ -6,6 +6,7 @@ use App\Enums\ReviewStatus;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Exams\Question;
 use App\Models\Exams\QuestionOption;
+use App\Models\Admin\Institution;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -48,6 +49,11 @@ class StudentAnswer extends Model
         'answered_at'             => 'datetime',
         'review_status'           => ReviewStatus::class,
     ];
+
+    public function institution()
+    {
+        return $this->belongsTo(Institution::class);
+    }
 
     public function attempt()
     {

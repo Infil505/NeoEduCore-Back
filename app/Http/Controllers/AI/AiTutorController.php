@@ -9,6 +9,7 @@ use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
 use App\Services\AI\AiTutorService;
+use App\Services\AI\FormatoPorEstilo;
 use Illuminate\Http\Request;
 
 class AiTutorController extends Controller
@@ -51,6 +52,11 @@ class AiTutorController extends Controller
             topic:         $data['topic'] ?? null,
             examId:        $data['exam_id'] ?? null
         );
+
+        // O2: el estilo del alumno, para que el frontend sepa cómo presentar la
+        // respuesta (p. ej. leerla en voz alta con `auditivo`). Sale del perfil
+        // ya cargado arriba: no cuesta una consulta.
+        $result['presentation'] = app(FormatoPorEstilo::class)->presentacion($student->learning_style);
 
         return response()->json(['data' => $result]);
     }
@@ -102,6 +108,7 @@ class AiTutorController extends Controller
             // El diagnóstico también lo redacta el modelo, así que lleva el
             // mismo aviso que el chat ([397], D4).
             'ai_notice' => (string) config('openai.tutor.notice'),
+            'presentation' => app(FormatoPorEstilo::class)->presentacion($student->learning_style),
         ]]);
     }
 

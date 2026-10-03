@@ -6,6 +6,7 @@ use App\Http\Controllers\AI\AiController;
 use App\Http\Controllers\AI\AiTutorController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\Students\StudentController;
 use App\Http\Controllers\Academic\GroupController;
 use App\Http\Controllers\Academic\SubjectController;
@@ -79,6 +80,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout'])->name('logout');
     Route::post('/password/change', [ForgotPasswordController::class, 'changePassword'])
         ->middleware('throttle:password')->name('password.change');
+
+    /*
+    | Notificaciones en la app — cualquier rol autenticado, siempre las propias (O1)
+    */
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+    Route::patch('/notifications/{id}/read', [NotificationController::class, 'markRead'])
+        ->whereUuid('id');
 
     /*
     | Perfil propio del estudiante — solo student

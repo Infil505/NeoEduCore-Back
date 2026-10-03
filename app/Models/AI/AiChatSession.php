@@ -6,6 +6,7 @@ use App\Models\Concerns\TenantScoped;
 use App\Models\Academic\Subject;
 use App\Models\Exams\Exam;
 use App\Models\Students\Student;
+use App\Models\Admin\Institution;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -31,6 +32,11 @@ class AiChatSession extends Model
         'messages' => 'array',
         'ended_at' => 'datetime',
     ];
+
+    public function institution()
+    {
+        return $this->belongsTo(Institution::class);
+    }
 
     public function student()
     {

@@ -47,24 +47,33 @@
 
 Se comparan **claves foráneas**: tabla origen, columna, tabla/columna destino y comportamiento `ON DELETE`. No se comparan tipos de columna, índices ni constraints CHECK (auditados por separado en E10/E11).
 
-### 1.1 Estado final del modelo (08/08/2026)
+### 1.1 Estado final del modelo (revisado 03/10/2026)
 
 Lo que hay que llevar al capítulo de modelo de datos del informe:
 
 | Magnitud | Valor |
 |---|---|
-| Claves foráneas | **47** |
-| Tablas de dominio | **19** (15 entidades + 4 pivotes) |
-| Tablas de framework | 5 (`migrations`, `jobs`, `failed_jobs`, `password_reset_tokens`, `personal_access_tokens`) |
-| Columnas `institution_id` | **18, todas con FK** — 17 en `CASCADE` y 1 en `SET NULL` (`users`, deliberado: dar de baja un centro no borra a las personas) |
+| Claves foráneas | **57** — 56 del dominio + 1 de `notifications` (framework, desde el 03/10/2026) |
+| Tablas de dominio | **21** (17 entidades + 4 pivotes) |
+| Tablas de framework | 6 (`migrations`, `jobs`, `failed_jobs`, `password_reset_tokens`, `personal_access_tokens`, `notifications`) |
+| Columnas `institution_id` | **20, todas con FK** — 19 en `CASCADE` y 1 en `SET NULL` (`users`, deliberado: dar de baja un centro no borra a las personas) |
 
-Pivotes: `group_students`, `exam_targets`, `student_answer_options`, `student_subjects`. De las 19 tablas de dominio, 16 tienen modelo Eloquent (las 15 entidades más `StudentSubject`).
+Pivotes: `group_students`, `exam_targets`, `student_answer_options`, `student_subjects`. De las 21 tablas de dominio, 18 tienen modelo Eloquent (las 17 entidades más `StudentSubject`).
+
+> **Cambios desde el 08/08/2026** (entonces: 47 FK, 19 tablas de dominio, 18 columnas `institution_id`):
+>
+> | Migración | Tabla | FK añadidas |
+> |---|---|---|
+> | `2026_08_08_000003_create_teacher_assignments_table` | `teacher_assignments` (entidad nueva) | +4: `institution_id`, `teacher_user_id` → `users`, `group_id`, `subject_id` |
+> | `2026_09_13_000001_defer_ai_recommendations_to_queue` | `ai_recommendations` | +1: `attempt_id` → `exam_attempts` (`CASCADE`) |
+> | `2026_09_13_000002_add_curricular_metadata` | `study_resources` | +1: `subject_id` → `subjects` (`SET NULL`) |
+> | `2026_09_13_000003_create_ai_tutor_incidents_table` | `ai_tutor_incidents` (entidad nueva) | +3: `institution_id`, `session_id` → `ai_chat_sessions` (`SET NULL`), `student_user_id` → `users` (`SET NULL`) |
 
 Comprobable en cualquier momento:
 
 ```bash
-grep -c "ADD CONSTRAINT .* FOREIGN KEY" database/sql/01_schema.sql   # 47
-grep -c "^CREATE TABLE public\."        database/sql/01_schema.sql   # 24 (19 + 5)
+grep -c "ADD CONSTRAINT .* FOREIGN KEY" database/sql/01_schema.sql   # 57 (56 dominio + 1 notifications)
+grep -c "^CREATE TABLE public\."        database/sql/01_schema.sql   # 27 (21 + 6)
 ```
 
 ## 2. Método (reproducible)
@@ -319,27 +328,30 @@ El índice de figuras [56-65] lista diez figuras: mapa conceptual, diagrama de c
 
 ✅ **Los diagramas ya están dibujados** — [`DIAGRAMAS.md`](DIAGRAMAS.md), 08/08/2026: modelo entidad-relación, aislamiento multi-tenant, clases, arquitectura, y los flujos de autenticación, examen, tutor IA, casos de uso y ciclo académico. Derivados del código y verificados contra `01_schema.sql`. Queda incorporarlos al informe.
 
-**No había diagrama entidad-relación ni modelo de datos**, pese a que el sistema tiene **15 entidades, 4 tablas pivote y 47 claves foráneas**. Para un TFG de sistema de información es una ausencia llamativa, y además es justo el capítulo que este documento permite redactar con solvencia.
+**No había diagrama entidad-relación ni modelo de datos**, pese a que el sistema tiene **17 entidades, 4 tablas pivote y 56 claves foráneas**. Para un TFG de sistema de información es una ausencia llamativa, y además es justo el capítulo que este documento permite redactar con solvencia.
 
-> ⚠️ **Cifras corregidas el 08/08/2026.** Este apartado decía «17 entidades … 42 claves foráneas»: las 42 eran el conteo **previo** a la migración de §6, que añadió 3. El recuento verificado contra `database/sql/01_schema.sql` es **19 tablas de dominio** (15 entidades + 4 pivotes: `group_students`, `exam_targets`, `student_answer_options`, `student_subjects`) más 5 de framework, y **45 FK**. Desglose en `ESTADO_Y_PENDIENTES.md` §3.5.
+> ⚠️ **Cifras corregidas el 08/08/2026.** Este apartado decía «17 entidades … 42 claves foráneas»: las 42 eran el conteo **previo** a la migración de §6, que añadió 3. El recuento verificado contra `database/sql/01_schema.sql` es **19 tablas de dominio** (15 entidades + 4 pivotes: `group_students`, `exam_targets`, `student_answer_options`, `student_subjects`) más 5 de framework, y **47 FK**. Desglose en `ESTADO_Y_PENDIENTES.md` §3.5.
+>
+> ⚠️ **Cifras corregidas de nuevo el 03/10/2026.** Desde el 08/08 se añadieron `teacher_assignments` y `ai_tutor_incidents` (entidades) y FK nuevas en `ai_recommendations` y `study_resources`: ahora son **21 tablas de dominio (17 entidades + 4 pivotes) y 56 FK**. Detalle en §1.1.
 
 **Acción:** añadir una figura de modelo relacional a partir de §3 y §4, y un diccionario de datos.
 
 ### 9.3 🟠 Entidades del sistema ausentes del informe
 
-Las nueve relaciones de §3.4 corresponden a dos entidades que el informe no menciona, a las que se suma una tercera añadida después:
+Las nueve relaciones de §3.4 corresponden a dos entidades que el informe no menciona, a las que se suman otras dos añadidas después:
 
 | Entidad | Tabla | Qué es | Por qué falta |
 |---|---|---|---|
 | **`AiChatSession`** | `ai_chat_sessions` | Sesión del tutor IA conversacional: historial de mensajes en `jsonb`, vinculada a estudiante, materia y examen | Añadida el 29/04/2026, después del diseño original |
 | **`StudentSubject`** | `student_subjects` | Matrícula estudiante↔materia, con `enrolled_at` y unicidad `(student_user_id, subject_id)` | Añadida el 09/05/2026 |
 | **`TeacherAssignment`** | `teacher_assignments` | Asignación docente↔grupo↔materia. Es la **única** fuente de la relación docente-estudiante | Añadida el 08/08/2026 al corregir el hallazgo de §9.8.5 |
+| **`AiTutorIncident`** | `ai_tutor_incidents` | Registro de incidencias del tutor IA (tipo y etapa, sin el texto del mensaje). Sostiene el criterio de éxito del 75 % de mensajes válidos | Añadida el 13/09/2026 (D5). Sin `TenantScoped`: solo la lee el superadmin, en agregado |
 
-Las tres son funcionalidad central del sistema entregado —el tutor IA es el diferenciador del proyecto— así que su ausencia del modelo documentado es una omisión de peso.
+Las tres primeras son funcionalidad central del sistema entregado —el tutor IA es el diferenciador del proyecto— así que su ausencia del modelo documentado es una omisión de peso.
 
 La tercera pesa distinto que las otras dos: `AiChatSession` y `StudentSubject` faltan porque son **posteriores** al diseño. `TeacherAssignment` cubre una relación que el informe **sí da por supuesta** al hablar de que el docente consulta a *sus* estudiantes, pero que el modelo nunca llegó a declarar. Ver §9.8.5 para lo que el sistema hacía mientras tanto.
 
-**Acción:** incorporar las tres al diagrama de clases [653] y al modelo de datos nuevo (§9.2).
+**Acción:** incorporar las cuatro al diagrama de clases [653] y al modelo de datos nuevo (§9.2).
 
 ### 9.4 🟡 Decisiones de diseño que conviene justificar, no ocultar
 

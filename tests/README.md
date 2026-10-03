@@ -39,6 +39,7 @@ tests/
 │   ├── Db/
 │   │   ├── SchemaLoadedTest.php          (El schema de tests carga)
 │   │   ├── SchemaIntegrityTest.php       (Invariantes: tipos uuid, unique de materia)
+│   │   ├── EloquentRelationsMatchFksTest.php (Cada FK tiene su belongsTo; inversos de Institution y Subject)
 │   │   └── CascadeIntegrityTest.php      (Cascadas de borrado y FK del modelo TFG)
 │   ├── Integration/
 │   │   ├── Level1_ExamFullFlowTest.php   (Flujo completo: start→submit→grade→AI)
@@ -104,7 +105,7 @@ php artisan test --verbose
 - ✅ POST /auth/login
 - ✅ GET /auth/me
 - ✅ POST /auth/logout
-- ✅ POST /password/forgot
+- ✅ POST /password/forgot — mismas consultas para un correo registrado y uno inexistente (no se puede enumerar cronometrando); el job `EnviarEnlaceRecuperacion` ignora correos desconocidos
 - ✅ POST /password/verify
 - ✅ POST /password/reset
 - ✅ POST /password/change
@@ -145,8 +146,9 @@ php artisan test --verbose
 - ✅ Mismo nombre permitido en otra institución
 - ✅ Renombrar sobre un nombre existente falla; renombrar a su propio nombre no
 
-### Reasignación masiva — `BulkReassignmentTest` (18 tests)
+### Reasignación masiva — `BulkReassignmentTest` (22 tests)
 - ✅ POST /bulk/reassign-group — por lista y por `from_group_id`; cierra membresía anterior
+- ✅ `exclude_student_user_ids` con `from_group_id` (promoción sin repitentes en un paso); 422 con lista explícita o si se excluye a todos
 - ✅ Recuenta `student_count` de origen **y** destino
 - ✅ Sincroniza `students.grade/section/group_code` (y se puede desactivar)
 - ✅ Los ya activos en el destino no cuentan como movidos
@@ -169,6 +171,25 @@ php artisan test --verbose
 ### Integridad del esquema — `SchemaIntegrityTest` (2 tests)
 - ✅ `personal_access_tokens.tokenable_id`, `users.id` e `institutions.id` siguen siendo `uuid`
 - ✅ Existe el índice único funcional de nombre de materia (`lower` + `btrim`)
+
+### Notificaciones en la app — `Notifications/ExamAvailableNotificationTest` (6 tests)
+- ✅ Activar un examen avisa exactamente a quien puede presentarlo: miembros vigentes de un grupo destino con cuenta activa (no a quien salió del grupo, a otro grupo, a suspendidos ni al docente)
+- ✅ Publicar sin activar no avisa
+- ✅ GET /notifications devuelve solo las propias, con `meta.unread_count` y filtro `?unread=1`
+- ✅ Marcar como leída una ajena da 404; `read-all` marca todas
+- ✅ Borrar el usuario borra sus avisos (FK `notifiable_id → users` en cascada)
+
+### Formato del tutor por estilo — `AI/FormatoPorEstiloTest` (5 tests)
+- ✅ Cada estilo del enum tiene su instrucción y son distintas; sin estilo no se añade nada
+- ✅ El chat y el diagnóstico envían la instrucción al modelo y devuelven `presentation`
+
+### Drift esquema↔migraciones — `Unit/SchemaDriftTest` (5 tests)
+- ✅ La comparación de `schema:check-drift` ignora solo las cabeceras de versión de `pg_dump` y los finales de línea; un cambio de columna o cualquier otro comentario sí cuenta
+- El comando completo (base temporal + `pg_dump`) se ejecuta a mano: `php artisan --env=testing schema:check-drift`
+
+### Relaciones Eloquent — `EloquentRelationsMatchFksTest` (2 tests)
+- ✅ Cada FK de `pg_constraint` (salvo los 3 pivotes sin modelo) tiene un `belongsTo` con la misma columna, tabla y clave destino
+- ✅ `Institution` y `Subject` declaran un `hasMany` por cada FK que les apunta
 
 ### Exámenes (5 tests)
 - ✅ GET /exams

@@ -80,6 +80,7 @@ final class ApiSpec
         'reports' => '12 · Reportes',
         'analytics' => '13 · Analíticas',
         'system' => '14 · Configuración del sistema',
+        'notifications' => '15 · Notificaciones',
         ];
     }
 

@@ -4,6 +4,7 @@ namespace App\Models\Academic;
 
 use App\Models\Concerns\TenantScoped;
 use App\Models\Students\Student;
+use App\Models\Admin\Institution;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 
@@ -25,6 +26,11 @@ class StudentSubject extends Model
     protected $casts = [
         'enrolled_at' => 'datetime',
     ];
+
+    public function institution()
+    {
+        return $this->belongsTo(Institution::class);
+    }
 
     public function student()
     {

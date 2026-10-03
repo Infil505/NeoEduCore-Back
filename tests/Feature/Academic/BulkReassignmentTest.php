@@ -325,6 +325,85 @@ class BulkReassignmentTest extends TestCase
         ])->assertStatus(422)->assertJsonValidationErrors('student_user_ids');
     }
 
+    public function test_source_group_can_be_moved_excluding_repeaters_in_one_step(): void
+    {
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
+
+        $origen  = $this->grupo();
+        $destino = $this->grupo();
+        [$p1, $p2, $p3, $repitente] = $this->estudiantes(4);
+        [$ajeno] = $this->estudiantes(1); // no está en el origen
+
+        DB::table('group_students')->insert(array_map(fn ($id) => [
+            'institution_id'  => $this->institution->id,
+            'group_id'        => $origen->id,
+            'student_user_id' => $id,
+            'joined_at'       => now(),
+            'left_at'         => null,
+        ], [$p1, $p2, $p3, $repitente]));
+
+        $res = $this->postJson('/api/bulk/reassign-group', [
+            'from_group_id'            => $origen->id,
+            'exclude_student_user_ids' => [$repitente, $ajeno],
+            'to_group_id'              => $destino->id,
+        ]);
+
+        $res->assertOk();
+        $this->assertSame(3, $res->json('data.moved'));
+        // Solo cuenta lo que de verdad se quitó del lote: el ajeno no estaba.
+        $this->assertSame(1, $res->json('data.excluded'));
+
+        foreach ([$p1, $p2, $p3] as $id) {
+            $this->assertTrue($this->membresiaActiva($destino->id, $id));
+        }
+        $this->assertTrue($this->membresiaActiva($origen->id, $repitente), 'El excluido sigue en el origen');
+        $this->assertFalse($this->membresiaActiva($destino->id, $repitente));
+        $this->assertFalse($this->membresiaActiva($destino->id, $ajeno));
+
+        $this->assertSame(1, $origen->fresh()->student_count);
+        $this->assertSame(3, $destino->fresh()->student_count);
+    }
+
+    public function test_exclusion_is_rejected_with_an_explicit_list(): void
+    {
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
+        $ids = $this->estudiantes(2);
+
+        $this->postJson('/api/bulk/reassign-group', [
+            'student_user_ids'         => $ids,
+            'exclude_student_user_ids' => [$ids[0]],
+            'to_group_id'              => $this->grupo()->id,
+        ])->assertStatus(422)->assertJsonValidationErrors('exclude_student_user_ids');
+    }
+
+    public function test_excluding_the_whole_group_leaves_nothing_to_move(): void
+    {
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
+
+        $origen = $this->grupo();
+        $ids    = $this->estudiantes(2);
+
+        DB::table('group_students')->insert(array_map(fn ($id) => [
+            'institution_id'  => $this->institution->id,
+            'group_id'        => $origen->id,
+            'student_user_id' => $id,
+            'joined_at'       => now(),
+            'left_at'         => null,
+        ], $ids));
+
+        $res = $this->postJson('/api/bulk/reassign-group', [
+            'from_group_id'            => $origen->id,
+            'exclude_student_user_ids' => $ids,
+            'to_group_id'              => $this->grupo()->id,
+        ]);
+
+        $res->assertStatus(422);
+        $this->assertSame(2, $res->json('data.excluded'));
+        foreach ($ids as $id) {
+            $this->assertTrue($this->membresiaActiva($origen->id, $id));
+        }
+    }
+
     /* =========================
      |  Reasignación de materias
      ========================= */

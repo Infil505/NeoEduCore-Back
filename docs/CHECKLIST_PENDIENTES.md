@@ -268,6 +268,8 @@ Lo que el backend ya dejó listo y falta consumir, más los cambios que lo rompe
 - [ ] **F5 · Confirmación antes de borrar** materias/grupos/exámenes/usuarios, mostrando `exams_count` (los borrados cascadean a resultados de alumnos)
 - [ ] **F6 · Saludo con el nombre del alumno en el tutor** (el backend ya no lo envía a OpenAI)
 - [ ] **F7 · Aviso de IA en cada respuesta del tutor** — 🔓 listo para consumir: el backend lo manda en `data.ai_notice` (D4)
+- [ ] **F18 · Campanita de notificaciones** — 🔓 backend listo (O1): `GET /api/notifications` (`meta.unread_count`), `PATCH /api/notifications/{id}/read`, `POST /api/notifications/read-all`. Hoy el único tipo es `exam_available`, con título, materia y ventana en `data`
+- [ ] **F19 · Presentar la respuesta del tutor según `presentation`** — 🔓 backend listo (O2): con `auditivo`, ofrecer leerla en voz alta (p. ej. Web Speech API); `visual` y `lector` llegan ya formateadas como texto
 - [ ] 🟠 **F17 · Panel de métricas del tutor IA para el superadmin**
   - Datos: `GET /platform/ai-tutor-metrics` (ventana, totales, `validation_pass_rate`, por tipo, por etapa, por institución y serie diaria).
   - El umbral de [173] es 75 %: que se vea de un vistazo si se cumple.
@@ -308,8 +310,8 @@ Lo que el backend ya dejó listo y falta consumir, más los cambios que lo rompe
 ### Modelo de datos y diagramas
 
 - [ ] 🟠 **I-4 · Incorporar al `.docx` los 16 diagramas de `DIAGRAMAS.md`** (su tabla final dice qué figura sustituye cada uno)
-- [ ] 🟠 **I-5 · Diccionario de datos** (47 FK, 19 tablas de dominio = 15 entidades + 4 pivotes)
-- [ ] 🟠 **I-6 · Añadir `AiChatSession`, `StudentSubject` y `TeacherAssignment` al diagrama de clases**
+- [ ] 🟠 **I-5 · Diccionario de datos** (56 FK, 21 tablas de dominio = 17 entidades + 4 pivotes — cifras al 03/10/2026)
+- [ ] 🟠 **I-6 · Añadir `AiChatSession`, `StudentSubject`, `TeacherAssignment` y `AiTutorIncident` al diagrama de clases**
 - [ ] 🟠 **I-7 · Nombrar los 4 roles reales** (superadmin, admin, teacher, student) y la frontera superadmin/admin (§9.6)
 - [ ] 🟡 **I-8 · Justificar las 2 decisiones de diseño** de §4
 
@@ -381,14 +383,14 @@ Fuente: `ESTADO_Y_PENDIENTES.md` §9.1
 
 Sin urgencia; ninguna bloquea el TFG.
 
-- [ ] **O1 · Notificar al estudiante que tiene un examen disponible** (hoy no hay evento ni correo) — `ESTADO_Y_PENDIENTES.md` §3.1
-- [ ] **O2 · Adaptar el formato de la respuesta del tutor al estilo de aprendizaje** (hoy solo cambia el tono) — §3.2
+- [x] **O1 · Notificar al estudiante que tiene un examen disponible** — ✅ 03/10/2026 · aviso en la app al activar el examen (sin correo, decisión del usuario); falta pintarlo en el frontend (F18). Antes: (hoy no hay evento ni correo) — `ESTADO_Y_PENDIENTES.md` §3.1
+- [x] **O2 · Adaptar el formato de la respuesta del tutor al estilo de aprendizaje** — ✅ 03/10/2026 · formato por estilo en chat y diagnóstico + campo `presentation`; el frontend lo usa en F19. Antes: (hoy solo cambia el tono) — §3.2
 - [ ] **O3 · Bajar el coste fijo del submit de 22 a ~12 queries** (~170 entregas/s). Perfilar antes; candidato: `recalcFromAttempts` a la cola — `ANALISIS_CONCURRENCIA.md` §5.5
-- [ ] **O4 · Comando `schema:check-drift` para CI**
-- [ ] **O5 · `exclude_student_user_ids` en `POST /bulk/reassign-group`**
-- [ ] **O6 · Cerrar el residual de ~13 ms de temporización en `/password/forgot`**
+- [x] **O4 · Comando `schema:check-drift` para CI** — ✅ 03/10/2026 · base temporal + migrate + dump + diff; primera ejecución sin drift. Falta un CI donde engancharlo (no hay pipeline en el repo)
+- [x] **O5 · `exclude_student_user_ids` en `POST /bulk/reassign-group`** — ✅ 03/10/2026 · solo con `from_group_id`; la respuesta trae `excluded`. 3 tests en `BulkReassignmentTest`
+- [x] **O6 · Cerrar el residual de ~13 ms de temporización en `/password/forgot`** — ✅ 03/10/2026 · la petición solo encola `EnviarEnlaceRecuperacion`; mismo trabajo exista o no la cuenta
 - [ ] **O7 · Mover las llamadas a OpenAI a la cola** (solo si crece el volumen del tutor)
-- [ ] **O8 · Relaciones Eloquent faltantes** (`belongsTo(Institution)` en 8 modelos, `hasMany` en `Institution` y `Subject`) — solo si el diagrama de clases se dibuja leyendo modelos — §3.5
+- [x] **O8 · Relaciones Eloquent faltantes** — ✅ 03/10/2026 · eran 9 modelos (también `StudentSubject`) + 3 FK posteriores; vigilado por `EloquentRelationsMatchFksTest`. (`belongsTo(Institution)` en 8 modelos, `hasMany` en `Institution` y `Subject`) — solo si el diagrama de clases se dibuja leyendo modelos — §3.5
 
 ---
 

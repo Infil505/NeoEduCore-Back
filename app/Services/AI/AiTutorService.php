@@ -323,6 +323,9 @@ class AiTutorService
         // centro aún no usa temas, el diagnóstico sigue siendo el de antes.
         $temasLines = $this->lineasDeTemas($studentUserId);
 
+        // O2: el diagnóstico también lo lee el alumno, con su mismo estilo.
+        $formato = app(FormatoPorEstilo::class)->para($student->learning_style);
+
         // El nombre NO entra en el prompt (ver `SIN_DATOS_IDENTIFICATIVOS`); solo
         // se usa abajo, en el texto de reserva, que no sale del servidor. Un tema
         // tampoco identifica a nadie: es contenido curricular.
@@ -333,6 +336,7 @@ class AiTutorService
             . ($temasLines !== '' ? "Menciona los temas concretos de la lista, no solo las materias. " : '')
             . "Máximo 4 párrafos. Usa español claro y alentador.\n"
             . app(RegistroPorGrado::class)->para($student->grade) . "\n"
+            . ($formato !== null ? $formato . "\n" : '')
             . "No uses ningún nombre propio: no sabes cómo se llama.\n"
             // Materias y temas los teclean docentes. Entran saneados (sin saltos
             // de línea ni corchetes), pero siguen siendo texto de un tercero
@@ -481,12 +485,8 @@ class AiTutorService
         $grade = $student->grade ? "grado {$student->grade}" : null;
         $style = $student->learning_style?->value;
 
-        $styleDesc = match ($style) {
-            'visual'   => 'Usa descripciones visuales, esquemas y analogías gráficas.',
-            'auditivo' => 'Usa analogías sonoras y ritmo narrativo para explicar.',
-            'lector'   => 'Sé estructurado y detallado; usa listas y definiciones claras.',
-            default    => null,
-        };
+        // O2: el estilo decide la forma de la respuesta, no solo el tono.
+        $styleDesc = app(FormatoPorEstilo::class)->para($student->learning_style);
 
         // El nombre de la materia lo teclea un docente y acaba dentro del
         // system prompt, que es donde viven las reglas: entra saneado, sin

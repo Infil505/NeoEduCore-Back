@@ -5,6 +5,7 @@ namespace App\Models\Exams;
 use App\Enums\AiRecommendationsStatus;
 use App\Enums\GradeStatus;
 use App\Models\Students\Student;
+use App\Models\Admin\Institution;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -79,6 +80,11 @@ class ExamAttempt extends Model
     /* =========================
      | Relaciones
      ========================= */
+
+    public function institution()
+    {
+        return $this->belongsTo(Institution::class);
+    }
 
     public function exam()
     {
