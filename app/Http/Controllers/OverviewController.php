@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Models\Academic\CalendarEvent;
 use App\Models\Academic\Group;
 use App\Models\Academic\StudyResource;
@@ -19,13 +20,18 @@ use Illuminate\Support\Collection;
 
 class OverviewController extends Controller
 {
+    use AcotaAlDocente;
+
     public function staffOverview(Request $request)
     {
-        $institutionId = $request->user()->institution_id;
+        $user = $request->user();
+        $institutionId = $user->institution_id;
+        $esDocente = $this->esDocente($user);
         $includeInstitutions = $request->boolean('include_institutions')
-            && $request->user()->user_type->value === 'admin';
+            && $user->user_type->value === 'admin';
 
         $subjects = Subject::query()
+            ->when($esDocente, fn ($query) => $query->whereIn('id', $this->materiasDelDocente($user->id)))
             ->orderBy('name')
             ->get();
 
@@ -37,20 +43,32 @@ class OverviewController extends Controller
             ->limit(20)
             ->get();
 
+        // Docente: solo el alumnado de los grupos que tiene asignados. Antes
+        // este endpoint devolvía el padrón completo de la institución a
+        // cualquier docente, el mismo bug que ya se había corregido en
+        // StudentController::index() pero no aquí.
         $students = Student::query()
             ->with('user')
+            ->when($esDocente, fn ($query) => $this->acotarAEstudiantesDelDocente($query, $user, 'user_id'))
             ->orderBy('student_code')
             ->limit(20)
             ->get();
 
+        // Docente: solo los grupos que tiene asignados (mismo criterio que
+        // GroupController::index()).
         $groups = Group::query()
+            ->when($esDocente, fn ($query) => $query->whereIn('id', $this->gruposDelDocente($user->id)))
             ->orderByDesc('year')
             ->orderBy('grade')
             ->orderBy('section')
             ->get();
 
+        // Docente: solo los exámenes que él creó (mismo criterio que ya
+        // exige ExamController::update()/setStatus()/destroy() vía
+        // created_by_teacher_id).
         $exams = Exam::query()
             ->with(['subject', 'teacher'])
+            ->when($esDocente, fn ($query) => $query->where('created_by_teacher_id', $user->id))
             ->orderByDesc('created_at')
             ->limit(20)
             ->get();

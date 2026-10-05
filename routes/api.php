@@ -162,9 +162,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/students/{student_user_id}', [StudentController::class, 'update']);
         Route::patch('/students/{student_user_id}/status', [StudentController::class, 'setStatus']);
 
-        // Grupos (CRUD)
-        // OJO: las materias son admin-only en todas sus mutaciones, ver más abajo.
-        Route::apiResource('groups', GroupController::class);
+        // Grupos: lectura compartida. Las mutaciones (crear/editar/eliminar)
+        // son admin-only, ver más abajo — el docente solo ve lo que el admin
+        // le asignó, igual que ya pasa con materias y usuarios.
+        Route::get('/groups', [GroupController::class, 'index']);
+        Route::get('/groups/{group}', [GroupController::class, 'show']);
 
         // OJO: la membresía de un grupo (alta y baja de estudiantes) es
         // admin-only desde el modelo de asignaciones, ver más abajo.
@@ -319,6 +321,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::patch('/subjects/{subject}', [SubjectController::class, 'update']);
         Route::delete('/subjects/{subject}', [SubjectController::class, 'destroy']);
 
+        // Grupos: crear/editar/eliminar el grupo en sí (no su membresía, ver
+        // arriba) son admin-only. Un docente ve los grupos que le asignaron,
+        // pero no puede alterar la estructura académica del centro.
+        Route::post('/groups', [GroupController::class, 'store']);
+        Route::put('/groups/{group}', [GroupController::class, 'update']);
+        Route::patch('/groups/{group}', [GroupController::class, 'update']);
+        Route::delete('/groups/{group}', [GroupController::class, 'destroy']);
+
         // Configuración del sistema — solo admin puede editar
         Route::put('/system/config', [SystemConfigController::class, 'update']);
 
@@ -373,5 +383,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/students/{student_user_id}/subjects', [StudentSubjectController::class, 'enroll']);
         Route::delete('/students/{student_user_id}/subjects/{subject}', [StudentSubjectController::class, 'unenroll']);
         Route::get('/students/{student_user_id}/subjects', [StudentSubjectController::class, 'index']);
+
+        // Qué materias puede inscribirle QUIEN PREGUNTA a este estudiante —
+        // para un docente, solo las que el admin ya le asignó para el grupo
+        // del estudiante. El frontend la usa para no ofrecer en el selector
+        // una materia que enroll() va a rechazar igual.
+        Route::get('/students/{student_user_id}/assignable-subjects', [StudentSubjectController::class, 'assignableByMe']);
     });
 });

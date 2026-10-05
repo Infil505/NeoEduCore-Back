@@ -52,6 +52,34 @@ class StudentSubjectController extends Controller
     }
 
     /**
+     * GET /api/students/{student_user_id}/assignable-subjects
+     *
+     * Materias que QUIEN PREGUNTA puede inscribirle a este estudiante.
+     * Para un docente, no es "todo el catálogo" ni siquiera "mis materias":
+     * es la materia que el admin ya le asignó a él en algún grupo donde este
+     * estudiante esté activo — lo mismo que exige `enroll()` para aceptar la
+     * inscripción, expuesto aquí para que el frontend no ofrezca una opción
+     * que el backend va a rechazar. Para admin, el catálogo completo.
+     */
+    public function assignableByMe(string $studentUserId, Request $request)
+    {
+        $user = $request->user();
+        $student = Student::where('user_id', $studentUserId)->firstOrFail();
+
+        if ($this->esDocente($user) && !$this->docenteAlcanzaEstudiante($user, $studentUserId)) {
+            return $this->noAutorizadoPorAsignacion();
+        }
+
+        $query = Subject::query()->orderBy('name');
+
+        if ($this->esDocente($user)) {
+            $query->whereIn('id', $this->materiasAsignablesAEstudiante($user->id, $studentUserId));
+        }
+
+        return response()->json(['data' => $query->get()]);
+    }
+
+    /**
      * POST /api/students/{student_user_id}/subjects
      * Inscribir uno o varios estudiantes a una materia (admin/teacher).
      * body: { "subject_id": "uuid" }
@@ -64,9 +92,22 @@ class StudentSubjectController extends Controller
 
         $student = Student::where('user_id', $studentUserId)->firstOrFail();
         $subject = Subject::findOrFail($data['subject_id']);
+        $user = $request->user();
 
-        if ($this->esDocente($request->user()) && !$this->docenteAlcanzaEstudiante($request->user(), $studentUserId)) {
-            return $this->noAutorizadoPorAsignacion();
+        if ($this->esDocente($user)) {
+            if (!$this->docenteAlcanzaEstudiante($user, $studentUserId)) {
+                return $this->noAutorizadoPorAsignacion();
+            }
+
+            // No basta con que el estudiante sea suyo: la materia concreta
+            // tiene que ser la que el admin le asignó para el grupo de este
+            // estudiante. Antes un docente podía inscribir a su alumno en
+            // cualquier materia del catálogo, no solo en la que imparte.
+            if (!$this->docenteImparteMateriaAEstudiante($user, $studentUserId, $subject->id)) {
+                return response()->json([
+                    'message' => 'No autorizado: no impartes esta materia al grupo de este estudiante.',
+                ], 403);
+            }
         }
 
         $existing = StudentSubject::where('student_user_id', $studentUserId)

@@ -99,6 +99,36 @@ trait AcotaAlDocente
     }
 
     /**
+     * Subconsulta con los `subject_id` que el docente puede inscribirle a ESTE
+     * estudiante — la materia que imparte en algún grupo donde el estudiante
+     * esté activo. No basta con "es mi estudiante" (`docenteAlcanzaEstudiante`):
+     * dar Matemáticas en el grupo del estudiante no habilita a inscribirlo en
+     * Lengua, que es una asignación del admin, no una decisión del docente.
+     */
+    protected function materiasAsignablesAEstudiante(string $teacherUserId, string $studentUserId)
+    {
+        return DB::table('group_students as gs')
+            ->select('ta.subject_id')
+            ->join('teacher_assignments as ta', 'ta.group_id', '=', 'gs.group_id')
+            ->whereNull('gs.left_at')
+            ->where('gs.student_user_id', $studentUserId)
+            ->where('ta.teacher_user_id', $teacherUserId)
+            ->where('ta.institution_id', app('tenant_id'));
+    }
+
+    /**
+     * ¿El docente imparte esta materia en algún grupo donde el estudiante esté
+     * activo? Ver `materiasAsignablesAEstudiante` para el porqué de la pregunta
+     * completa (no solo "es mi estudiante").
+     */
+    protected function docenteImparteMateriaAEstudiante(object $docente, string $studentUserId, string $subjectId): bool
+    {
+        return $this->materiasAsignablesAEstudiante($docente->id, $studentUserId)
+            ->where('ta.subject_id', $subjectId)
+            ->exists();
+    }
+
+    /**
      * Acota una consulta a los estudiantes del docente. No toca la consulta si
      * quien mira no es docente (admin ve toda su institución vía TenantScoped).
      *
