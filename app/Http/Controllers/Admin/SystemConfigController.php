@@ -24,9 +24,11 @@ class SystemConfigController extends Controller
 
         return response()->json([
             'data' => [
-                'institution_id'   => $institution->id,
-                'institution_name' => $institution->name,
-                'config'           => $config,
+                'institution_id'      => $institution->id,
+                'institution_name'    => $institution->name,
+                'institution_address' => $institution->address,
+                'institution_phone'   => $institution->phone,
+                'config'              => $config,
             ],
         ]);
     }
@@ -38,6 +40,10 @@ class SystemConfigController extends Controller
     public function update(Request $request)
     {
         $data = $request->validate([
+            // Identidad del centro: columnas reales de `institutions`, no settings.
+            'name'               => ['sometimes', 'string', 'min:2', 'max:120'],
+            'address'            => ['nullable', 'string', 'max:200'],
+            'phone'              => ['nullable', 'string', 'max:30'],
             'timezone'           => ['sometimes', 'string', 'timezone'],
             'language'           => ['sometimes', 'string', Rule::in(['es', 'en'])],
             'logo_url'           => ['nullable', 'url', 'max:500'],
@@ -51,8 +57,20 @@ class SystemConfigController extends Controller
 
         $institution = Institution::findOrFail($request->user()->institution_id);
 
+        $identity = array_intersect_key($data, array_flip(['name', 'address', 'phone']));
+        $settingsData = array_diff_key($data, $identity);
+
+        if (isset($identity['name'])) {
+            $identity['name'] = trim($identity['name']);
+        }
+
+        if (!empty($identity)) {
+            $institution->fill($identity);
+        }
+
         $current = $institution->settings ?? [];
-        $institution->update(['settings' => array_merge($current, $data)]);
+        $institution->settings = array_merge($current, $settingsData);
+        $institution->save();
 
         $config = array_merge(Institution::$defaultSettings, $institution->fresh()->settings ?? []);
 
@@ -60,6 +78,8 @@ class SystemConfigController extends Controller
             'data' => [
                 'institution_id'   => $institution->id,
                 'institution_name' => $institution->name,
+                'institution_address' => $institution->address,
+                'institution_phone'   => $institution->phone,
                 'config'           => $config,
             ],
         ]);

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Concerns;
 
 use App\Enums\UserType;
+use App\Models\Admin\User;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -110,6 +111,20 @@ trait AcotaAlDocente
         }
 
         return $query->whereIn($columna, $this->estudiantesDelDocente($user->id));
+    }
+
+    /**
+     * Resuelve un docente por id, acotado a la institución de quien pregunta.
+     * Usado por las vistas de progreso del admin (ver el avance de un docente
+     * elegido) para no filtrar con un 200/lista vacía si el id no es un
+     * docente del propio centro: un 404 claro es mejor que dejarlo adivinar.
+     */
+    protected function resolverDocente(string $teacherUserId): User
+    {
+        return User::where('id', $teacherUserId)
+            ->where('institution_id', app('tenant_id'))
+            ->where('user_type', UserType::Teacher)
+            ->firstOrFail();
     }
 
     /**

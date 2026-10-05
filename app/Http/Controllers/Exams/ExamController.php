@@ -96,6 +96,14 @@ class ExamController extends Controller
             $query->where('grade', (int) $request->input('grade'));
         }
 
+        // Solo el admin puede mirar los exámenes de un docente puntual. Un
+        // docente o estudiante que mande este parámetro no amplía su propio
+        // alcance -ya se lo limita `visibleTo()`-, pero se gatea explícito en
+        // vez de confiar en que la intersección siempre dé una lista vacía.
+        if ($request->filled('teacher_id') && $request->user()->user_type->value === 'admin') {
+            $query->where('created_by_teacher_id', $request->string('teacher_id')->toString());
+        }
+
         $paginator = $query->paginate(config('pagination.default'));
 
         $this->acotarExamenes($request->user(), $paginator->getCollection());

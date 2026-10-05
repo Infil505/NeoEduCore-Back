@@ -334,6 +334,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::delete('/teacher-assignments/bulk', [TeacherAssignmentController::class, 'destroyBulk']);
         Route::delete('/teacher-assignments/{teacherAssignment}', [TeacherAssignmentController::class, 'destroy']);
 
+        // Progreso de un docente elegido por el admin: mismo agregado que ya
+        // ve el propio docente de "lo suyo" (AnalyticsController::subjects,
+        // ReportController::topicMastery), parametrizado por teacherUserId en
+        // vez de por el usuario autenticado.
+        Route::get('/analytics/teachers/{teacherUserId}/subjects', [AnalyticsController::class, 'teacherSubjects']);
+        Route::get('/reports/teachers/{teacherUserId}/topics', [ReportController::class, 'teacherTopicMastery']);
+
         // Membresía de un grupo puntual (alta y baja lógica por lista de ids).
         // Admin-only por el mismo motivo: si un docente pudiera meter
         // estudiantes en el grupo que tiene asignado, ampliaría su propio

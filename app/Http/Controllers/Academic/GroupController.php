@@ -8,7 +8,6 @@ use App\Models\Academic\Group;
 use App\Models\Students\Student;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
 
 class GroupController extends Controller
 {
@@ -51,7 +50,13 @@ class GroupController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'min:2', 'max:120'],
             'grade' => ['required', 'integer', 'between:' . config('academic.grade_min') . ',' . config('academic.grade_max')],
-            'section' => ['required', 'string', Rule::in(['A', 'B', 'C', 'D'])],
+            // No hay un tope real de secciones por ley: el MEP regula el tamano
+            // de cada seccion (Resolucion MEP-0248-2026), no cuantas letras puede
+            // tener un grado. Una escuela rural puede tener una sola seccion sin
+            // letra ("Unica") y una grande en San Jose puede pasar de "D". Fijar
+            // ['A','B','C','D'] era una suposicion de secundaria que no aplicaba
+            // ni a primaria ni a como cada centro nombra realmente sus secciones.
+            'section' => ['required', 'string', 'min:1', 'max:20'],
 
             'year' => ['nullable', 'integer', 'between:2000,2100'],
             'group_code' => ['nullable', 'string', 'max:40'],
@@ -106,7 +111,7 @@ class GroupController extends Controller
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'min:2', 'max:120'],
             'grade' => ['sometimes', 'integer', 'between:' . config('academic.grade_min') . ',' . config('academic.grade_max')],
-            'section' => ['sometimes', 'string', Rule::in(['A', 'B', 'C', 'D'])],
+            'section' => ['sometimes', 'string', 'min:1', 'max:20'],
 
             'year' => ['sometimes', 'integer', 'between:2000,2100'],
             'group_code' => ['nullable', 'string', 'max:40'],
