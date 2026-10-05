@@ -18,6 +18,7 @@ use App\Http\Controllers\Students\StudentProgressController;
 use App\Http\Controllers\Academic\StudyResourceController;
 use App\Http\Controllers\Academic\CalendarEventController;
 use App\Http\Controllers\AI\AiRecommendationController;
+use App\Http\Controllers\Admin\UserBulkUploadController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\InstitutionController;
 use App\Http\Controllers\Admin\InstitutionAdminController;
@@ -306,6 +307,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Carga masiva: crea cuentas de usuario, por eso es admin-only
         Route::get('/students/bulk-upload/template', [StudentController::class, 'bulkUploadTemplate']);
         Route::post('/students/bulk-upload', [StudentController::class, 'bulkUpload'])->middleware('throttle:bulk-upload');
+        // Plantilla por rol y carga de docentes/administradores
+        Route::get('/users/bulk-upload/template', [UserBulkUploadController::class, 'template']);
+        Route::post('/users/bulk-upload', [UserBulkUploadController::class, 'upload'])->middleware('throttle:bulk-upload');
 
         Route::put('/users/{user}', [UserController::class, 'update']);
         Route::patch('/users/{user}/status', [UserController::class, 'setStatus']);

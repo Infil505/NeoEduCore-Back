@@ -493,4 +493,84 @@ class BulkUploadStudentsTest extends TestCase
         $res->assertJson(['created' => 0, 'skipped' => 1]);
         $this->assertSame(0, DB::table('group_students')->where('group_id', $ajena->id)->count());
     }
+
+    /* =========================
+     | Plantillas y formatos
+     ========================= */
+
+    public function test_csv_template_uses_semicolons(): void
+    {
+        $this->signInAdmin();
+
+        $res = $this->get('/api/students/bulk-upload/template');
+
+        $res->assertOk();
+        $content = $res->streamedContent();
+        $firstLine = strtok(ltrim($content, "\xEF\xBB\xBF"), "\n");
+
+        $this->assertStringStartsWith('Nombre completo *;Correo institucional *;Aula *;Código de estudiante;Estado;', $firstLine);
+    }
+
+    public function test_spanish_semicolon_csv_is_uploaded_and_instruction_row_is_ignored(): void
+    {
+        Mail::fake();
+
+        $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
+        $this->aula($institution, '4A2026');
+
+        $csv = "\xEF\xBB\xBF"
+            . "Nombre completo;Correo;ID de usuario;Código de estudiante;Aula;Estado;Fecha de nacimiento;Nombre del tutor;Correo del tutor;Tipo de adecuación\n"
+            . "(Nombre);(Correo);(UUID);(Código);(Aula);(Estado);(Fecha);(Tutor);(Email tutor);(Adecuación)\n"
+            . "Ana Solis;ana.pyc@ejemplo.com;;EST-PYC;4A2026;inactivo;;;;evaluación\n";
+
+        $res = $this->uploadCsv($csv);
+
+        $res->assertOk();
+        $res->assertJson(['created' => 1, 'skipped' => 0]);
+        $this->assertDatabaseHas('users', ['email' => 'ana.pyc@ejemplo.com']);
+        $this->assertDatabaseHas('students', ['student_code' => 'EST-PYC', 'status' => 'inactive', 'adecuacion_type' => 'evaluacion']);
+    }
+
+    public function test_xlsx_template_downloads_and_round_trips(): void
+    {
+        Mail::fake();
+
+        $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
+        $this->aula($institution, '4A2026');
+
+        $res = $this->get('/api/students/bulk-upload/template?format=xlsx');
+        $res->assertOk();
+        $res->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+        // Rellenar la plantilla descargada como lo haría un admin y subirla.
+        $path = tempnam(sys_get_temp_dir(), 'tpl') . '.xlsx';
+        file_put_contents($path, $res->streamedContent());
+
+        $book  = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
+        $sheet = $book->getSheetByName('Estudiantes');
+        $this->assertNotNull($sheet);
+        // Título y descripción arriba; la cabecera va en la fila 4.
+        $this->assertSame(['Nombre completo *', 'Correo institucional *', 'Aula *'], $sheet->rangeToArray('A4:C4')[0]);
+
+        $sheet->fromArray([['Luis Mora', 'luis.xlsx@ejemplo.com', '4A2026', 'EST-XLSX', 'suspendido']], null, 'A5');
+        $book->setActiveSheetIndexByName('Listas'); // el parser no depende de la hoja activa
+        (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($path);
+        $book->disconnectWorksheets();
+
+        $file = new UploadedFile($path, 'plantilla_estudiantes.xlsx', null, null, true);
+        $upload = $this->post('/api/students/bulk-upload', ['file' => $file]);
+
+        $upload->assertOk();
+        $upload->assertJson(['created' => 1, 'skipped' => 0]);
+        $this->assertDatabaseHas('users', ['email' => 'luis.xlsx@ejemplo.com']);
+    }
+
+    public function test_template_rejects_unknown_format(): void
+    {
+        $this->signInAdmin();
+
+        $this->getJson('/api/students/bulk-upload/template?format=pdf')->assertStatus(422);
+    }
 }

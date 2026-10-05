@@ -3,9 +3,11 @@
 namespace Tests\Feature\Auth;
 
 use App\Models\Admin\User;
+use App\Models\Academic\Group;
 use App\Models\Admin\Institution;
 use Tests\TestCase;
 use Tests\Traits\ApiAuth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class LoginRegisterTest extends TestCase
@@ -127,5 +129,76 @@ class LoginRegisterTest extends TestCase
         ]);
 
         $res->assertStatus(401);
+    }
+
+    public function test_registering_a_student_requires_an_aula(): void
+    {
+        $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
+
+        $this->postJson('/api/register', [
+            'full_name' => 'Ana Solís',
+            'email' => 'ana.sinaula@example.com',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
+            'user_type' => 'student',
+        ])->assertStatus(422)->assertJsonValidationErrors('group_id');
+
+        $this->assertDatabaseMissing('users', ['email' => 'ana.sinaula@example.com']);
+    }
+
+    public function test_registering_a_student_enrolls_them_in_the_aula(): void
+    {
+        $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
+        $aula = Group::factory()->create([
+            'institution_id' => $institution->id,
+            'group_code'     => '7A2026',
+            'grade'          => 7,
+            'section'        => 'A',
+        ]);
+
+        $res = $this->postJson('/api/register', [
+            'full_name' => 'Ana Solís',
+            'email' => 'ana.solis@example.com',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
+            'user_type' => 'student',
+            'group_id' => $aula->id,
+            'student_code' => 'EST-0100',
+            'parent_name' => 'Lucía Solís',
+            'adecuacion_type' => 'acceso',
+        ]);
+
+        $res->assertStatus(201);
+        $userId = $res->json('user.id');
+
+        $this->assertDatabaseHas('students', [
+            'user_id'         => $userId,
+            'student_code'    => 'EST-0100',
+            'grade'           => 7,
+            'section'         => 'A',
+            'parent_name'     => 'Lucía Solís',
+            'adecuacion_type' => 'acceso',
+        ]);
+        $this->assertSame(1, DB::table('group_students')->where('group_id', $aula->id)->where('student_user_id', $userId)->whereNull('left_at')->count());
+        $this->assertSame(1, (int) $aula->fresh()->student_count);
+    }
+
+    public function test_registering_a_student_in_another_institutions_aula_fails(): void
+    {
+        $institution = Institution::factory()->create();
+        $otra = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
+        $ajena = Group::factory()->create(['institution_id' => $otra->id, 'group_code' => 'AJENA2026']);
+
+        $this->postJson('/api/register', [
+            'full_name' => 'Ana Solís',
+            'email' => 'ana.ajena@example.com',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
+            'user_type' => 'student',
+            'group_id' => $ajena->id,
+        ])->assertStatus(422)->assertJsonValidationErrors('group_id');
     }
 }
