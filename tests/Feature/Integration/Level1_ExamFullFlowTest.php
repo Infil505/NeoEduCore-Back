@@ -163,6 +163,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'institution' => $institution,
             'teacher'     => $teacher,
             'subject'     => $subject,
+            'group'       => $group,
             'studentUser' => $studentUser,
         ] = $this->buildScenario();
 
@@ -171,6 +172,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'created_by_teacher_id' => $teacher->id,
             'subject_id'            => $subject->id,
         ]);
+        $exam->syncGroups([$group->id]);
 
         [, , $wrongId] = $this->createMcQuestion($exam, $institution, points: 3);
 
@@ -198,6 +200,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'institution' => $institution,
             'teacher'     => $teacher,
             'subject'     => $subject,
+            'group'       => $group,
             'studentUser' => $studentUser,
         ] = $this->buildScenario();
 
@@ -206,6 +209,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'created_by_teacher_id' => $teacher->id,
             'subject_id'            => $subject->id,
         ]);
+        $exam->syncGroups([$group->id]);
         $question = $this->createSaQuestion($exam, $institution);
 
         $this->actingAs($studentUser, 'sanctum');
@@ -233,6 +237,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'institution' => $institution,
             'teacher'     => $teacher,
             'subject'     => $subject,
+            'group'       => $group,
             'studentUser' => $studentUser,
         ] = $this->buildScenario();
 
@@ -241,6 +246,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'created_by_teacher_id' => $teacher->id,
             'subject_id'            => $subject->id,
         ]);
+        $exam->syncGroups([$group->id]);
         $question = $this->createSaQuestion($exam, $institution, points: 5);
 
         $this->actingAs($studentUser, 'sanctum');
@@ -275,6 +281,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'institution' => $institution,
             'teacher'     => $teacher,
             'subject'     => $subject,
+            'group'       => $group,
             'studentUser' => $studentUser,
         ] = $this->buildScenario();
 
@@ -283,6 +290,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'created_by_teacher_id' => $teacher->id,
             'subject_id'            => $subject->id,
         ]);
+        $exam->syncGroups([$group->id]);
 
         [$question, $correctId] = $this->createMcQuestion($exam, $institution);
 
@@ -315,6 +323,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'institution' => $institution,
             'teacher'     => $teacher,
             'subject'     => $subject,
+            'group'       => $group,
             'studentUser' => $studentUser,
         ] = $this->buildScenario();
 
@@ -323,6 +332,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'created_by_teacher_id' => $teacher->id,
             'subject_id'            => $subject->id,
         ]);
+        $exam->syncGroups([$group->id]);
         $this->createMcQuestion($exam, $institution);
 
         $this->actingAs($studentUser, 'sanctum');
@@ -345,6 +355,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'institution' => $institution,
             'teacher'     => $teacher,
             'subject'     => $subject,
+            'group'       => $group,
             'studentUser' => $studentUser,
         ] = $this->buildScenario();
 
@@ -354,6 +365,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'subject_id'            => $subject->id,
             'duration_minutes'      => 30,
         ]);
+        $exam->syncGroups([$group->id]);
 
         // Iniciar el intento cuando el tiempo era "hace 61 minutos"
         $this->actingAs($studentUser, 'sanctum');
@@ -377,6 +389,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'institution' => $institution,
             'teacher'     => $teacher,
             'subject'     => $subject,
+            'group'       => $group,
             'studentUser' => $studentUser,
         ] = $this->buildScenario();
 
@@ -390,6 +403,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'subject_id'            => $subject->id,
             'duration_minutes'      => 60,
         ]);
+        $exam->syncGroups([$group->id]);
 
         $question = $this->createSaQuestion($exam, $institution);
 
@@ -417,6 +431,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'institution' => $institution,
             'teacher'     => $teacher,
             'subject'     => $subject,
+            'group'       => $group,
             'studentUser' => $studentUser,
         ] = $this->buildScenario();
 
@@ -426,6 +441,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'subject_id'            => $subject->id,
             'duration_minutes'      => 30,
         ]);
+        $exam->syncGroups([$group->id]);
 
         $this->actingAs($studentUser, 'sanctum');
 
@@ -488,6 +504,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'institution' => $institution,
             'teacher'     => $teacher,
             'subject'     => $subject,
+            'group'       => $group,
             'studentUser' => $studentUser,
         ] = $this->buildScenario();
 
@@ -497,6 +514,7 @@ class Level1_ExamFullFlowTest extends TestCase
             'subject_id'            => $subject->id,
             'max_attempts'          => 1,
         ]);
+        $exam->syncGroups([$group->id]);
 
         // Intento ya consumido
         ExamAttempt::factory()->submitted()->create([

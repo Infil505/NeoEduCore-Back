@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Academic;
 
 use App\Http\Controllers\Concerns\ExigeAutoria;
+use App\Http\Controllers\Concerns\ResuelveAulasDestino;
 use App\Http\Controllers\Controller;
 use App\Enums\Difficulty;
 use App\Enums\ResourceType;
+use App\Enums\UserType;
 use App\Models\Academic\StudyResource;
 use App\Services\AI\AiOutputValidator;
 use Illuminate\Http\Request;
@@ -13,15 +15,36 @@ use Illuminate\Validation\Rule;
 
 class StudyResourceController extends Controller
 {
-    use ExigeAutoria;
+    use ExigeAutoria, ResuelveAulasDestino;
 
     /**
-     * Listar recursos (con filtros)
+     * Qué se ve del autor y de las aulas según quién mira. El alumno no necesita
+     * el correo del docente ni saber a qué otras aulas llegó el recurso.
+     */
+    private function acotarParaEstudiante(?object $user, iterable $recursos): void
+    {
+        if (!$user || $user->user_type !== UserType::Student) {
+            return;
+        }
+
+        foreach ($recursos as $recurso) {
+            $recurso->makeHidden('groups');
+
+            if ($recurso->relationLoaded('creator') && $recurso->creator !== null) {
+                $recurso->creator->setVisible(['id', 'full_name']);
+            }
+        }
+    }
+
+    /**
+     * Listar recursos (con filtros). Cada rol ve lo suyo: ver
+     * `StudyResource::scopeVisibleTo()`.
      */
     public function index(Request $request)
     {
         $query = StudyResource::query()
-            ->with(['creator', 'subject'])
+            ->visibleTo($request->user())
+            ->with(['creator', 'subject', 'groups'])
             ->orderByDesc('created_at');
 
         if ($request->filled('resource_type')) {
@@ -45,13 +68,21 @@ class StudyResourceController extends Controller
             });
         }
 
+        $paginator = $query->paginate(config('pagination.default'));
+
+        $this->acotarParaEstudiante($request->user(), $paginator->getCollection());
+
         return response()->json([
-            'data' => $query->paginate(config('pagination.default')),
+            'data' => $paginator,
         ]);
     }
 
     /**
-     * Crear recurso
+     * Crear recurso (solo docentes: la ruta es `role:teacher`).
+     *
+     * `group_ids`: aulas a las que se envía, de las que el administrador le
+     * asignó. Con una sola aula asignada se usa esa; con varias hay que elegir.
+     * Si el recurso lleva materia, solo valen las aulas donde la imparte.
      */
     public function store(Request $request)
     {
@@ -84,9 +115,17 @@ class StudyResourceController extends Controller
             'grade_max' => ['nullable', 'integer', 'between:1,12', 'gte:grade_min'],
 
             'language' => ['nullable', 'string', 'max:10'],
+
+            'group_ids'   => ['nullable', 'array'],
+            'group_ids.*' => ['uuid', 'distinct'],
         ]);
 
         $user = $request->user();
+
+        $grupos = $this->resolverAulasDestino($user, $data['group_ids'] ?? null, $data['subject_id'] ?? null);
+        if ($grupos instanceof \Illuminate\Http\JsonResponse) {
+            return $grupos;
+        }
 
         $resource = StudyResource::create([
             'subject_id' => $data['subject_id'] ?? null,
@@ -103,18 +142,28 @@ class StudyResourceController extends Controller
             'created_by' => $user->id,
         ]);
 
+        $resource->syncGroups($grupos);
+
         return response()->json([
-            'data' => $resource->load(['creator', 'subject']),
+            'data' => $resource->load(['creator', 'subject', 'groups']),
         ], 201);
     }
 
     /**
-     * Ver recurso
+     * Ver recurso. 404 y no 403 si no es visible para quien pregunta: confirmar
+     * que existe ya le diría a un docente que otro colega tiene ese material.
      */
-    public function show(StudyResource $studyResource)
+    public function show(Request $request, StudyResource $studyResource)
     {
+        if (!StudyResource::query()->whereKey($studyResource->getKey())->visibleTo($request->user())->exists()) {
+            return response()->json(['message' => 'No encontrado'], 404);
+        }
+
+        $studyResource->load(['creator', 'subject', 'groups']);
+        $this->acotarParaEstudiante($request->user(), [$studyResource]);
+
         return response()->json([
-            'data' => $studyResource->load(['creator', 'subject']),
+            'data' => $studyResource,
         ]);
     }
 
@@ -158,17 +207,42 @@ class StudyResourceController extends Controller
             'grade_max' => ['nullable', 'integer', 'between:1,12', 'gte:grade_min'],
 
             'language' => ['nullable', 'string', 'max:10'],
+
+            'group_ids'   => ['sometimes', 'array', 'min:1'],
+            'group_ids.*' => ['uuid', 'distinct'],
         ]);
 
         if (isset($data['title'])) {
             $data['title'] = trim($data['title']);
         }
 
+        // Las aulas se revalidan si cambian ellas o cambia la materia: mover un
+        // recurso a otra materia no puede dejarlo en aulas donde no se imparte.
+        $grupos = null;
+        if (array_key_exists('group_ids', $data) || array_key_exists('subject_id', $data)) {
+            $materia = array_key_exists('subject_id', $data) ? $data['subject_id'] : $studyResource->subject_id;
+            $pedidas = $data['group_ids'] ?? $studyResource->groups()->pluck('groups.id')->all();
+
+            // Sin aulas ni antes ni ahora no hay nada que revalidar.
+            if (!empty($pedidas)) {
+                $grupos = $this->resolverAulasDestino($request->user(), $pedidas, $materia);
+                if ($grupos instanceof \Illuminate\Http\JsonResponse) {
+                    return $grupos;
+                }
+            }
+        }
+
+        unset($data['group_ids']);
+
         $studyResource->fill($data);
         $studyResource->save();
 
+        if ($grupos !== null) {
+            $studyResource->syncGroups($grupos);
+        }
+
         return response()->json([
-            'data' => $studyResource->fresh()->load(['creator', 'subject']),
+            'data' => $studyResource->fresh()->load(['creator', 'subject', 'groups']),
         ]);
     }
 

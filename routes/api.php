@@ -172,8 +172,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Gestión de estudiantes
         Route::get('/students', [StudentController::class, 'index']);
         Route::get('/students/{student_user_id}', [StudentController::class, 'show']);
+        // El docente edita solo perfil y datos de aprendizaje de SUS alumnos
+        // (ver StudentController::update). Curso, sección, código, aula y estado
+        // son del administrador: el estado, más abajo en el grupo role:admin.
         Route::put('/students/{student_user_id}', [StudentController::class, 'update']);
-        Route::patch('/students/{student_user_id}/status', [StudentController::class, 'setStatus']);
 
         // Grupos: lectura compartida. Las mutaciones (crear/editar/eliminar)
         // son admin-only, ver más abajo — el docente solo ve lo que el admin
@@ -188,7 +190,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/exams', [ExamController::class, 'store']);
         Route::put('/exams/{exam}', [ExamController::class, 'update']);
         Route::patch('/exams/{exam}', [ExamController::class, 'update']);
-        Route::patch('/exams/{exam}/status', [ExamController::class, 'setStatus']);
         Route::delete('/exams/{exam}', [ExamController::class, 'destroy']);
 
         // Transiciones de estado: draft → published → active → completed.
@@ -215,14 +216,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/student-progress', [StudentProgressController::class, 'upsert']);
         Route::post('/student-progress/recalc', [StudentProgressController::class, 'recalcFromAttempts']);
 
-        // Recursos de estudio (CRUD)
-        Route::post('/study-resources', [StudyResourceController::class, 'store']);
+        // Recursos de estudio: editar y borrar (crear es solo del docente, más
+        // abajo). El docente solo toca los suyos; el admin puede ordenarlos.
         Route::put('/study-resources/{study_resource}', [StudyResourceController::class, 'update']);
         Route::patch('/study-resources/{study_resource}', [StudyResourceController::class, 'update']);
         Route::delete('/study-resources/{study_resource}', [StudyResourceController::class, 'destroy']);
 
-        // Eventos del calendario (CRUD)
-        Route::post('/calendar-events', [CalendarEventController::class, 'store']);
+        // Eventos del calendario: editar y borrar (crear es solo del docente, más
+        // abajo). El docente solo toca los suyos; el admin puede ordenarlos.
         Route::put('/calendar-events/{calendar_event}', [CalendarEventController::class, 'update']);
         Route::patch('/calendar-events/{calendar_event}', [CalendarEventController::class, 'update']);
         Route::delete('/calendar-events/{calendar_event}', [CalendarEventController::class, 'destroy']);
@@ -261,6 +262,19 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/analytics/institution', [AnalyticsController::class, 'institution']);
         Route::get('/analytics/subjects', [AnalyticsController::class, 'subjects']);
         Route::get('/analytics/students/{student_user_id}', [AnalyticsController::class, 'student']);
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | SOLO DOCENTE — actividades que pertenecen al rol docente
+    |--------------------------------------------------------------------------
+    | Recursos de estudio y avisos del calendario los crea únicamente el docente
+    | y los envía a las aulas que tiene asignadas (`group_ids`). El administrador
+    | no los crea: puede verlos, ordenarlos y retirarlos.
+    */
+    Route::middleware('role:teacher')->group(function () {
+        Route::post('/study-resources', [StudyResourceController::class, 'store']);
+        Route::post('/calendar-events', [CalendarEventController::class, 'store']);
     });
 
     /*
@@ -322,6 +336,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Plantilla por rol y carga de docentes/administradores
         Route::get('/users/bulk-upload/template', [UserBulkUploadController::class, 'template']);
         Route::post('/users/bulk-upload', [UserBulkUploadController::class, 'upload'])->middleware('throttle:bulk-upload');
+
+        // Estado del alumno (activo/inactivo/suspendido): solo el administrador.
+        Route::patch('/students/{student_user_id}/status', [StudentController::class, 'setStatus']);
 
         Route::put('/users/{user}', [UserController::class, 'update']);
         Route::patch('/users/{user}/status', [UserController::class, 'setStatus']);

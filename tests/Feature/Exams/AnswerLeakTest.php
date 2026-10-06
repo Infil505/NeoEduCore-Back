@@ -186,7 +186,9 @@ class AnswerLeakTest extends TestCase
 
     public function test_teacher_still_sees_the_answers(): void
     {
-        $this->signInTeacher(['institution_id' => $this->inst->id]);
+        // El docente ve las respuestas de SUS exámenes (los de otro docente
+        // ni los ve: ver `ExamenesMateriasYDuracionTest`).
+        \Laravel\Sanctum\Sanctum::actingAs(User::findOrFail($this->exam->created_by_teacher_id));
 
         $res = $this->getJson("/api/exams/{$this->exam->id}/questions");
         $res->assertOk();

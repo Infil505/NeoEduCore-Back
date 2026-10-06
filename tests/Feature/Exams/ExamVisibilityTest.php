@@ -145,7 +145,7 @@ class ExamVisibilityTest extends TestCase
         }
     }
 
-    /** El estrechamiento es solo para el estudiante: el docente gestiona todo. */
+    /** El estrechamiento de campos es solo para el estudiante: el docente ve el registro completo de SUS exámenes. */
     public function test_teacher_still_sees_drafts_and_the_full_exam_record(): void
     {
         $borrador = $this->examen('BORRADOR', 'draft');
@@ -155,7 +155,8 @@ class ExamVisibilityTest extends TestCase
             'question_text' => 'ENUNCIADO_EN_PREPARACION',
         ]);
 
-        $this->signInTeacher(['institution_id' => $this->institution->id]);
+        // Como autor del examen: un docente solo gestiona los suyos.
+        \Laravel\Sanctum\Sanctum::actingAs($this->teacher);
 
         $res = $this->getJson('/api/exams')->assertOk();
         $res->assertSee('BORRADOR');

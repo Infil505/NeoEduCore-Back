@@ -56,7 +56,7 @@ class BulkUploadValidationTest extends TestCase
      |  Plantilla
      ========================= */
 
-    public function test_the_template_has_the_columns_the_upload_expects_and_primary_school_examples(): void
+    public function test_the_template_has_the_columns_the_upload_expects_and_can_be_uploaded_as_is(): void
     {
         $res = $this->get('/api/students/bulk-upload/template')->assertOk();
 
@@ -68,16 +68,22 @@ class BulkUploadValidationTest extends TestCase
         // BOM para que Excel en Windows respete las tildes.
         $this->assertStringStartsWith("\xEF\xBB\xBF", $csv);
 
-        $lineas = array_map('str_getcsv', array_filter(explode("\n", substr($csv, 3))));
-        $this->assertSame(explode(',', self::HEADER), $lineas[0], 'La plantilla y el importador deben usar las mismas columnas');
+        // Una sola fila de cabecera, con «;» y etiquetas legibles; el «*» marca
+        // las obligatorias (el lector lo ignora al interpretar la cabecera).
+        $lineas = array_values(array_filter(array_map('trim', explode("\n", substr($csv, 3)))));
+        $this->assertCount(1, $lineas);
+        $cabecera = str_getcsv($lineas[0], ';');
+        $this->assertSame(
+            ['Nombre completo *', 'Correo institucional *', 'Aula *', 'Código de estudiante', 'Estado',
+             'Fecha de nacimiento', 'Nombre del tutor', 'Correo del tutor', 'Tipo de adecuación'],
+            $cabecera
+        );
 
-        // Instrucciones + 3 ejemplos, todos con aulas de primaria (1.º a 6.º).
-        $this->assertCount(5, $lineas);
-        foreach (array_slice($lineas, 2) as $ejemplo) {
-            $grado = (int) $ejemplo[4];
-            $this->assertGreaterThanOrEqual(config('academic.grade_min'), $grado, "Aula de ejemplo fuera de rango: {$ejemplo[4]}");
-            $this->assertLessThanOrEqual(config('academic.grade_max'), $grado, "Aula de ejemplo fuera de rango: {$ejemplo[4]}");
-        }
+        // La plantilla y el importador deben usar las mismas columnas: un
+        // archivo con esa cabecera, tal cual se descarga, tiene que importarse.
+        $this->subir($lineas[0] . "\n"
+            . "Plantilla Ok;plantilla.ok." . uniqid() . "@ejemplo.com;4A2026;TPL-0001;;;;;\n")
+            ->assertOk()->assertJson(['created' => 1, 'skipped' => 0]);
     }
 
     /* =========================
@@ -128,7 +134,9 @@ class BulkUploadValidationTest extends TestCase
         // el rechazo es para un correo que ya usa otra institución.
         $existente = User::factory()->student()->create([
             'institution_id' => Institution::factory()->create()->id,
-            'email'          => 'ya.existe@ejemplo.com',
+            // Único por ejecución: la base de pruebas acumula filas y un
+            // correo fijo chocaba con `users_email_unique` en la 2.ª corrida.
+            'email'          => ($duplicado = 'ya.existe.' . uniqid() . '@ejemplo.com'),
         ]);
 
         $csv = self::HEADER . "\n"
@@ -139,7 +147,7 @@ class BulkUploadValidationTest extends TestCase
             . "Correo Malo,no-es-correo,,VAL-0005,4A2026,active,,,,\n"
             . ",,,VAL-0006,4A2026,active,,,,\n"
             . ",sin.nombre@ejemplo.com,,VAL-0007,4A2026,active,,,,\n"
-            . "Duplicado,ya.existe@ejemplo.com,,VAL-0008,4A2026,active,,,,\n";
+            . "Duplicado,{$duplicado},,VAL-0008,4A2026,active,,,,\n";
 
         $res = $this->subir($csv)->assertOk();
 
@@ -147,12 +155,12 @@ class BulkUploadValidationTest extends TestCase
 
         $errores = implode("\n", $res->json('errors'));
         foreach ([
-            'adecuacion_type inválido',
-            'parent_email inválido',
-            'birth_date inválido',
-            'email inválido',
-            'se requiere la columna «email»',
-            '«full_name» es obligatorio',
+            '«Tipo de adecuación» inválido',
+            '«Correo del tutor» inválido',
+            '«Fecha de nacimiento» inválida',
+            '«Correo institucional» inválido',
+            'se requiere el «Correo institucional»',
+            '«Nombre completo» es obligatorio',
             'ya está en uso',
         ] as $mensaje) {
             $this->assertStringContainsString($mensaje, $errores);

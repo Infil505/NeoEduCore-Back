@@ -69,17 +69,61 @@ class StudentsCrudTest extends TestCase
 
         $this->darAccesoDocenteA($teacher, $student->user_id, $institution->id);
 
+        // El docente edita perfil y datos de aprendizaje de SUS alumnos.
         $res = $this->putJson("/api/students/{$student->user_id}", [
-            'full_name' => 'Juan Actualizado',
-            'grade' => 5,
             'parent_name' => 'Nuevo Acudiente',
+            'learning_style' => 'visual',
         ]);
 
         $res->assertOk();
         $this->assertDatabaseHas('students', [
             'user_id' => $studentUser->id,
-            'grade' => 5,
+            'parent_name' => 'Nuevo Acudiente',
         ]);
+    }
+
+    /**
+     * Curso, sección, código de estudiante y aula los cambia el administrador.
+     * El docente recibe 403 —no se ignoran en silencio— y nada cambia.
+     */
+    public function test_teacher_cannot_change_grade_section_code_or_group_of_a_student(): void
+    {
+        $institution = Institution::factory()->create();
+        $teacher = $this->signInTeacher(['institution_id' => $institution->id]);
+
+        $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
+        $student = Student::factory()->create([
+            'user_id' => $studentUser->id,
+            'institution_id' => $institution->id,
+            'grade' => 4,
+            'student_code' => 'EST-ORIGINAL',
+        ]);
+        $this->darAccesoDocenteA($teacher, $student->user_id, $institution->id);
+
+        foreach (['grade' => 6, 'section' => 'B', 'student_code' => 'EST-NUEVO', 'group_code' => '6B2026'] as $campo => $valor) {
+            $this->putJson("/api/students/{$student->user_id}", [$campo => $valor, 'parent_name' => 'Otro'])
+                ->assertForbidden()
+                ->assertJsonPath('campos_solo_admin.0', $campo);
+        }
+
+        $this->assertDatabaseHas('students', [
+            'user_id' => $studentUser->id,
+            'grade' => 4,
+            'student_code' => 'EST-ORIGINAL',
+        ]);
+        $this->assertDatabaseMissing('students', ['user_id' => $studentUser->id, 'parent_name' => 'Otro']);
+    }
+
+    public function test_admin_changes_grade_of_a_student(): void
+    {
+        $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
+
+        $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
+        $student = Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
+
+        $this->putJson("/api/students/{$student->user_id}", ['grade' => 5])->assertOk();
+        $this->assertDatabaseHas('students', ['user_id' => $studentUser->id, 'grade' => 5]);
     }
 
     public function test_student_me_endpoint(): void
@@ -158,10 +202,25 @@ class StudentsCrudTest extends TestCase
             ->assertOk();
     }
 
-    public function test_set_student_status(): void
+    /** El estado del alumno lo cambia solo el administrador. */
+    public function test_teacher_cannot_set_student_status(): void
     {
         $institution = Institution::factory()->create();
         $teacher = $this->signInTeacher(['institution_id' => $institution->id]);
+
+        $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
+        $student = Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
+        $this->darAccesoDocenteA($teacher, $student->user_id, $institution->id);
+
+        $this->patchJson("/api/students/{$student->user_id}/status", ['status' => 'inactive'])
+            ->assertForbidden();
+        $this->assertDatabaseMissing('students', ['user_id' => $studentUser->id, 'status' => 'inactive']);
+    }
+
+    public function test_set_student_status(): void
+    {
+        $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
 
         $studentUser = User::factory()->student()->create([
             'institution_id' => $institution->id,
@@ -170,8 +229,6 @@ class StudentsCrudTest extends TestCase
             'user_id' => $studentUser->id,
             'institution_id' => $institution->id,
         ]);
-
-        $this->darAccesoDocenteA($teacher, $student->user_id, $institution->id);
 
         $res = $this->patchJson("/api/students/{$student->user_id}/status", [
             'status' => 'inactive',

@@ -38,6 +38,14 @@ class ExamAttemptController extends Controller
             return response()->json(['message' => 'Solo estudiantes pueden iniciar intentos'], 403);
         }
 
+        // Solo el examen enviado a un aula donde está matriculado. Sin esto,
+        // cualquier estudiante de la institución podía empezar un examen activo
+        // de otra aula con solo conocer su id. 404 y no 403: no se confirma que
+        // exista.
+        if (!Exam::query()->whereKey($exam->getKey())->asignadoAlAulaDe($user)->exists()) {
+            return response()->json(['message' => 'No encontrado'], 404);
+        }
+
         // RN: examen startable (activo + ventana) — fuera de transacción, no modifica datos
         try {
             $rules->assertExamIsStartable($exam);

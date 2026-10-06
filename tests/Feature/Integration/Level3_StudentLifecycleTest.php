@@ -193,10 +193,10 @@ class Level3_StudentLifecycleTest extends TestCase
         $institution = Institution::factory()->create();
         $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
-        $subject     = Subject::factory()->create(['institution_id' => $institution->id]);
         $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
         $student     = Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
-        $this->darAccesoDocenteA($docente, $studentUser->id, $institution->id);
+        // Solo puede darlo de baja de la materia que el admin le asignó.
+        ['subject' => $subject] = $this->darAccesoDocenteA($docente, $studentUser->id, $institution->id);
 
         StudentSubject::create([
             'institution_id'  => $institution->id,

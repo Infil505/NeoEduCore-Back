@@ -8,6 +8,7 @@ use App\Http\Controllers\Concerns\AcotaExamenAlEstudiante;
 use App\Http\Controllers\Concerns\RevelaRespuestas;
 use App\Enums\ExamStatus;
 use App\Jobs\NotificarExamenDisponible;
+use App\Models\Admin\Institution;
 use App\Models\Exams\Exam;
 use App\Rules\UrlDeVideo;
 use App\Models\Academic\Group;
@@ -17,6 +18,24 @@ use Illuminate\Validation\Rule;
 class ExamController extends Controller
 {
     use RevelaRespuestas, AcotaExamenAlEstudiante, AcotaAlDocente;
+
+    /**
+     * Minutos máximos que puede durar un examen en esta institución.
+     *
+     * Lo fija el administrador (el director) en `/system/config`
+     * (`max_exam_duration`) y **ningún examen puede pasarlo**, tampoco el del
+     * docente. Hasta el 05/10/2026 el ajuste se guardaba pero no lo leía nadie:
+     * la validación tenía un 300 fijo.
+     */
+    private function limiteDuracion(object $user): int
+    {
+        $settings = array_merge(
+            Institution::$defaultSettings,
+            Institution::query()->whereKey($user->institution_id)->value('settings') ?? []
+        );
+
+        return (int) $settings['max_exam_duration'];
+    }
 
     /**
      * Resuelve los grupos destino comprobando que el docente los tenga
@@ -127,7 +146,7 @@ class ExamController extends Controller
             'instructions' => ['nullable', 'string', 'max:2000'],
             // Opcional: el tutor se lo da al alumnado visual o auditivo.
             'video_url' => ['nullable', 'string', 'max:255', new UrlDeVideo()],
-            'duration_minutes' => ['required', 'integer', 'between:1,300'],
+            'duration_minutes' => ['required', 'integer', 'between:1,' . $this->limiteDuracion($request->user())],
 
             // Config avanzada RN-EXAM-034/035
             'max_attempts' => ['nullable', 'integer', 'between:1,10'],
@@ -235,7 +254,7 @@ class ExamController extends Controller
             'instructions' => ['nullable', 'string', 'max:2000'],
             // `null` lo quita; omitirlo lo deja como está.
             'video_url' => ['nullable', 'string', 'max:255', new UrlDeVideo()],
-            'duration_minutes' => ['sometimes', 'integer', 'between:1,300'],
+            'duration_minutes' => ['sometimes', 'integer', 'between:1,' . $this->limiteDuracion($request->user())],
 
             'max_attempts' => ['sometimes', 'integer', 'between:1,10'],
             'show_results_immediately' => ['sometimes', 'boolean'],
@@ -310,6 +329,18 @@ class ExamController extends Controller
             return response()->json([
                 'message' => "Transición inválida: {$current} -> {$next}",
             ], 409);
+        }
+
+        // El límite pudo bajar después de crear el borrador: se vuelve a exigir
+        // justo cuando el examen sale hacia el alumnado.
+        if (in_array($next, [ExamStatus::Published->value, ExamStatus::Active->value], true)) {
+            $limite = $this->limiteDuracion($user);
+
+            if ($exam->duration_minutes > $limite) {
+                return response()->json([
+                    'message' => "La duración del examen ({$exam->duration_minutes} min) supera el máximo de la institución ({$limite} min). Redúcela antes de publicarlo.",
+                ], 422);
+            }
         }
 
         // No publicar si no tiene preguntas

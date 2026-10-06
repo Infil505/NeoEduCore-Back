@@ -31,6 +31,10 @@ class StudyResourcesTest extends TestCase
         $institution = Institution::factory()->create();
         $teacher = $this->signInTeacher(['institution_id' => $institution->id]);
 
+        // El recurso llega al aula que el admin le asignó (la única: va por defecto).
+        $group = \App\Models\Academic\Group::factory()->create(['institution_id' => $institution->id]);
+        $this->asignarDocente($teacher, $group->id, \App\Models\Academic\Subject::factory()->create(['institution_id' => $institution->id])->id);
+
         $res = $this->postJson('/api/study-resources', [
             'title' => 'Introducción a Álgebra',
             'description' => 'Video tutorial',

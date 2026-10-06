@@ -115,7 +115,7 @@ class StudentProgressController extends Controller
 
         // ...y solo en las materias que imparte a ese alumno.
         if ($this->esDocente($user)
-            && !$this->docenteAlcanzaEstudianteEnMateria($user, $data['student_user_id'], $data['subject_id'])) {
+            && !$this->docenteImparteMateriaAEstudiante($user, $data['student_user_id'], $data['subject_id'])) {
             return $this->noAutorizadoPorMateria();
         }
 

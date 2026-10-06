@@ -115,10 +115,14 @@ class CurricularMetadataTest extends TestCase
     public function test_un_recurso_puede_llevar_materia_y_se_puede_filtrar_por_ella(): void
     {
         $institution = Institution::factory()->create();
-        $this->signInAdmin(['institution_id' => $institution->id]);
+        $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $mate   = Subject::factory()->create(['institution_id' => $institution->id]);
         $lengua = Subject::factory()->create(['institution_id' => $institution->id]);
+
+        // Un recurso con materia solo llega a aulas donde el docente la imparte.
+        $aula = \App\Models\Academic\Group::factory()->create(['institution_id' => $institution->id]);
+        $this->asignarDocente($docente, $aula->id, $mate->id);
 
         $res = $this->postJson('/api/study-resources', [
             'title'         => 'Guía de fracciones',
@@ -142,7 +146,7 @@ class CurricularMetadataTest extends TestCase
             'institution_id' => Institution::factory()->create()->id,
         ]);
 
-        $this->signInAdmin(['institution_id' => $institution->id]);
+        $this->signInTeacher(['institution_id' => $institution->id]);
 
         $this->postJson('/api/study-resources', [
             'title'         => 'Guía de otro centro',

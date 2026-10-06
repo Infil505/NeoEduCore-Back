@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Academic;
 
 use App\Enums\UserType;
+use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
 use App\Models\Academic\Subject;
 use Illuminate\Http\JsonResponse;
@@ -10,6 +11,8 @@ use Illuminate\Http\Request;
 
 class SubjectController extends Controller
 {
+    use AcotaAlDocente;
+
     /**
      * Listar materias (tenant scoped)
      *
@@ -36,6 +39,12 @@ class SubjectController extends Controller
             ->where('institution_id', $user->institution_id)
             ->withCount('exams')
             ->orderBy('name');
+
+        // El docente ve solo las materias que el administrador le asignó; sin
+        // asignaciones, ninguna. El catálogo completo es del administrador.
+        if ($this->esDocente($user)) {
+            $query->whereIn('id', $this->materiasDelDocente($user->id));
+        }
 
         if ($request->filled('search')) {
             // Escapamos los comodines de LIKE para que sean literales
@@ -91,6 +100,13 @@ class SubjectController extends Controller
         if ($subject->institution_id !== $user->institution_id) {
             return response()->json([
                 'message' => 'No autorizado para ver esta materia.',
+            ], 403);
+        }
+
+        if ($this->esDocente($user)
+            && !$this->materiasDelDocente($user->id)->where('subject_id', $subject->id)->exists()) {
+            return response()->json([
+                'message' => 'No autorizado: no tienes asignada esta materia.',
             ], 403);
         }
 

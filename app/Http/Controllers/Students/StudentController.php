@@ -29,6 +29,9 @@ class StudentController extends Controller
 {
     use AcotaAlDocente;
 
+    /** Campos de la ficha que solo el administrador modifica (el docente, no). */
+    private const CAMPOS_SOLO_ADMIN = ['student_code', 'grade', 'section', 'group_code'];
+
     /*
      | Grados, secciones y limites de carga viven en `config/academic.php` y
      | `config/bulk.php`. Salieron de aqui porque describen el sistema
@@ -96,6 +99,25 @@ class StudentController extends Controller
 
         if ($this->esDocente($request->user()) && !$this->docenteAlcanzaEstudiante($request->user(), $student_user_id)) {
             return $this->noAutorizadoPorAsignacion();
+        }
+
+        // El docente edita el perfil y los datos de aprendizaje de SUS alumnos.
+        // Curso, sección, código de estudiante y aula (`group_code`) son del
+        // administrador, que es quien ubica al alumno en el centro. Se rechaza
+        // en vez de ignorar en silencio: si no, el docente creería haberlo
+        // cambiado. (El estado del alumno tiene su propia ruta, solo admin.)
+        if ($this->esDocente($request->user())) {
+            $soloAdmin = array_values(array_filter(
+                self::CAMPOS_SOLO_ADMIN,
+                fn (string $campo) => $request->has($campo)
+            ));
+
+            if (!empty($soloAdmin)) {
+                return response()->json([
+                    'message' => 'No autorizado: solo el administrador puede modificar ' . implode(', ', $soloAdmin) . '.',
+                    'campos_solo_admin' => $soloAdmin,
+                ], 403);
+            }
         }
 
         $data = $request->validate([

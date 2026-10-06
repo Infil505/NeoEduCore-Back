@@ -120,14 +120,15 @@ class ModeloConfigurableTest extends TestCase
 
         app()->instance('tenant_id', $teacher->institution_id);
 
-        $subject = Subject::factory()->create(['institution_id' => $teacher->institution_id]);
-
         $studentUser = User::factory()->student()->create(['institution_id' => $teacher->institution_id]);
 
         Student::factory()->create([
             'user_id'        => $studentUser->id,
             'institution_id' => $teacher->institution_id,
         ]);
+
+        // El docente solo genera para sus alumnos y en la materia que les imparte.
+        ['subject' => $subject] = $this->darAccesoDocenteA($teacher, $studentUser->id, $teacher->institution_id);
 
         $this->fingirModelo('Refuerza la comprensión de lectura con textos cortos.');
 

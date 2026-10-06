@@ -41,7 +41,7 @@ class EloquentRelationsMatchFksTest extends TestCase
      * modelo de Laravel (`DatabaseNotification`) — su relación es el
      * `notifications()` de `Notifiable` en `User`, comprobado aparte.
      */
-    private const PIVOTES_SIN_MODELO = ['exam_targets', 'group_students', 'student_answer_options', 'notifications'];
+    private const PIVOTES_SIN_MODELO = ['exam_targets', 'study_resource_groups', 'group_students', 'student_answer_options', 'notifications'];
 
     /** "tabla.columna" => [modelo, relación] */
     private const RELACIONES = [

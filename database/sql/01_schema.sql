@@ -3,7 +3,7 @@
 --
 
 
--- Dumped from database version 17.6
+-- Dumped from database version 17.9
 -- Dumped by pg_dump version 17.9
 
 SET statement_timeout = 0;
@@ -708,6 +708,18 @@ CREATE TABLE public.students (
 
 
 --
+-- Name: study_resource_groups; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.study_resource_groups (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    institution_id uuid NOT NULL,
+    study_resource_id uuid NOT NULL,
+    group_id uuid NOT NULL
+);
+
+
+--
 -- Name: study_resources; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1038,6 +1050,22 @@ ALTER TABLE ONLY public.students
 
 
 --
+-- Name: study_resource_groups study_resource_groups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.study_resource_groups
+    ADD CONSTRAINT study_resource_groups_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: study_resource_groups study_resource_groups_unico; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.study_resource_groups
+    ADD CONSTRAINT study_resource_groups_unico UNIQUE (study_resource_id, group_id);
+
+
+--
 -- Name: study_resources study_resources_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1316,6 +1344,13 @@ CREATE INDEX idx_students_institution ON public.students USING btree (institutio
 --
 
 CREATE INDEX idx_students_status ON public.students USING btree (status);
+
+
+--
+-- Name: idx_study_resource_groups_group; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_study_resource_groups_group ON public.study_resource_groups USING btree (group_id);
 
 
 --
@@ -1801,6 +1836,30 @@ ALTER TABLE ONLY public.students
 
 
 --
+-- Name: study_resource_groups study_resource_groups_group_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.study_resource_groups
+    ADD CONSTRAINT study_resource_groups_group_id_foreign FOREIGN KEY (group_id) REFERENCES public.groups(id) ON DELETE CASCADE;
+
+
+--
+-- Name: study_resource_groups study_resource_groups_institution_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.study_resource_groups
+    ADD CONSTRAINT study_resource_groups_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: study_resource_groups study_resource_groups_study_resource_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.study_resource_groups
+    ADD CONSTRAINT study_resource_groups_study_resource_id_foreign FOREIGN KEY (study_resource_id) REFERENCES public.study_resources(id) ON DELETE CASCADE;
+
+
+--
 -- Name: study_resources study_resources_created_by_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2009,6 +2068,12 @@ ALTER TABLE public.student_subjects ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: study_resource_groups; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.study_resource_groups ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: study_resources; Type: ROW SECURITY; Schema: public; Owner: -

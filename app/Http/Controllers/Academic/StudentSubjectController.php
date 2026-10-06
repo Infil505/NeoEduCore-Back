@@ -110,12 +110,7 @@ class StudentSubjectController extends Controller
             }
         }
 
-        if ($this->esDocente($request->user())
-            && !$this->docenteAlcanzaEstudianteEnMateria($request->user(), $studentUserId, $subject->id)) {
-            return $this->noAutorizadoPorMateria();
-        }
-
-        $existing =StudentSubject::where('student_user_id', $studentUserId)
+        $existing = StudentSubject::where('student_user_id', $studentUserId)
             ->where('subject_id', $subject->id)
             ->exists();
 
@@ -151,11 +146,11 @@ class StudentSubjectController extends Controller
         }
 
         if ($this->esDocente($request->user())
-            && !$this->docenteAlcanzaEstudianteEnMateria($request->user(), $studentUserId, $subjectId)) {
+            && !$this->docenteImparteMateriaAEstudiante($request->user(), $studentUserId, $subjectId)) {
             return $this->noAutorizadoPorMateria();
         }
 
-        $deleted =StudentSubject::where('student_user_id', $studentUserId)
+        $deleted = StudentSubject::where('student_user_id', $studentUserId)
             ->where('subject_id', $subjectId)
             ->delete();
 

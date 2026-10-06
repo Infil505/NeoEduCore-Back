@@ -73,6 +73,9 @@ class Exam extends Model
      * Para **admin y docente** no cambia nada: gestionan el catálogo completo de
      * su institución.
      *
+     * Para un **docente** devuelve solo los suyos (autoría) y para el
+     * administrador todos los de la institución.
+     *
      * Para un **estudiante** exige las tres condiciones que definen que un
      * examen es suyo: publicado y activo, dentro de la ventana de disponibilidad
      * y asignado a alguno de sus grupos. Sin esto, `GET /exams` entregaba el
@@ -86,12 +89,23 @@ class Exam extends Model
      * vive aquí para que exista **una sola** definición de «examen visible» y no
      * se olvide al añadir un endpoint nuevo.
      *
-     * Nota: la pertenencia al grupo no descarta a quien lo dejó (`left_at`),
-     * porque replica el comportamiento que ya tenía `availableExams()`. Cambiarlo
-     * afectaría a quién puede presentar exámenes, no solo a quién los ve.
+     * Nota (cambiada el 05/10/2026): el estudiante tiene que estar **matriculado
+     * ahora** en el aula (`left_at IS NULL`). Antes la pertenencia no descartaba
+     * a quien la dejó, y un alumno que cambiaba de aula seguía viendo —y
+     * pudiendo presentar— los exámenes de la anterior. La matrícula se hace al
+     * inicio de curso: sin aula, no ve nada.
      */
     public function scopeVisibleTo($query, ?object $user)
     {
+        // Un **docente** solo ve los exámenes que él creó: entre docentes no se
+        // ve lo que tiene cada uno, ni siquiera dentro del mismo grupo y
+        // materia. El administrador ve los de toda la institución. Un examen
+        // sin autor (`created_by_teacher_id` NULL tras borrar la cuenta) queda
+        // para el administrador.
+        if ($user && $user->user_type === \App\Enums\UserType::Teacher) {
+            return $query->where('created_by_teacher_id', $user->id);
+        }
+
         if (!$user || $user->user_type !== \App\Enums\UserType::Student) {
             return $query;
         }
@@ -100,16 +114,27 @@ class Exam extends Model
             ->where('status', ExamStatus::Active->value)
             ->where(fn ($q) => $q->whereNull('available_from')->orWhere('available_from', '<=', now()))
             ->where(fn ($q) => $q->whereNull('available_until')->orWhere('available_until', '>=', now()))
-            ->whereHas('groups', fn ($q) => $q->whereIn(
-                'groups.id',
-                \Illuminate\Support\Facades\DB::table('group_students')
-                    ->select('group_id')
-                    // El examen ya viene acotado por TenantScoped, así que la
-                    // subconsulta no podía traer nada ajeno; dicho así, no hay
-                    // que deducirlo.
-                    ->where('institution_id', $user->institution_id)
-                    ->where('student_user_id', $user->id)
-            ));
+            ->asignadoAlAulaDe($user);
+    }
+
+    /**
+     * El examen está enviado a un aula donde el estudiante está matriculado
+     * ahora. Es la condición de «es para mí», sin mirar estado ni ventana; la
+     * usan `scopeVisibleTo()` y el inicio de intentos.
+     */
+    public function scopeAsignadoAlAulaDe($query, object $user)
+    {
+        return $query->whereHas('groups', fn ($q) => $q->whereIn(
+            'groups.id',
+            \Illuminate\Support\Facades\DB::table('group_students')
+                ->select('group_id')
+                // El examen ya viene acotado por TenantScoped, así que la
+                // subconsulta no podía traer nada ajeno; dicho así, no hay
+                // que deducirlo.
+                ->where('institution_id', $user->institution_id)
+                ->where('student_user_id', $user->id)
+                ->whereNull('left_at')
+        ));
     }
 
     public function institution()

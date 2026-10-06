@@ -59,7 +59,7 @@ class AiController extends Controller
         // cualquiera de la institución y gastaba presupuesto de OpenAI.
         // Va ANTES de la llamada a OpenAI: un 403 no debe costar nada.
         if ($this->esDocente($user)
-            && !$this->docenteAlcanzaEstudianteEnMateria($user, $data['student_user_id'], $data['subject_id'])) {
+            && !$this->docenteImparteMateriaAEstudiante($user, $data['student_user_id'], $data['subject_id'])) {
             return $this->noAutorizadoPorMateria();
         }
 

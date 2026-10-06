@@ -35,6 +35,8 @@ class CalendarEventsTest extends TestCase
         $group = Group::factory()->create([
             'institution_id' => $institution->id,
         ]);
+        // Solo se avisa a un aula de las que el admin le asignó al docente.
+        $this->asignarDocente($teacher, $group->id, \App\Models\Academic\Subject::factory()->create(['institution_id' => $institution->id])->id);
 
         $res = $this->postJson('/api/calendar-events', [
             'title' => 'Examen Final',

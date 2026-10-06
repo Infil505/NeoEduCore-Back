@@ -28,16 +28,21 @@ class SubjectsTest extends TestCase
     public function test_list_subjects_can_be_filtered_by_search(): void
     {
         $institution = Institution::factory()->create();
-        $this->signInTeacher(['institution_id' => $institution->id]);
+        $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
-        Subject::factory()->create([
+        $mate = Subject::factory()->create([
             'institution_id' => $institution->id,
             'name' => 'Matemáticas',
         ]);
-        Subject::factory()->create([
+        $historia = Subject::factory()->create([
             'institution_id' => $institution->id,
             'name' => 'Historia',
         ]);
+
+        // El docente solo ve las materias que el admin le asignó.
+        $grupo = \App\Models\Academic\Group::factory()->create(['institution_id' => $institution->id]);
+        $this->asignarDocente($docente, $grupo->id, $mate->id);
+        $this->asignarDocente($docente, $grupo->id, $historia->id);
 
         $res = $this->getJson('/api/subjects?search=mate');
 
@@ -97,11 +102,13 @@ class SubjectsTest extends TestCase
     public function test_show_subject(): void
     {
         $institution = Institution::factory()->create();
-        $this->signInTeacher(['institution_id' => $institution->id]);
+        $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
         $subject = Subject::factory()->create([
             'institution_id' => $institution->id,
         ]);
+        $grupo = \App\Models\Academic\Group::factory()->create(['institution_id' => $institution->id]);
+        $this->asignarDocente($docente, $grupo->id, $subject->id);
 
         $res = $this->getJson("/api/subjects/{$subject->id}");
 

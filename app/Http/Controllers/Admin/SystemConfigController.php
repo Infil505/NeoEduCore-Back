@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\ExamStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Admin\Institution;
+use App\Models\Exams\Exam;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -56,6 +58,37 @@ class SystemConfigController extends Controller
         ]);
 
         $institution = Institution::findOrFail($request->user()->institution_id);
+
+        /*
+         | La duración máxima no se reajusta mientras haya exámenes activos.
+         |
+         | Cambiarla con alumnos presentando dejaría exámenes en curso con una
+         | duración que ya no cumple la regla del centro (o, al contrario, con
+         | tiempo que el director acababa de quitar). Se puede cambiar cuando todos
+         | los exámenes están en borrador, publicados sin abrir, completados o con
+         | la ventana de disponibilidad vencida. Volver a enviar el mismo valor no
+         | cuenta como cambio. Los exámenes publicados que queden por encima del
+         | nuevo límite no se pueden activar hasta acortarlos (ver
+         | `ExamController::setStatus`).
+         */
+        if (array_key_exists('max_exam_duration', $data)) {
+            $actual = (int) array_merge(Institution::$defaultSettings, $institution->settings ?? [])['max_exam_duration'];
+
+            if ((int) $data['max_exam_duration'] !== $actual) {
+                $activos = Exam::query()
+                    ->where('status', ExamStatus::Active->value)
+                    ->where(fn ($q) => $q->whereNull('available_until')->orWhere('available_until', '>=', now()))
+                    ->count();
+
+                if ($activos > 0) {
+                    return response()->json([
+                        'message' => "No se puede cambiar la duración máxima mientras haya exámenes activos ({$activos}). "
+                            . 'Espera a que terminen o ciérralos.',
+                        'examenes_activos' => $activos,
+                    ], 409);
+                }
+            }
+        }
 
         $identity = array_intersect_key($data, array_flip(['name', 'address', 'phone']));
         $settingsData = array_diff_key($data, $identity);
