@@ -6,8 +6,10 @@ use App\Enums\UserStatus;
 use App\Enums\UserType;
 use App\Http\Controllers\Controller;
 use App\Models\Admin\User;
-use App\Services\Auth\PasswordSetupService;
+use App\Jobs\EnviarEnlaceDeAlta;
 use App\Services\Imports\BulkFileReader;
+use App\Services\Imports\BulkPreview;
+use App\Services\Imports\SimulacionRevertida;
 use App\Services\Imports\BulkTemplateService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -61,14 +63,17 @@ class UserBulkUploadController extends Controller
             new OA\Response(response: 422, description: 'Archivo o rol no válido'),
         ]
     )]
-    public function upload(Request $request, BulkFileReader $reader, PasswordSetupService $passwordSetup)
+    public function upload(Request $request, BulkFileReader $reader)
     {
         $maxKb = config('bulk.students.max_mb') * 1024;
 
         $data = $request->validate([
             'role' => ['required', Rule::in(self::STAFF_ROLES)],
             'file' => ['required', 'file', 'mimes:csv,txt,xlsx', "max:{$maxKb}"],
+            // Vista previa: se procesa todo y se deshace (ver BulkPreview).
+            'dry_run' => ['sometimes', 'boolean'],
         ]);
+        $simular = $request->boolean('dry_run');
 
         [$rows, $parseError] = $reader->read($request->file('file'));
 
@@ -97,58 +102,75 @@ class UserBulkUploadController extends Controller
 
         $role          = $data['role'];
         $institutionId = $request->user()->institution_id;
+
+        // Hash de una contraseña aleatoria que nadie conoce: deja las cuentas nuevas
+        // inservibles hasta que su dueño fije la suya con el enlace del correo.
+        // Se calcula UNA vez por carga y no por fila: con BCRYPT_ROUNDS=12 cada hash
+        // cuesta ~180 ms, y 300 filas tardaban casi un minuto —el navegador cortaba
+        // la petición antes de terminar—. Compartirlo no debilita nada: el secreto
+        // se descarta aquí mismo y no hay forma de entrar con él.
+        $hashInservible = Hash::make(Str::random(40));
         $errors        = [];
         $newUsers      = [];
         $vistos        = []; // correos ya procesados en este archivo
+        $acciones      = []; // fila → 'crear' (para la vista previa)
 
-        DB::transaction(function () use ($rows, $role, $institutionId, &$errors, &$newUsers, &$vistos) {
-            foreach ($rows as $lineNumber => $row) {
-                $fullName = trim((string) ($row['full_name'] ?? ''));
-                $email    = Str::lower(trim((string) ($row['email'] ?? '')));
+        try {
+            DB::transaction(function () use ($rows, $role, $institutionId, &$errors, &$newUsers, &$vistos, &$acciones, $simular, $hashInservible) {
+                foreach ($rows as $lineNumber => $row) {
+                    $fullName = trim((string) ($row['full_name'] ?? ''));
+                    $email    = Str::lower(trim((string) ($row['email'] ?? '')));
 
-                if ($fullName === '') {
-                    $errors[] = "Fila {$lineNumber}: «Nombre completo» es obligatorio.";
-                    continue;
-                }
-                if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                    $errors[] = "Fila {$lineNumber}: «Correo institucional» inválido «{$row['email']}».";
-                    continue;
-                }
-                if (isset($vistos[$email])) {
-                    $errors[] = "Fila {$lineNumber}: el correo «{$email}» está repetido en el archivo (fila {$vistos[$email]}).";
-                    continue;
-                }
-                $vistos[$email] = $lineNumber;
+                    if ($fullName === '') {
+                        $errors[] = "Fila {$lineNumber}: «Nombre completo» es obligatorio.";
+                        continue;
+                    }
+                    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        $errors[] = "Fila {$lineNumber}: «Correo institucional» inválido «{$row['email']}».";
+                        continue;
+                    }
+                    if (isset($vistos[$email])) {
+                        $errors[] = "Fila {$lineNumber}: el correo «{$email}» está repetido en el archivo (fila {$vistos[$email]}).";
+                        continue;
+                    }
+                    $vistos[$email] = $lineNumber;
 
-                // `users.email` es único en toda la plataforma, no por institución.
-                if (User::withoutGlobalScopes()->where('email', $email)->exists()) {
-                    $errors[] = "Fila {$lineNumber}: el correo «{$email}» ya está en uso.";
-                    continue;
+                    // `users.email` es único en toda la plataforma, no por institución.
+                    if (User::withoutGlobalScopes()->where('email', $email)->exists()) {
+                        $errors[] = "Fila {$lineNumber}: el correo «{$email}» ya está en uso.";
+                        continue;
+                    }
+
+                    $newUsers[] = User::create([
+                        'institution_id' => $institutionId,
+                        'full_name'      => $fullName,
+                        'email'          => $email,
+                        // Contraseña no usable: la define el usuario con el enlace del correo.
+                        'password_hash'  => $hashInservible,
+                        'user_type'      => $role,
+                        // Nace inactiva, igual que en la carga de estudiantes: se
+                        // activa al definir la contraseña desde el correo de alta.
+                        'status'         => UserStatus::Inactive->value,
+                    ]);
+                    $acciones[$lineNumber] = 'crear';
                 }
 
-                $newUsers[] = User::create([
-                    'institution_id' => $institutionId,
-                    'full_name'      => $fullName,
-                    'email'          => $email,
-                    // Contraseña no usable: la define el usuario con el enlace del correo.
-                    'password_hash'  => Hash::make(Str::random(40)),
-                    'user_type'      => $role,
-                    // Nace inactiva, igual que en la carga de estudiantes: se
-                    // activa al definir la contraseña desde el correo de alta.
-                    'status'         => UserStatus::Inactive->value,
-                ]);
-            }
-        });
+                if ($simular) {
+                    BulkPreview::revertir();
+                }
+            });
+        } catch (SimulacionRevertida) {
+            return response()->json(BulkPreview::respuesta($rows, $errors, $acciones, ['full_name', 'email']));
+        }
 
         // Encolar el enlace de "establece tu contraseña" fuera de la transacción.
         $emailsQueued  = 0;
         $emailFailures = [];
+        // Cada enlace se prepara en cola (ver EnviarEnlaceDeAlta): hacerlo aquí
+        // costaba un hash bcrypt por cuenta y la petición superaba el minuto.
         foreach ($newUsers as $newUser) {
-            if ($passwordSetup->sendSetupLink($newUser)) {
-                $emailsQueued++;
-            } else {
-                $emailFailures[] = $newUser->email;
-            }
+            EnviarEnlaceDeAlta::dispatch($newUser->id);
+            $emailsQueued++;
         }
 
         // Mismas claves que la carga de estudiantes: el panel muestra un único resumen.

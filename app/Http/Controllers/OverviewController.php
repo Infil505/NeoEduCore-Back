@@ -73,14 +73,19 @@ class OverviewController extends Controller
             ->limit(20)
             ->get();
 
+        // Misma regla que /calendar-events y /study-resources: el docente ve
+        // solo lo suyo; el administrador, todo el centro. Sin `visibleTo()` el
+        // overview le daba al docente los recursos y avisos de sus colegas.
         $calendar = CalendarEvent::query()
+            ->visibleTo($user)
             ->with(['creator', 'group', 'exam'])
             ->orderBy('start_at')
             ->limit(30)
             ->get();
 
         $resources = StudyResource::query()
-            ->with('creator')
+            ->visibleTo($user)
+            ->with(['creator', 'groups'])
             ->orderByDesc('created_at')
             ->limit(20)
             ->get();
@@ -184,8 +189,11 @@ class OverviewController extends Controller
             ->limit(15)
             ->get();
 
+        // Solo los avisos de su aula actual, y del autor solo el nombre (igual
+        // que /calendar-events). Antes recibía los de todo el centro.
         $calendar = CalendarEvent::query()
-            ->with(['creator', 'group', 'exam'])
+            ->visibleTo($user)
+            ->with(['creator:id,full_name', 'group', 'exam'])
             ->orderBy('start_at')
             ->limit(30)
             ->get();

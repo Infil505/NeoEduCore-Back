@@ -240,6 +240,15 @@ class AiRecommendationsTest extends TestCase
             'grade' => 2,
         ]);
 
+        // Matriculado en un aula: solo se le sugieren recursos enviados a ella.
+        $aula = Group::factory()->create(['institution_id' => $institution->id]);
+        \Illuminate\Support\Facades\DB::table('group_students')->insert([
+            'institution_id' => $institution->id,
+            'group_id' => $aula->id,
+            'student_user_id' => $studentUser->id,
+            'joined_at' => now(),
+        ]);
+
         $subject = Subject::factory()->create(['institution_id' => $institution->id]);
         $exam = Exam::factory()->create([
             'institution_id' => $institution->id,
@@ -247,7 +256,7 @@ class AiRecommendationsTest extends TestCase
         ]);
 
         // El más reciente, pero de segundo ciclo: no le sirve a un alumno de 2.º.
-        \App\Models\Academic\StudyResource::factory()->create([
+        \App\Models\Academic\StudyResource::factory()->enAulas([$aula])->create([
             'institution_id' => $institution->id,
             'title' => 'Fracciones para sexto',
             'grade_min' => 5,
@@ -255,7 +264,7 @@ class AiRecommendationsTest extends TestCase
             'created_at' => now(),
         ]);
 
-        $adecuado = \App\Models\Academic\StudyResource::factory()->create([
+        $adecuado = \App\Models\Academic\StudyResource::factory()->enAulas([$aula])->create([
             'institution_id' => $institution->id,
             'title' => 'Sumas para segundo',
             'grade_min' => 1,

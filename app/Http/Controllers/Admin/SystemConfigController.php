@@ -19,20 +19,30 @@ class SystemConfigController extends Controller
     {
         $institution = Institution::findOrFail($request->user()->institution_id);
 
-        $config = array_merge(
-            Institution::$defaultSettings,
-            $institution->settings ?? []
-        );
+        return response()->json(['data' => $this->datos($institution)]);
+    }
 
-        return response()->json([
-            'data' => [
-                'institution_id'      => $institution->id,
-                'institution_name'    => $institution->name,
-                'institution_address' => $institution->address,
-                'institution_phone'   => $institution->phone,
-                'config'              => $config,
-            ],
-        ]);
+    /**
+     * Respuesta común de `show` y `update`.
+     *
+     * `config.contact_email` es la columna `institutions.email`, no un ajuste
+     * aparte: hasta el 06/10/2026 vivía en `settings.contact_email` y el
+     * formulario salía vacío aunque el centro tuviera correo (el que guarda el
+     * superadmin al darlo de alta). Si solo existe el valor antiguo de
+     * `settings`, se usa ese.
+     */
+    private function datos(Institution $institution): array
+    {
+        $config = array_merge(Institution::$defaultSettings, $institution->settings ?? []);
+        $config['contact_email'] = $institution->email ?? $config['contact_email'];
+
+        return [
+            'institution_id'      => $institution->id,
+            'institution_name'    => $institution->name,
+            'institution_address' => $institution->address,
+            'institution_phone'   => $institution->phone,
+            'config'              => $config,
+        ];
     }
 
     /**
@@ -93,6 +103,13 @@ class SystemConfigController extends Controller
         $identity = array_intersect_key($data, array_flip(['name', 'address', 'phone']));
         $settingsData = array_diff_key($data, $identity);
 
+        // El correo de contacto es la columna `institutions.email` (ver `datos()`).
+        $current = $institution->settings ?? [];
+        if (array_key_exists('contact_email', $settingsData)) {
+            $identity['email'] = $settingsData['contact_email'];
+            unset($settingsData['contact_email'], $current['contact_email']);
+        }
+
         if (isset($identity['name'])) {
             $identity['name'] = trim($identity['name']);
         }
@@ -101,20 +118,9 @@ class SystemConfigController extends Controller
             $institution->fill($identity);
         }
 
-        $current = $institution->settings ?? [];
         $institution->settings = array_merge($current, $settingsData);
         $institution->save();
 
-        $config = array_merge(Institution::$defaultSettings, $institution->fresh()->settings ?? []);
-
-        return response()->json([
-            'data' => [
-                'institution_id'   => $institution->id,
-                'institution_name' => $institution->name,
-                'institution_address' => $institution->address,
-                'institution_phone'   => $institution->phone,
-                'config'           => $config,
-            ],
-        ]);
+        return response()->json(['data' => $this->datos($institution->fresh())]);
     }
 }

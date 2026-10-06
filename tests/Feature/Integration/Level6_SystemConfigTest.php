@@ -127,4 +127,23 @@ class Level6_SystemConfigTest extends TestCase
         $this->getJson('/api/system/config')->assertStatus(401);
         $this->putJson('/api/system/config', [])->assertStatus(401);
     }
+
+    /** El correo de contacto es `institutions.email`: se ve el que ya tiene el centro y se guarda ahí. */
+    public function test_contact_email_is_the_institution_email_column(): void
+    {
+        $institution = Institution::factory()->create(['email' => 'info@centro.test']);
+        $this->signInAdmin(['institution_id' => $institution->id]);
+
+        $this->getJson('/api/system/config')
+            ->assertOk()
+            ->assertJsonPath('data.config.contact_email', 'info@centro.test');
+
+        $this->putJson('/api/system/config', ['contact_email' => 'nuevo@centro.test'])
+            ->assertOk()
+            ->assertJsonPath('data.config.contact_email', 'nuevo@centro.test');
+
+        $fresh = $institution->fresh();
+        $this->assertSame('nuevo@centro.test', $fresh->email);
+        $this->assertArrayNotHasKey('contact_email', $fresh->settings ?? []);
+    }
 }

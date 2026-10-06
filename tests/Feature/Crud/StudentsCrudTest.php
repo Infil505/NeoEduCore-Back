@@ -114,16 +114,29 @@ class StudentsCrudTest extends TestCase
         $this->assertDatabaseMissing('students', ['user_id' => $studentUser->id, 'parent_name' => 'Otro']);
     }
 
-    public function test_admin_changes_grade_of_a_student(): void
+    /**
+     * Curso, sección y aula salen de la matrícula: ni el administrador los
+     * escribe por la ficha (se movería la etiqueta, no al alumno). 422 y nada cambia.
+     */
+    public function test_admin_cannot_change_grade_section_or_group_through_the_profile(): void
     {
         $institution = Institution::factory()->create();
         $this->signInAdmin(['institution_id' => $institution->id]);
 
         $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
-        $student = Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
+        $student = Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id, 'grade' => 4]);
 
-        $this->putJson("/api/students/{$student->user_id}", ['grade' => 5])->assertOk();
-        $this->assertDatabaseHas('students', ['user_id' => $studentUser->id, 'grade' => 5]);
+        foreach (['grade' => 5, 'section' => 'B', 'group_code' => '5B2026'] as $campo => $valor) {
+            $this->putJson("/api/students/{$student->user_id}", [$campo => $valor])
+                ->assertStatus(422)
+                ->assertJsonPath('campos_de_matricula.0', $campo);
+        }
+
+        $this->assertDatabaseHas('students', ['user_id' => $studentUser->id, 'grade' => 4]);
+
+        // El código de estudiante sí lo edita el administrador.
+        $this->putJson("/api/students/{$student->user_id}", ['student_code' => 'EST-0500'])->assertOk();
+        $this->assertDatabaseHas('students', ['user_id' => $studentUser->id, 'student_code' => 'EST-0500']);
     }
 
     public function test_student_me_endpoint(): void

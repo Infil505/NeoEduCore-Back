@@ -573,4 +573,33 @@ class BulkUploadStudentsTest extends TestCase
 
         $this->getJson('/api/students/bulk-upload/template?format=pdf')->assertStatus(422);
     }
+
+    /** Vista previa: marca el resultado de cada fila y no guarda nada. */
+    public function test_dry_run_previews_each_row_without_saving(): void
+    {
+        Mail::fake();
+
+        $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
+        $this->aula($institution, '4A2026');
+
+        $csv = "Nombre completo *;Correo institucional *;Aula *\n"
+            . "Ana Solis;ana.previa@ejemplo.com;4A2026\n"
+            . "Luis Mora;luis.previa@ejemplo.com;NOEXISTE\n"
+            . "Otra Ana;ana.previa@ejemplo.com;4A2026\n";
+
+        $file = UploadedFile::fake()->createWithContent('estudiantes.csv', $csv);
+        $res = $this->post('/api/students/bulk-upload', ['file' => $file, 'dry_run' => 1]);
+
+        $res->assertOk();
+        $res->assertJson(['dry_run' => true, 'total_rows' => 3, 'valid' => 1, 'invalid' => 2]);
+        $res->assertJsonPath('rows.0.action', 'crear');
+        $res->assertJsonPath('rows.1.action', null);
+        $this->assertStringContainsString('NOEXISTE', $res->json('rows.1.errors.0'));
+        $this->assertStringContainsString('repetido', $res->json('rows.2.errors.0'));
+
+        $this->assertDatabaseMissing('users', ['email' => 'ana.previa@ejemplo.com']);
+        $this->assertSame(0, DB::table('group_students')->count());
+        Mail::assertNothingQueued();
+    }
 }

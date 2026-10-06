@@ -459,6 +459,19 @@ class AiRecommendationService
         $grade     = $attempt->student?->grade;
         $subjectId = $attempt->exam?->subject_id;
 
+        // Solo recursos que el alumno puede abrir: los enviados a un aula donde
+        // está matriculado ahora (misma regla que StudyResource::scopeVisibleTo).
+        // Antes valía cualquier recurso del centro —de otros docentes o sin aula—
+        // y el enlace sugerido le daba 404 al abrirlo.
+        $visibles = fn () => StudyResource::query()->whereHas('groups', fn ($g) => $g->whereIn(
+            'groups.id',
+            DB::table('group_students')
+                ->select('group_id')
+                ->where('institution_id', $attempt->institution_id)
+                ->where('student_user_id', $attempt->student_user_id)
+                ->whereNull('left_at')
+        ));
+
         $porDificultad = fn ($q) => $q
             ->orderByRaw("CASE WHEN difficulty = 'basic' THEN 0 WHEN difficulty IS NULL THEN 1 ELSE 2 END")
             ->orderByDesc('created_at');
@@ -476,7 +489,7 @@ class AiRecommendationService
         if ($subjectId) {
             // Lo mejor: materia y grado.
             $ideal = $porDificultad($delGrado(
-                StudyResource::query()->where('subject_id', $subjectId)
+                $visibles()->where('subject_id', $subjectId)
             ))->first();
 
             if ($ideal) {
@@ -487,7 +500,7 @@ class AiRecommendationService
             // falló, aunque sea de otro nivel, es más pertinente que uno del
             // grado correcto pero de otra asignatura.
             $deLaMateria = $porDificultad(
-                StudyResource::query()->where('subject_id', $subjectId)
+                $visibles()->where('subject_id', $subjectId)
             )->first();
 
             if ($deLaMateria) {
@@ -496,7 +509,7 @@ class AiRecommendationService
         }
 
         if ($grade !== null) {
-            $delGradoSolo = $porDificultad($delGrado(StudyResource::query()))->first();
+            $delGradoSolo = $porDificultad($delGrado($visibles()))->first();
 
             if ($delGradoSolo) {
                 return $delGradoSolo;
@@ -506,7 +519,7 @@ class AiRecommendationService
         // Sin grado en el perfil, o sin nada que le encaje: mejor un recurso
         // genérico que ninguno — el texto de la recomendación ya es útil sin él,
         // pero el alumno agradece un punto de partida.
-        return $porDificultad(StudyResource::query())->first();
+        return $porDificultad($visibles())->first();
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Academic;
 
+use App\Models\Academic\Group;
 use App\Models\Academic\StudyResource;
 use App\Models\Academic\Subject;
 use App\Models\Admin\Institution;
@@ -11,6 +12,7 @@ use App\Models\Exams\ExamAttempt;
 use App\Models\Exams\Question;
 use App\Models\Students\Student;
 use App\Services\AI\AiRecommendationService;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 use Tests\Traits\ApiAuth;
 
@@ -27,6 +29,9 @@ use Tests\Traits\ApiAuth;
  */
 class CurricularMetadataTest extends TestCase
 {
+    /** Aula donde `alumno()` matricula al estudiante: los recursos sugeridos tienen que estar enviados a ella. */
+    private ?Group $aula = null;
+
     use ApiAuth;
 
     public function test_se_puede_crear_una_pregunta_con_tema_indicador_y_dificultad(): void
@@ -171,7 +176,7 @@ class CurricularMetadataTest extends TestCase
         $student = $this->alumno($institution, 3);
 
         // El más reciente, del grado correcto, pero de la materia equivocada.
-        StudyResource::factory()->create([
+        StudyResource::factory()->enAulas([$this->aula])->create([
             'institution_id' => $institution->id,
             'subject_id'     => $espanol->id,
             'title'          => 'Lectura comprensiva',
@@ -181,7 +186,7 @@ class CurricularMetadataTest extends TestCase
             'created_at'     => now(),
         ]);
 
-        $esperado = StudyResource::factory()->create([
+        $esperado = StudyResource::factory()->enAulas([$this->aula])->create([
             'institution_id' => $institution->id,
             'subject_id'     => $ciencias->id,
             'title'          => 'El ciclo del agua',
@@ -227,7 +232,7 @@ class CurricularMetadataTest extends TestCase
 
         $student = $this->alumno($institution, 2);
 
-        StudyResource::factory()->create([
+        StudyResource::factory()->enAulas([$this->aula])->create([
             'institution_id' => $institution->id,
             'subject_id'     => $espanol->id,
             'title'          => 'Lectura de segundo',
@@ -236,7 +241,7 @@ class CurricularMetadataTest extends TestCase
             'created_at'     => now(),
         ]);
 
-        $esperado = StudyResource::factory()->create([
+        $esperado = StudyResource::factory()->enAulas([$this->aula])->create([
             'institution_id' => $institution->id,
             'subject_id'     => $ciencias->id,
             'title'          => 'Ciencias de sexto',
@@ -264,6 +269,58 @@ class CurricularMetadataTest extends TestCase
         $this->assertSame($esperado->title, $recurso->resource['title']);
     }
 
+    /** Un recurso de otra aula no se sugiere: el alumno no lo puede abrir. */
+    public function test_no_se_sugiere_un_recurso_de_otra_aula(): void
+    {
+        $institution = Institution::factory()->create();
+        app()->instance('tenant_id', $institution->id);
+
+        $ciencias = Subject::factory()->create(['institution_id' => $institution->id]);
+        $student  = $this->alumno($institution, 3);
+        $otraAula = Group::factory()->create(['institution_id' => $institution->id]);
+
+        // De la materia, del grado y más reciente, pero enviado a otra aula.
+        StudyResource::factory()->enAulas([$otraAula])->create([
+            'institution_id' => $institution->id,
+            'subject_id'     => $ciencias->id,
+            'title'          => 'De otra aula',
+            'grade_min'      => 1,
+            'grade_max'      => 6,
+            'created_at'     => now(),
+        ]);
+
+        // Y uno sin aula, que no ve ningún estudiante.
+        StudyResource::factory()->create([
+            'institution_id' => $institution->id,
+            'subject_id'     => $ciencias->id,
+            'title'          => 'Sin aula',
+            'created_at'     => now(),
+        ]);
+
+        $esperado = StudyResource::factory()->enAulas([$this->aula])->create([
+            'institution_id' => $institution->id,
+            'subject_id'     => $ciencias->id,
+            'title'          => 'De su aula',
+            'grade_min'      => 1,
+            'grade_max'      => 6,
+            'created_at'     => now()->subMonth(),
+        ]);
+
+        $exam = Exam::factory()->create(['institution_id' => $institution->id, 'subject_id' => $ciencias->id]);
+        $attempt = ExamAttempt::factory()->submitted()->create([
+            'institution_id'  => $institution->id,
+            'exam_id'         => $exam->id,
+            'student_user_id' => $student->id,
+            'score'           => 2,
+            'max_score'       => 10,
+        ]);
+
+        $recurso = collect(app(AiRecommendationService::class)->generateFromAttempt($attempt))
+            ->firstWhere(fn ($r) => $r->recommendation_type->value === 'resource');
+
+        $this->assertSame($esperado->title, $recurso->resource['title']);
+    }
+
     /* =========================
      | Apoyo
      ========================= */
@@ -276,6 +333,15 @@ class CurricularMetadataTest extends TestCase
             'user_id'        => $user->id,
             'institution_id' => $institution->id,
             'grade'          => $grade,
+        ]);
+
+        // Matriculado en un aula: solo se le sugieren recursos enviados a ella.
+        $this->aula = Group::factory()->create(['institution_id' => $institution->id]);
+        DB::table('group_students')->insert([
+            'institution_id'  => $institution->id,
+            'group_id'        => $this->aula->id,
+            'student_user_id' => $user->id,
+            'joined_at'       => now(),
         ]);
 
         return $user;

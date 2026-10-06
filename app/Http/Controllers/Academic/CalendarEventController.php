@@ -96,8 +96,9 @@ class CalendarEventController extends Controller
      * una). Con una sola aula asignada se usa esa; con varias hay que elegir.
      *
      * Se crea **un evento por aula**, porque cada uno lleva su `group_id` y es
-     * lo que decide quién lo ve. La respuesta es el evento si fue a una aula, y
-     * una lista de eventos si fue a varias.
+     * lo que decide quién lo ve. La respuesta es **siempre una lista** de eventos
+     * (uno por aula), también con una sola aula: el cliente no tiene que
+     * distinguir dos formas de respuesta.
      */
     public function store(Request $request)
     {
@@ -145,7 +146,7 @@ class CalendarEventController extends Controller
         ));
 
         return response()->json([
-            'data' => count($eventos) === 1 ? $eventos[0] : $eventos,
+            'data' => $eventos,
         ], 201);
     }
 

@@ -70,7 +70,7 @@ class RecursosYEventosPorAulaTest extends TestCase
         $this->assertSame([$this->aulaA->id], collect($res->json('data.groups'))->pluck('id')->all());
 
         $this->postJson('/api/calendar-events', $this->evento())->assertCreated()
-            ->assertJsonPath('data.group_id', $this->aulaA->id);
+            ->assertJsonPath('data.0.group_id', $this->aulaA->id);
     }
 
     public function test_con_varias_aulas_tiene_que_elegir_y_se_le_ofrecen_las_suyas(): void
@@ -140,7 +140,7 @@ class RecursosYEventosPorAulaTest extends TestCase
     public function test_un_evento_siempre_tiene_aula_y_solo_se_mueve_a_una_suya(): void
     {
         $this->asignarDocente($this->docente, $this->aulaA->id, $this->mate->id);
-        $id = $this->postJson('/api/calendar-events', $this->evento())->assertCreated()->json('data.id');
+        $id = $this->postJson('/api/calendar-events', $this->evento())->assertCreated()->json('data.0.id');
 
         $this->putJson("/api/calendar-events/{$id}", ['group_id' => null])->assertStatus(422);
         $this->putJson("/api/calendar-events/{$id}", ['group_id' => $this->aulaB->id])->assertForbidden();
