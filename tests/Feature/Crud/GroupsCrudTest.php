@@ -29,7 +29,7 @@ class GroupsCrudTest extends TestCase
     public function test_create_group(): void
     {
         $institution = Institution::factory()->create();
-        $this->signInTeacher(['institution_id' => $institution->id]);
+        $this->signInAdmin(['institution_id' => $institution->id]);
 
         $res = $this->postJson('/api/groups', [
             'name' => '10-A',
@@ -46,6 +46,20 @@ class GroupsCrudTest extends TestCase
             'grade' => 4,
             'institution_id' => $institution->id,
         ]);
+    }
+
+    public function test_teacher_cannot_create_a_group(): void
+    {
+        $institution = Institution::factory()->create();
+        $this->signInTeacher(['institution_id' => $institution->id]);
+
+        $res = $this->postJson('/api/groups', [
+            'name' => '10-A',
+            'grade' => 4,
+            'section' => 'A',
+        ]);
+
+        $res->assertForbidden();
     }
 
     public function test_show_group(): void
@@ -98,7 +112,7 @@ class GroupsCrudTest extends TestCase
     public function test_update_group(): void
     {
         $institution = Institution::factory()->create();
-        $this->signInTeacher(['institution_id' => $institution->id]);
+        $this->signInAdmin(['institution_id' => $institution->id]);
 
         $group = Group::factory()->create([
             'institution_id' => $institution->id,
@@ -117,10 +131,25 @@ class GroupsCrudTest extends TestCase
         ]);
     }
 
+    public function test_teacher_cannot_update_a_group(): void
+    {
+        $institution = Institution::factory()->create();
+        $docente = $this->signInTeacher(['institution_id' => $institution->id]);
+
+        $group = Group::factory()->create(['institution_id' => $institution->id]);
+        $subject = Subject::factory()->create(['institution_id' => $institution->id]);
+        $this->asignarDocente($docente, $group->id, $subject->id);
+
+        $res = $this->putJson("/api/groups/{$group->id}", ['name' => 'Intento de docente']);
+
+        $res->assertForbidden();
+        $this->assertDatabaseHas('groups', ['id' => $group->id, 'name' => $group->name]);
+    }
+
     public function test_delete_group(): void
     {
         $institution = Institution::factory()->create();
-        $this->signInTeacher(['institution_id' => $institution->id]);
+        $this->signInAdmin(['institution_id' => $institution->id]);
 
         $group = Group::factory()->create([
             'institution_id' => $institution->id,
@@ -132,5 +161,20 @@ class GroupsCrudTest extends TestCase
         $this->assertDatabaseMissing('groups', [
             'id' => $group->id,
         ]);
+    }
+
+    public function test_teacher_cannot_delete_a_group(): void
+    {
+        $institution = Institution::factory()->create();
+        $docente = $this->signInTeacher(['institution_id' => $institution->id]);
+
+        $group = Group::factory()->create(['institution_id' => $institution->id]);
+        $subject = Subject::factory()->create(['institution_id' => $institution->id]);
+        $this->asignarDocente($docente, $group->id, $subject->id);
+
+        $res = $this->deleteJson("/api/groups/{$group->id}");
+
+        $res->assertForbidden();
+        $this->assertDatabaseHas('groups', ['id' => $group->id]);
     }
 }

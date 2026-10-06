@@ -66,7 +66,37 @@ class AnalyticsController extends Controller
             $query->whereIn('id', $this->materiasDelDocente($request->user()->id));
         }
 
-        $subjects   = $query->get();
+        $subjects = $query->get();
+
+        return response()->json(['data' => $this->buildSubjectsPayload($subjects)]);
+    }
+
+    /**
+     * Rendimiento por materia de un docente elegido por el admin.
+     * GET /api/analytics/teachers/{teacherUserId}/subjects
+     *
+     * Mismo cálculo que `subjects()`, acotado a las materias que imparte este
+     * docente en concreto en vez de a quien esté autenticado. `materiasDelDocente()`
+     * ya acepta el id como parámetro explícito, por eso esto es solo plomería.
+     */
+    public function teacherSubjects(Request $request, string $teacherUserId)
+    {
+        $this->resolverDocente($teacherUserId);
+
+        $subjects = Subject::query()
+            ->select('id', 'name')
+            ->whereIn('id', $this->materiasDelDocente($teacherUserId))
+            ->get();
+
+        return response()->json(['data' => $this->buildSubjectsPayload($subjects)]);
+    }
+
+    /**
+     * Arma el payload de rendimiento por materia para un conjunto de materias
+     * ya resuelto (todas las del centro, las de un docente, etc.).
+     */
+    private function buildSubjectsPayload($subjects)
+    {
         $subjectIds = $subjects->pluck('id');
 
         $progressStats = StudentProgress::whereIn('subject_id', $subjectIds)
@@ -81,7 +111,7 @@ class AnalyticsController extends Controller
             ->get()
             ->keyBy('subject_id');
 
-        $data = $subjects->map(function ($subject) use ($progressStats, $examCounts) {
+        return $subjects->map(function ($subject) use ($progressStats, $examCounts) {
             $ps = $progressStats->get($subject->id);
             $ec = $examCounts->get($subject->id);
 
@@ -93,8 +123,6 @@ class AnalyticsController extends Controller
                 'average_mastery'   => $ps ? round((float) $ps->avg_mastery, 2) : 0,
             ];
         });
-
-        return response()->json(['data' => $data]);
     }
 
     /**

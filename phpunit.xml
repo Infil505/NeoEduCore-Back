@@ -39,7 +39,10 @@
              tienen tests propios. -->
         <env name="RATE_LIMIT_API_PER_MINUTE" value="100000"/>
         <env name="DB_CONNECTION" value="pgsql"/>
-        <env name="DB_DATABASE" value="neoeducore"/>
+        <!-- Aislada de la base de desarrollo (.env usa "neoeducore"): esto
+             evita que correr la suite recargue el esquema y borre los datos
+             de desarrollo. Coincide con DB_DATABASE en .env.testing. -->
+        <env name="DB_DATABASE" value="neoeducoretest"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

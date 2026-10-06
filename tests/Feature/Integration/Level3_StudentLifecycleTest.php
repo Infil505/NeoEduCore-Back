@@ -148,10 +148,11 @@ class Level3_StudentLifecycleTest extends TestCase
         $institution = Institution::factory()->create();
         $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
-        $subject     = Subject::factory()->create(['institution_id' => $institution->id]);
         $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
         Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
-        $this->darAccesoDocenteA($docente, $studentUser->id, $institution->id);
+        // La materia tiene que ser la que el admin le asignó al docente para
+        // el grupo de este estudiante, no cualquiera del catálogo.
+        ['subject' => $subject] = $this->darAccesoDocenteA($docente, $studentUser->id, $institution->id);
 
         $res = $this->postJson("/api/students/{$studentUser->id}/subjects", [
             'subject_id' => $subject->id,
@@ -169,10 +170,9 @@ class Level3_StudentLifecycleTest extends TestCase
         $institution = Institution::factory()->create();
         $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
-        $subject     = Subject::factory()->create(['institution_id' => $institution->id]);
         $studentUser = User::factory()->student()->create(['institution_id' => $institution->id]);
         $student     = Student::factory()->create(['user_id' => $studentUser->id, 'institution_id' => $institution->id]);
-        $this->darAccesoDocenteA($docente, $studentUser->id, $institution->id);
+        ['subject' => $subject] = $this->darAccesoDocenteA($docente, $studentUser->id, $institution->id);
 
         StudentSubject::create([
             'institution_id'  => $institution->id,

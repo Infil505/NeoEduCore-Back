@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AI\AiController;
 use App\Http\Controllers\AI\AiTutorController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\OverviewController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\Students\StudentController;
@@ -18,6 +19,7 @@ use App\Http\Controllers\Students\StudentProgressController;
 use App\Http\Controllers\Academic\StudyResourceController;
 use App\Http\Controllers\Academic\CalendarEventController;
 use App\Http\Controllers\AI\AiRecommendationController;
+use App\Http\Controllers\Admin\UserBulkUploadController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\InstitutionController;
 use App\Http\Controllers\Admin\InstitutionAdminController;
@@ -99,6 +101,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     | Intentos de examen — solo student
     */
     Route::middleware('role:student')->group(function () {
+        Route::get('/dashboard/student-overview', [OverviewController::class, 'studentOverview']);
         Route::post('/exams/{exam}/attempts/start', [ExamAttemptController::class, 'start']);
         Route::post('/exams/{exam}/attempts/{attempt}/submit', [ExamAttemptController::class, 'submit']);
         Route::patch('/exams/{exam}/attempts/{attempt}/pause', [ExamAttemptController::class, 'pause']);
@@ -159,6 +162,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     |--------------------------------------------------------------------------
     */
     Route::middleware('role:admin,teacher')->group(function () {
+        Route::get('/dashboard/staff-overview', [OverviewController::class, 'staffOverview']);
 
         // Gestión de usuarios — solo LECTURA para teacher.
         // Las mutaciones (alta, update, status, reset-password, delete) son admin-only.
@@ -171,9 +175,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/students/{student_user_id}', [StudentController::class, 'update']);
         Route::patch('/students/{student_user_id}/status', [StudentController::class, 'setStatus']);
 
-        // Grupos (CRUD)
-        // OJO: las materias son admin-only en todas sus mutaciones, ver más abajo.
-        Route::apiResource('groups', GroupController::class);
+        // Grupos: lectura compartida. Las mutaciones (crear/editar/eliminar)
+        // son admin-only, ver más abajo — el docente solo ve lo que el admin
+        // le asignó, igual que ya pasa con materias y usuarios.
+        Route::get('/groups', [GroupController::class, 'index']);
+        Route::get('/groups/{group}', [GroupController::class, 'show']);
 
         // OJO: la membresía de un grupo (alta y baja de estudiantes) es
         // admin-only desde el modelo de asignaciones, ver más abajo.
@@ -182,6 +188,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/exams', [ExamController::class, 'store']);
         Route::put('/exams/{exam}', [ExamController::class, 'update']);
         Route::patch('/exams/{exam}', [ExamController::class, 'update']);
+        Route::patch('/exams/{exam}/status', [ExamController::class, 'setStatus']);
         Route::delete('/exams/{exam}', [ExamController::class, 'destroy']);
 
         // Transiciones de estado: draft → published → active → completed.
@@ -312,6 +319,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Carga masiva: crea cuentas de usuario, por eso es admin-only
         Route::get('/students/bulk-upload/template', [StudentController::class, 'bulkUploadTemplate']);
         Route::post('/students/bulk-upload', [StudentController::class, 'bulkUpload'])->middleware('throttle:bulk-upload');
+        // Plantilla por rol y carga de docentes/administradores
+        Route::get('/users/bulk-upload/template', [UserBulkUploadController::class, 'template']);
+        Route::post('/users/bulk-upload', [UserBulkUploadController::class, 'upload'])->middleware('throttle:bulk-upload');
 
         Route::put('/users/{user}', [UserController::class, 'update']);
         Route::patch('/users/{user}/status', [UserController::class, 'setStatus']);
@@ -327,6 +337,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::patch('/subjects/{subject}', [SubjectController::class, 'update']);
         Route::delete('/subjects/{subject}', [SubjectController::class, 'destroy']);
 
+        // Grupos: crear/editar/eliminar el grupo en sí (no su membresía, ver
+        // arriba) son admin-only. Un docente ve los grupos que le asignaron,
+        // pero no puede alterar la estructura académica del centro.
+        Route::post('/groups', [GroupController::class, 'store']);
+        Route::put('/groups/{group}', [GroupController::class, 'update']);
+        Route::patch('/groups/{group}', [GroupController::class, 'update']);
+        Route::delete('/groups/{group}', [GroupController::class, 'destroy']);
+
         // Configuración del sistema — solo admin puede editar
         Route::put('/system/config', [SystemConfigController::class, 'update']);
 
@@ -341,6 +359,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/teacher-assignments', [TeacherAssignmentController::class, 'store']);
         Route::delete('/teacher-assignments/bulk', [TeacherAssignmentController::class, 'destroyBulk']);
         Route::delete('/teacher-assignments/{teacherAssignment}', [TeacherAssignmentController::class, 'destroy']);
+
+        // Progreso de un docente elegido por el admin: mismo agregado que ya
+        // ve el propio docente de "lo suyo" (AnalyticsController::subjects,
+        // ReportController::topicMastery), parametrizado por teacherUserId en
+        // vez de por el usuario autenticado.
+        Route::get('/analytics/teachers/{teacherUserId}/subjects', [AnalyticsController::class, 'teacherSubjects']);
+        Route::get('/reports/teachers/{teacherUserId}/topics', [ReportController::class, 'teacherTopicMastery']);
 
         // Membresía de un grupo puntual (alta y baja lógica por lista de ids).
         // Admin-only por el mismo motivo: si un docente pudiera meter
@@ -374,5 +399,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/students/{student_user_id}/subjects', [StudentSubjectController::class, 'enroll']);
         Route::delete('/students/{student_user_id}/subjects/{subject}', [StudentSubjectController::class, 'unenroll']);
         Route::get('/students/{student_user_id}/subjects', [StudentSubjectController::class, 'index']);
+
+        // Qué materias puede inscribirle QUIEN PREGUNTA a este estudiante —
+        // para un docente, solo las que el admin ya le asignó para el grupo
+        // del estudiante. El frontend la usa para no ofrecer en el selector
+        // una materia que enroll() va a rechazar igual.
+        Route::get('/students/{student_user_id}/assignable-subjects', [StudentSubjectController::class, 'assignableByMe']);
     });
 });

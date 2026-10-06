@@ -14,6 +14,9 @@ use App\Models\Admin\User;
 use App\Models\Exams\Exam;
 use App\Models\Students\Student;
 use App\Services\Auth\PasswordSetupService;
+use App\Services\Imports\BulkFileReader;
+use App\Services\Imports\BulkTemplateService;
+use App\Services\Students\EnrollmentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -47,11 +50,6 @@ class StudentController extends Controller
 
     // Columnas que muestra la plantilla. full_name/email son del USUARIO (tabla users)
     // y solo se usan para crear la cuenta; no se vuelcan al modelo Student.
-    private const TEMPLATE_COLUMNS = [
-        'full_name', 'email', 'user_id', 'student_code', 'aula', 'status',
-        'birth_date', 'parent_name', 'parent_email', 'adecuacion_type',
-    ];
-
     public function index(Request $request)
     {
         $query = Student::query()
@@ -159,7 +157,7 @@ class StudentController extends Controller
             new OA\Response(response: 422, description: 'Archivo inválido o supera límites'),
         ]
     )]
-    public function bulkUpload(Request $request, PasswordSetupService $passwordSetup)
+    public function bulkUpload(Request $request, PasswordSetupService $passwordSetup, BulkFileReader $reader, EnrollmentService $enrollment)
     {
         $maxKb = config('bulk.students.max_mb') * 1024;
 
@@ -168,9 +166,7 @@ class StudentController extends Controller
         ]);
 
         $file = $request->file('file');
-        $ext  = strtolower($file->getClientOriginalExtension());
-
-        [$rows, $parseError] = $this->parseFile($file, $ext);
+        [$rows, $parseError] = $reader->read($file);
 
         if ($parseError) {
             return response()->json(['message' => $parseError], 422);
@@ -189,14 +185,14 @@ class StudentController extends Controller
         }
 
         // Verificar que exista al menos una columna identificadora
-        $firstRow = $rows[0];
+        $firstRow = reset($rows);
         if (
             !array_key_exists('user_id', $firstRow) &&
             !array_key_exists('student_code', $firstRow) &&
             !array_key_exists('email', $firstRow)
         ) {
             return response()->json([
-                'message' => 'El archivo debe contener al menos una columna identificadora: "email" (para crear), "user_id" o "student_code".',
+                'message' => 'El archivo debe contener al menos una columna identificadora: «Correo institucional» (para crear), «ID de usuario» o «Código de estudiante».',
             ], 422);
         }
 
@@ -206,8 +202,8 @@ class StudentController extends Controller
         // ningún docente, no reciben exámenes y no salen en informes.
         if (!array_key_exists('aula', $firstRow)) {
             return response()->json([
-                'message' => 'El archivo debe contener la columna "aula" con el código del grupo de cada estudiante '
-                    . '(por ejemplo 11B2026). Descargá la plantilla actualizada desde /api/students/bulk-upload/template.',
+                'message' => 'El archivo debe contener la columna «Aula» con el código del grupo de cada estudiante '
+                    . '(por ejemplo 11B2026). Descargá la plantilla actualizada.',
             ], 422);
         }
 
@@ -242,18 +238,18 @@ class StudentController extends Controller
         DB::transaction(function () use (
             $rows, $validAdeValues, $validStatValues, $institutionId, $aulasPorCodigo,
             &$created, &$updated, &$errors, &$usersCreated, &$newUsers,
-            &$matriculados, &$reasignados, &$aulasTocadas
+            &$matriculados, &$reasignados, &$aulasTocadas, $enrollment
         ) {
             foreach ($rows as $idx => $row) {
-                $lineNumber = $idx + 2; // +2: encabezado en fila 1
+                $lineNumber = $idx; // los parsers indexan por fila del archivo
 
                 $row = Arr::map($row, fn($v) => is_string($v) ? trim($v) : $v);
 
                 // --- adecuacion_type ---
                 if (!empty($row['adecuacion_type'])) {
-                    $val = Str::lower($row['adecuacion_type']);
+                    $val = Str::lower(Str::ascii($row['adecuacion_type'])); // «evaluación» = «evaluacion»
                     if (!in_array($val, $validAdeValues, true)) {
-                        $errors[] = "Fila {$lineNumber}: adecuacion_type inválido «{$row['adecuacion_type']}». Valores aceptados: " . implode(', ', $validAdeValues) . '.';
+                        $errors[] = "Fila {$lineNumber}: «Tipo de adecuación» inválido «{$row['adecuacion_type']}». Valores aceptados: " . implode(', ', $validAdeValues) . '.';
                         continue;
                     }
                     $row['adecuacion_type'] = $val;
@@ -261,12 +257,14 @@ class StudentController extends Controller
                     $row['adecuacion_type'] = null;
                 }
 
-                // --- status ---
+                // --- status (activo/inactivo/suspendido, o en inglés) ---
                 if (!empty($row['status'])) {
-                    if (!in_array($row['status'], $validStatValues, true)) {
-                        $errors[] = "Fila {$lineNumber}: status inválido «{$row['status']}». Valores aceptados: " . implode(', ', $validStatValues) . '.';
+                    $estado = BulkTemplateService::statusValue((string) $row['status']);
+                    if (!in_array($estado, $validStatValues, true)) {
+                        $errors[] = "Fila {$lineNumber}: «Estado» inválido «{$row['status']}». Valores aceptados: " . implode(', ', array_keys(BulkTemplateService::STATUS_LABELS)) . '.';
                         continue;
                     }
+                    $row['status'] = $estado;
                 }
 
                 // --- aula (obligatoria) ---
@@ -278,7 +276,7 @@ class StudentController extends Controller
                 $codigoAula = Str::upper(trim((string) ($row['aula'] ?? '')));
 
                 if ($codigoAula === '') {
-                    $errors[] = "Fila {$lineNumber}: «aula» es obligatoria. Indicá el código del grupo (por ejemplo 11B2026).";
+                    $errors[] = "Fila {$lineNumber}: «Aula» es obligatoria. Indicá el código del grupo (por ejemplo 11B2026).";
                     continue;
                 }
 
@@ -292,7 +290,7 @@ class StudentController extends Controller
 
                 // --- parent_email ---
                 if (!empty($row['parent_email']) && !filter_var($row['parent_email'], FILTER_VALIDATE_EMAIL)) {
-                    $errors[] = "Fila {$lineNumber}: parent_email inválido «{$row['parent_email']}».";
+                    $errors[] = "Fila {$lineNumber}: «Correo del tutor» inválido «{$row['parent_email']}».";
                     continue;
                 }
 
@@ -300,7 +298,7 @@ class StudentController extends Controller
                 if (!empty($row['birth_date'])) {
                     $d = \DateTime::createFromFormat('Y-m-d', $row['birth_date']);
                     if (!$d || $d->format('Y-m-d') !== $row['birth_date']) {
-                        $errors[] = "Fila {$lineNumber}: birth_date inválido «{$row['birth_date']}». Formato esperado: YYYY-MM-DD.";
+                        $errors[] = "Fila {$lineNumber}: «Fecha de nacimiento» inválida «{$row['birth_date']}». Formato esperado: AAAA-MM-DD.";
                         continue;
                     }
                 }
@@ -308,7 +306,7 @@ class StudentController extends Controller
                 // --- email (si viene) ---
                 $email = !empty($row['email']) ? Str::lower($row['email']) : null;
                 if ($email !== null && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                    $errors[] = "Fila {$lineNumber}: email inválido «{$row['email']}».";
+                    $errors[] = "Fila {$lineNumber}: «Correo institucional» inválido «{$row['email']}».";
                     continue;
                 }
 
@@ -319,7 +317,7 @@ class StudentController extends Controller
                         ->where('id', $row['user_id'])
                         ->first();
                     if (!$user) {
-                        $errors[] = "Fila {$lineNumber}: user_id «{$row['user_id']}» no existe en tu institución.";
+                        $errors[] = "Fila {$lineNumber}: el «ID de usuario» «{$row['user_id']}» no existe en tu institución.";
                         continue;
                     }
                 } elseif ($email) {
@@ -364,7 +362,7 @@ class StudentController extends Controller
                         $duplicateQuery->where('user_id', '!=', $student->user_id);
                     }
                     if ($duplicateQuery->exists()) {
-                        $errors[] = "Fila {$lineNumber}: student_code «{$row['student_code']}» ya está en uso.";
+                        $errors[] = "Fila {$lineNumber}: el «Código de estudiante» «{$row['student_code']}» ya está en uso.";
                         continue;
                     }
                 }
@@ -372,16 +370,16 @@ class StudentController extends Controller
                 // --- Si no hay usuario ni estudiante: crear cuenta nueva (requiere email + full_name) ---
                 if (!$user && !$student) {
                     if (!$email) {
-                        $errors[] = "Fila {$lineNumber}: para crear un estudiante nuevo se requiere la columna «email» (o un «user_id» existente).";
+                        $errors[] = "Fila {$lineNumber}: para crear un estudiante nuevo se requiere el «Correo institucional» (o un «ID de usuario» existente).";
                         continue;
                     }
                     $fullName = trim((string) ($row['full_name'] ?? ''));
                     if ($fullName === '') {
-                        $errors[] = "Fila {$lineNumber}: «full_name» es obligatorio para crear el usuario.";
+                        $errors[] = "Fila {$lineNumber}: «Nombre completo» es obligatorio para crear el usuario.";
                         continue;
                     }
                     if (User::where('email', $email)->exists()) {
-                        $errors[] = "Fila {$lineNumber}: el email «{$email}» ya está en uso.";
+                        $errors[] = "Fila {$lineNumber}: el correo «{$email}» ya está en uso.";
                         continue;
                     }
 
@@ -447,7 +445,7 @@ class StudentController extends Controller
                     if ($aulaActual === $aula->id) {
                         // Ya está donde debe: nada que hacer.
                     } elseif ($aulaActual === null) {
-                        $this->abrirMatricula($studentUserId, $aula->id, $institutionId);
+                        $enrollment->abrirMatricula($studentUserId, $aula->id, $institutionId);
                         $aulasTocadas[$aula->id] = true;
                         $matriculados++;
                     } else {
@@ -460,7 +458,7 @@ class StudentController extends Controller
                             ->whereNull('left_at')
                             ->update(['left_at' => now()]);
 
-                        $this->abrirMatricula($studentUserId, $aula->id, $institutionId);
+                        $enrollment->abrirMatricula($studentUserId, $aula->id, $institutionId);
 
                         $aulasTocadas[$aula->id]   = true;
                         $aulasTocadas[$aulaActual] = true;
@@ -477,17 +475,7 @@ class StudentController extends Controller
         // Recuento de las aulas afectadas (RN-STU-012). Una sola pasada al
         // final: durante el bucle el contador cambiaría en cada fila.
         foreach (array_keys($aulasTocadas) as $groupId) {
-            DB::table('groups')
-                ->where('institution_id', $institutionId)
-                ->where('id', $groupId)
-                ->update([
-                    'student_count' => DB::table('group_students')
-                        ->where('institution_id', $institutionId)
-                        ->where('group_id', $groupId)
-                        ->whereNull('left_at')
-                        ->count(),
-                    'updated_at' => now(),
-                ]);
+            $enrollment->recontarAula($groupId, $institutionId);
         }
 
         // Encolar el enlace de "establece tu contraseña" a los usuarios creados.
@@ -520,119 +508,26 @@ class StudentController extends Controller
         ]);
     }
 
-    /**
-     * Abre (o reabre) la matrícula de un estudiante en un aula.
-     *
-     * `upsert` con `left_at = NULL` en conflicto: si el estudiante ya estuvo en
-     * esa aula y se fue, se reactiva la fila original conservando su
-     * `joined_at`, igual que hace `GroupController::addStudents()`.
-     */
-    private function abrirMatricula(string $studentUserId, string $groupId, string $institutionId): void
-    {
-        DB::table('group_students')->upsert(
-            [[
-                'institution_id'  => $institutionId,
-                'group_id'        => $groupId,
-                'student_user_id' => $studentUserId,
-                'joined_at'       => now(),
-                'left_at'         => null,
-            ]],
-            ['group_id', 'student_user_id'],
-            ['left_at']
-        );
-    }
-
     #[OA\Get(
         path: '/api/students/bulk-upload/template',
-        summary: 'Descargar plantilla CSV para carga masiva',
+        summary: 'Descargar plantilla de carga masiva (CSV con ";" o XLSX)',
         tags: ['Students'],
         security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'format', in: 'query', required: false,
+                schema: new OA\Schema(type: 'string', enum: ['csv', 'xlsx'], default: 'csv')),
+        ],
         responses: [
-            new OA\Response(response: 200, description: 'Archivo CSV de plantilla'),
+            new OA\Response(response: 200, description: 'Archivo de plantilla'),
         ]
     )]
-    public function bulkUploadTemplate()
+    public function bulkUploadTemplate(Request $request, BulkTemplateService $templates)
     {
-        $filename = 'plantilla_estudiantes.csv';
+        $format = $request->validate([
+            'format' => ['nullable', Rule::in(['csv', 'xlsx'])],
+        ])['format'] ?? 'csv';
 
-        $headers = [
-            'Content-Type'        => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ];
-
-        $columns = self::TEMPLATE_COLUMNS;
-
-        // Fila de instrucciones (se muestra como primera fila de datos en Excel)
-        $instructions = [
-            '(Nombre completo del estudiante — requerido para crear cuenta nueva)',
-            '(Correo del estudiante — requerido para crear; recibe enlace para fijar contraseña)',
-            '(UUID de usuario existente — opcional; si se indica NO se crea cuenta)',
-            '(Código único, ej: EST-0001 — opcional)',
-            '(OBLIGATORIO — código del aula ya creada, ej: 4A2026. El grado y la seccion se toman de ella)',
-            '(active, inactive, suspended — default: active)',
-            '(AAAA-MM-DD, ej: 2017-03-15)',
-            '(Nombre completo del tutor)',
-            '(Email del tutor)',
-            '(acceso, contenido, evaluacion — o dejar vacío)',
-        ];
-
-        $examples = [
-            // Crear cuenta nueva (con email, sin user_id) y matricularla en su aula
-            [
-                'María García Solano',
-                'maria.garcia@ejemplo.com',
-                '',
-                'EST-0001',
-                '4A2026',
-                'active',
-                '2017-03-15',
-                'Lucía Solano',
-                'lucia.solano@ejemplo.com',
-                '',
-            ],
-            [
-                'Carlos López Mora',
-                'carlos.lopez@ejemplo.com',
-                '',
-                'EST-0002',
-                '5B2026',
-                'active',
-                '2016-07-22',
-                'Pedro López',
-                'pedro.lopez@ejemplo.com',
-                'acceso',
-            ],
-            // Estudiante que YA existe: esta fila lo ACTUALIZA. Si el aula es
-            // distinta de la actual, se le da de baja en la anterior y de alta
-            // en esta. Es la única vía por la que un alumno cambia de aula.
-            [
-                '',
-                '',
-                'yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy',
-                'EST-0003',
-                '5B2026',
-                'inactive',
-                '2018-11-01',
-                'Ana Jiménez Castro',
-                'ana.jimenez@ejemplo.com',
-                'contenido',
-            ],
-        ];
-
-        return response()->streamDownload(function () use ($columns, $instructions, $examples) {
-            $output = fopen('php://output', 'w');
-
-            // BOM UTF-8 para compatibilidad con Excel en Windows
-            fputs($output, "\xEF\xBB\xBF");
-
-            fputcsv($output, $columns);
-            fputcsv($output, $instructions);
-            foreach ($examples as $row) {
-                fputcsv($output, $row);
-            }
-
-            fclose($output);
-        }, $filename, $headers);
+        return $templates->download(UserType::Student->value, $format);
     }
 
     public function setStatus(Request $request, string $student_user_id)
@@ -695,102 +590,5 @@ class StudentController extends Controller
             ->values();
 
         return response()->json(['data' => $exams]);
-    }
-
-    // -------------------------------------------------------------------------
-
-    /**
-     * Lee un archivo CSV o XLSX y devuelve [rows[], errorMessage|null].
-     */
-    private function parseFile(\Illuminate\Http\UploadedFile $file, string $ext): array
-    {
-        if (in_array($ext, ['csv', 'txt'], true)) {
-            return $this->parseCsv($file);
-        }
-
-        if ($ext === 'xlsx') {
-            return $this->parseXlsx($file);
-        }
-
-        return [[], 'Formato no soportado. Use .csv o .xlsx'];
-    }
-
-    private function parseCsv(\Illuminate\Http\UploadedFile $file): array
-    {
-        $path   = $file->getRealPath();
-        $handle = fopen($path, 'r');
-
-        if ($handle === false) {
-            return [[], 'No se pudo leer el archivo CSV.'];
-        }
-
-        // Detectar y descartar BOM UTF-8
-        $bom = fread($handle, 3);
-        if ($bom !== "\xEF\xBB\xBF") {
-            rewind($handle);
-        }
-
-        $header = null;
-        $rows   = [];
-
-        while (($data = fgetcsv($handle, 0, ',')) !== false) {
-            if (!$header) {
-                $header = array_map(
-                    fn($h) => Str::of($h)->trim()->lower()->replace(' ', '_')->toString(),
-                    $data
-                );
-                continue;
-            }
-
-            if (count($data) !== count($header)) {
-                continue; // fila mal formada — la saltamos silenciosamente
-            }
-
-            $rows[] = array_combine($header, $data);
-        }
-
-        fclose($handle);
-
-        return [$rows, null];
-    }
-
-    private function parseXlsx(\Illuminate\Http\UploadedFile $file): array
-    {
-        try {
-            $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($file->getRealPath());
-            $sheet       = $spreadsheet->getActiveSheet();
-            $array       = $sheet->toArray(null, true, true, false);
-
-            $spreadsheet->disconnectWorksheets();
-            unset($spreadsheet);
-
-            $header = null;
-            $rows   = [];
-
-            foreach ($array as $i => $row) {
-                if ($i === 0) {
-                    $header = array_map(
-                        fn($h) => Str::of((string) $h)->trim()->lower()->replace(' ', '_')->toString(),
-                        $row
-                    );
-                    continue;
-                }
-
-                // Saltar filas completamente vacías
-                if (empty(array_filter($row, fn($v) => $v !== null && $v !== ''))) {
-                    continue;
-                }
-
-                if (count($row) !== count($header)) {
-                    continue;
-                }
-
-                $rows[] = array_combine($header, $row);
-            }
-
-            return [$rows, null];
-        } catch (\Exception $e) {
-            return [[], 'No se pudo leer el archivo XLSX: ' . $e->getMessage()];
-        }
     }
 }

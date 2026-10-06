@@ -295,6 +295,33 @@ class ReportController extends Controller
     }
 
     /**
+     * Dominio por tema de los estudiantes de un docente elegido por el admin.
+     * GET /api/reports/teachers/{teacherUserId}/topics
+     *
+     * Mismo agregado sin nombres que `topicMastery()`, acotado al docente que
+     * el admin elige en vez de a quien esté autenticado. `estudiantesDelDocente()`
+     * ya acepta el id como parámetro explícito, por eso esto es solo plomería.
+     */
+    public function teacherTopicMastery(Request $request, TopicMasteryService $topics, string $teacherUserId)
+    {
+        $this->resolverDocente($teacherUserId);
+
+        $validated = $request->validate([
+            'limit' => ['sometimes', 'integer', 'between:1,50'],
+        ]);
+
+        $limite = (int) ($validated['limit'] ?? 10);
+
+        return response()->json([
+            'data' => [
+                'threshold'   => TopicMasteryService::UMBRAL_REFUERZO,
+                'min_answers' => TopicMasteryService::MINIMO_RESPUESTAS,
+                'topics'      => $topics->porEstudiantes($this->estudiantesDelDocente($teacherUserId), $limite),
+            ],
+        ]);
+    }
+
+    /**
      * Métricas de uso del tutor IA:
      * - total de sesiones y mensajes
      * - sesiones activas vs cerradas
