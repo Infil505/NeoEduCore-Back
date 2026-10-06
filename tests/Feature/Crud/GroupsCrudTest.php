@@ -163,18 +163,21 @@ class GroupsCrudTest extends TestCase
         ]);
     }
 
-    public function test_teacher_cannot_delete_a_group(): void
+    public function test_teacher_cannot_create_update_or_delete_groups(): void
     {
         $institution = Institution::factory()->create();
         $docente = $this->signInTeacher(['institution_id' => $institution->id]);
 
-        $group = Group::factory()->create(['institution_id' => $institution->id]);
+        // Incluso uno asignado: borrar arrastra las asignaciones de los demás.
+        $group   = Group::factory()->create(['institution_id' => $institution->id]);
         $subject = Subject::factory()->create(['institution_id' => $institution->id]);
         $this->asignarDocente($docente, $group->id, $subject->id);
 
-        $res = $this->deleteJson("/api/groups/{$group->id}");
+        $this->postJson('/api/groups', ['name' => 'X-1', 'grade' => 4, 'section' => 'A'])->assertForbidden();
+        $this->putJson("/api/groups/{$group->id}", ['name' => 'Otro'])->assertForbidden();
+        $this->deleteJson("/api/groups/{$group->id}")->assertForbidden();
 
-        $res->assertForbidden();
         $this->assertDatabaseHas('groups', ['id' => $group->id]);
+        $this->assertDatabaseHas('teacher_assignments', ['group_id' => $group->id]);
     }
 }

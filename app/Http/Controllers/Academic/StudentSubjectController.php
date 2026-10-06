@@ -110,7 +110,12 @@ class StudentSubjectController extends Controller
             }
         }
 
-        $existing = StudentSubject::where('student_user_id', $studentUserId)
+        if ($this->esDocente($request->user())
+            && !$this->docenteAlcanzaEstudianteEnMateria($request->user(), $studentUserId, $subject->id)) {
+            return $this->noAutorizadoPorMateria();
+        }
+
+        $existing =StudentSubject::where('student_user_id', $studentUserId)
             ->where('subject_id', $subject->id)
             ->exists();
 
@@ -145,7 +150,12 @@ class StudentSubjectController extends Controller
             return $this->noAutorizadoPorAsignacion();
         }
 
-        $deleted = StudentSubject::where('student_user_id', $studentUserId)
+        if ($this->esDocente($request->user())
+            && !$this->docenteAlcanzaEstudianteEnMateria($request->user(), $studentUserId, $subjectId)) {
+            return $this->noAutorizadoPorMateria();
+        }
+
+        $deleted =StudentSubject::where('student_user_id', $studentUserId)
             ->where('subject_id', $subjectId)
             ->delete();
 

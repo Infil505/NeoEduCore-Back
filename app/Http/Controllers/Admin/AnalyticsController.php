@@ -21,11 +21,20 @@ class AnalyticsController extends Controller
      */
     public function institution(Request $request)
     {
-        $totalStudents  = Student::count();
-        $activeStudents = Student::where('status', 'active')->count();
-        $examsCompleted = ExamAttempt::whereNotNull('submitted_at')->count();
+        $user = $request->user();
 
-        $avgPct = ExamAttempt::whereNotNull('submitted_at')
+        // Mismo criterio que `subjects()` (S5): el docente ve las cifras de
+        // SUS alumnos; el administrador, las de toda la institución.
+        $students = fn () => $this->acotarAEstudiantesDelDocente(Student::query(), $user, 'user_id');
+        $attempts = fn () => $this->acotarAEstudiantesDelDocente(
+            ExamAttempt::whereNotNull('submitted_at'), $user
+        );
+
+        $totalStudents  = $students()->count();
+        $activeStudents = $students()->where('status', 'active')->count();
+        $examsCompleted = $attempts()->count();
+
+        $avgPct = $attempts()
             ->where('max_score', '>', 0)
             ->selectRaw('AVG(score / max_score * 100) as avg_pct')
             ->value('avg_pct');

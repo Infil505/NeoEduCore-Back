@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\AI;
 
 use App\Enums\AiGenerationSource;
+use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
 use App\Models\Exams\Exam;
 use App\Models\Students\Student;
@@ -15,6 +16,8 @@ use OpenAI\Laravel\Facades\OpenAI;
 
 class AiController extends Controller
 {
+    use AcotaAlDocente;
+
     /**
      * Generar recomendación IA y guardarla en ai_recommendations
      * body:
@@ -50,6 +53,15 @@ class AiController extends Controller
 
         // ✅ Validar que exista el estudiante (scoped)
         Student::where('user_id', $data['student_user_id'])->firstOrFail();
+
+        // El docente solo genera para alumnos que alcanza y en materias que les
+        // imparte. Sin esto escribía recomendaciones —que el alumno ve— sobre
+        // cualquiera de la institución y gastaba presupuesto de OpenAI.
+        // Va ANTES de la llamada a OpenAI: un 403 no debe costar nada.
+        if ($this->esDocente($user)
+            && !$this->docenteAlcanzaEstudianteEnMateria($user, $data['student_user_id'], $data['subject_id'])) {
+            return $this->noAutorizadoPorMateria();
+        }
 
         // ✅ (Opcional) Validar examen: existe y coincide materia si se envía
         $exam = null;

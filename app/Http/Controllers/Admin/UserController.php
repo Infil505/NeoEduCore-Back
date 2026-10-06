@@ -268,7 +268,7 @@ class UserController extends Controller
     }
 
     /**
-     * Reset password (admin/teacher)
+     * Reset password (solo admin: la ruta está en el grupo `role:admin`)
      * - Cambia el hash directamente
      * - Recomendado: invalidar tokens (opcional)
      */

@@ -113,6 +113,12 @@ class StudentProgressController extends Controller
             return $this->noAutorizadoPorAsignacion();
         }
 
+        // ...y solo en las materias que imparte a ese alumno.
+        if ($this->esDocente($user)
+            && !$this->docenteAlcanzaEstudianteEnMateria($user, $data['student_user_id'], $data['subject_id'])) {
+            return $this->noAutorizadoPorMateria();
+        }
+
         $progress = StudentProgress::updateOrCreate(
             [
                 'student_user_id' => $data['student_user_id'],
@@ -153,6 +159,11 @@ class StudentProgressController extends Controller
         // Sin filtros, esto tocaba el progreso de toda la institución. El
         // docente queda acotado a sus grupos asignados.
         $this->acotarAEstudiantesDelDocente($query, $request->user());
+
+        // ...y a las materias que imparte (igual que en `upsert`).
+        if ($this->esDocente($request->user())) {
+            $query->whereIn('subject_id', $this->materiasDelDocente($request->user()->id));
+        }
 
         // Una sola query UPDATE en lugar de N toques individuales
         $count = $query->update(['updated_at' => now()]);

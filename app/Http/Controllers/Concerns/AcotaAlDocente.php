@@ -83,6 +83,23 @@ trait AcotaAlDocente
     }
 
     /**
+     * ¿El docente alcanza a este estudiante **en esta materia**?
+     *
+     * Más estricto que `docenteAlcanzaEstudiante()`: exige una asignación de
+     * un grupo donde el alumno esté activo *y* que sea de esa materia. Es lo que
+     * hay que usar al escribir algo ligado a una materia (matrícula, progreso,
+     * recomendaciones); estar con el alumno en Matemáticas no habilita a tocarle
+     * Lengua.
+     */
+    protected function docenteAlcanzaEstudianteEnMateria(object $docente, string $studentUserId, string $subjectId): bool
+    {
+        return $this->estudiantesDelDocente($docente->id)
+            ->where('gs.student_user_id', $studentUserId)
+            ->where('ta.subject_id', $subjectId)
+            ->exists();
+    }
+
+    /**
      * ¿El docente puede dirigir un examen de esta materia a este grupo?
      *
      * Exige la fila completa (grupo **y** materia): estar asignado a 7-A en
@@ -141,6 +158,14 @@ trait AcotaAlDocente
         }
 
         return $query->whereIn($columna, $this->estudiantesDelDocente($user->id));
+    }
+
+    /** 403 para cuando el alumno es suyo pero la materia no. */
+    protected function noAutorizadoPorMateria()
+    {
+        return response()->json([
+            'message' => 'No autorizado: no impartes esta materia a este estudiante.',
+        ], 403);
     }
 
     /**
