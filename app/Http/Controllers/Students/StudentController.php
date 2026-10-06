@@ -55,6 +55,13 @@ class StudentController extends Controller
     // y solo se usan para crear la cuenta; no se vuelcan al modelo Student.
     public function index(Request $request)
     {
+        // `status` va a una columna enum: un valor ajeno era un 500 de PostgreSQL.
+        $request->validate([
+            'grade'   => ['nullable', 'integer'],
+            'section' => ['nullable', 'string', 'max:20'],
+            'status'  => ['nullable', Rule::in(array_map(fn ($e) => $e->value, StudentStatus::cases()))],
+        ]);
+
         $query = Student::query()
             ->with('user')
             ->orderBy('student_code');

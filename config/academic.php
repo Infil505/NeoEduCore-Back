@@ -71,6 +71,17 @@ return [
         'grace_seconds' => (int) env('EXAM_GRACE_SECONDS', 30),
 
         /*
+         | Tope de pausa ACUMULADA por intento, en segundos (15 min por defecto).
+         |
+         | La pausa existe para una desconexión o una urgencia, no para ganar
+         | tiempo: sin tope, cada segundo pausado se sumaba al plazo, así que una
+         | pausa de dos horas daba dos horas más de examen —y con él abierto en
+         | otra pestaña—. Pasado el tope, la pausa deja de acreditarse y el plazo
+         | no se alarga más. `0` desactiva las pausas por completo.
+         */
+        'max_pause_seconds' => (int) env('EXAM_MAX_PAUSE_SECONDS', 900),
+
+        /*
          | Multiplicadores de duración por tipo de adecuación curricular.
          | Ver el aviso de la cabecera antes de tocarlos.
          */

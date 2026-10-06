@@ -10,6 +10,7 @@ use App\Enums\ExamStatus;
 use App\Jobs\NotificarExamenDisponible;
 use App\Models\Admin\Institution;
 use App\Models\Exams\Exam;
+use App\Rules\FechaRazonable;
 use App\Rules\UrlDeVideo;
 use App\Models\Academic\Group;
 use Illuminate\Http\Request;
@@ -97,6 +98,15 @@ class ExamController extends Controller
      */
     public function index(Request $request)
     {
+        // Los filtros llegan a columnas `uuid`/enum: sin validar, un valor que no
+        // encaja era un 500 de PostgreSQL en vez de un 422.
+        $request->validate([
+            'status'     => ['nullable', Rule::in(array_map(fn ($e) => $e->value, ExamStatus::cases()))],
+            'subject_id' => ['nullable', 'uuid'],
+            'teacher_id' => ['nullable', 'uuid'],
+            'grade'      => ['nullable', 'integer'],
+        ]);
+
         $query = Exam::query()
             // Al estudiante solo los suyos: activos, vigentes y asignados a sus
             // grupos. Antes devolvía el catálogo entero con sus ids, que era el
@@ -141,7 +151,7 @@ class ExamController extends Controller
     {
         $data = $request->validate([
             'title' => ['required', 'string', 'min:3', 'max:150'],
-            'subject_id' => ['required', 'uuid', Rule::exists('subjects', 'id')],
+            'subject_id' => ['required', 'uuid', Rule::exists('subjects', 'id')->where('institution_id', $request->user()->institution_id)],
             'grade' => ['required', 'integer', 'between:' . config('academic.grade_min') . ',' . config('academic.grade_max')],
             'instructions' => ['nullable', 'string', 'max:2000'],
             // Opcional: el tutor se lo da al alumnado visual o auditivo.
@@ -154,8 +164,8 @@ class ExamController extends Controller
             'allow_review_after_submission' => ['nullable', 'boolean'],
             'randomize_questions' => ['nullable', 'boolean'],
 
-            'available_from' => ['nullable', 'date'],
-            'available_until' => ['nullable', 'date', 'after_or_equal:available_from'],
+            'available_from' => ['nullable', new FechaRazonable()],
+            'available_until' => ['bail', 'nullable', new FechaRazonable(), ...FechaRazonable::posteriorA($request, 'available_from')],
 
             // grupos objetivo (opcional)
             'group_ids' => ['nullable', 'array'],
@@ -249,7 +259,7 @@ class ExamController extends Controller
 
         $data = $request->validate([
             'title' => ['sometimes', 'string', 'min:3', 'max:150'],
-            'subject_id' => ['sometimes', 'uuid', Rule::exists('subjects', 'id')],
+            'subject_id' => ['sometimes', 'uuid', Rule::exists('subjects', 'id')->where('institution_id', $request->user()->institution_id)],
             'grade' => ['sometimes', 'integer', 'between:' . config('academic.grade_min') . ',' . config('academic.grade_max')],
             'instructions' => ['nullable', 'string', 'max:2000'],
             // `null` lo quita; omitirlo lo deja como está.
@@ -261,8 +271,8 @@ class ExamController extends Controller
             'allow_review_after_submission' => ['sometimes', 'boolean'],
             'randomize_questions' => ['sometimes', 'boolean'],
 
-            'available_from' => ['nullable', 'date'],
-            'available_until' => ['nullable', 'date', 'after_or_equal:available_from'],
+            'available_from' => ['nullable', new FechaRazonable()],
+            'available_until' => ['bail', 'nullable', new FechaRazonable(), ...FechaRazonable::posteriorA($request, 'available_from')],
 
             'group_ids' => ['nullable', 'array'],
             'group_ids.*' => ['uuid'],

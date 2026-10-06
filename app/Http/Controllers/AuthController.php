@@ -7,6 +7,7 @@ use App\Enums\StudentStatus;
 use App\Enums\UserStatus;
 use App\Enums\UserType;
 use App\Models\Academic\Group;
+use App\Models\Admin\Institution;
 use App\Models\Students\Student;
 use App\Services\Students\EnrollmentService;
 use App\Models\Admin\User;
@@ -216,6 +217,11 @@ class AuthController extends Controller
 
         if ($user->status !== UserStatus::Active) {
             return response()->json(['message' => 'Usuario inactivo o suspendido'], 403);
+        }
+
+        // Un centro dado de baja no deja entrar a nadie de su institución.
+        if ($user->institution_id && !Institution::estaActiva($user->institution_id)) {
+            return response()->json(['message' => 'La institución está dada de baja'], 403);
         }
 
         $token = $user->createToken('web')->plainTextToken;

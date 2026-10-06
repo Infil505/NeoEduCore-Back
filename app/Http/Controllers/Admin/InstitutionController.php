@@ -39,7 +39,8 @@ class InstitutionController extends Controller
         $query = Institution::query()->orderByDesc('created_at');
 
         if (!empty($data['q'])) {
-            $q = trim($data['q']);
+            // Los comodines de LIKE (% y _) se buscan como texto, no como patrón.
+            $q = addcslashes(trim($data['q']), '%_\\');
             $query->where(fn ($w) => $w->where('name', 'ilike', "%{$q}%")->orWhere('code', 'ilike', "%{$q}%"));
         }
 

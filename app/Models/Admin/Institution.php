@@ -21,6 +21,7 @@ use App\Models\Students\StudentProgress;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Support\Facades\Cache;
 
 class Institution extends Model
 {
@@ -45,6 +46,34 @@ class Institution extends Model
         'is_active' => 'boolean',
         'settings'  => 'array',
     ];
+
+    /**
+     * ¿La institución está dada de alta? Lo consulta `EnsureAccountIsActive` en
+     * cada petición autenticada, así que se cachea; `booted()` lo invalida en
+     * cuanto la institución se guarda o se borra, para que la baja surta efecto
+     * al instante. Una institución que no existe cuenta como no activa.
+     */
+    public static function estaActiva(string $id): bool
+    {
+        return Cache::remember(
+            self::claveActiva($id),
+            60,
+            fn () => (bool) static::query()->whereKey($id)->value('is_active')
+        );
+    }
+
+    private static function claveActiva(string $id): string
+    {
+        return "institution.activa.{$id}";
+    }
+
+    protected static function booted(): void
+    {
+        $olvidar = fn (self $institucion) => Cache::forget(self::claveActiva($institucion->id));
+
+        static::saved($olvidar);
+        static::deleted($olvidar);
+    }
 
     public static array $defaultSettings = [
         'timezone'           => 'America/Costa_Rica',

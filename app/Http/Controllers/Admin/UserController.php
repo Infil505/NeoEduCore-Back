@@ -100,7 +100,8 @@ class UserController extends Controller
         }
 
         if (!empty($data['q'])) {
-            $q = trim($data['q']);
+            // Los comodines de LIKE (% y _) se buscan como texto, no como patrón.
+            $q = addcslashes(trim($data['q']), '%_\\');
             $query->where(function ($w) use ($q) {
                 $w->where('full_name', 'ilike', "%{$q}%")
                   ->orWhere('email', 'ilike', "%{$q}%");
@@ -174,6 +175,12 @@ class UserController extends Controller
 
         $user->status = $data['status'];
         $user->save();
+
+        // Una cuenta que deja de estar activa pierde también sus sesiones abiertas
+        // (el middleware `activa` ya las rechazaría; así además no quedan tokens vivos).
+        if ($data['status'] !== UserStatus::Active->value) {
+            $user->tokens()->delete();
+        }
 
         return response()->json([
             'data' => $user->fresh(),

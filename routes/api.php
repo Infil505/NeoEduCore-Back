@@ -73,7 +73,7 @@ Route::prefix('password')->group(function () {
 | PROTEGIDAS: auth + tenant (aplica a todo lo de abajo)
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth:sanctum', 'activa'])->group(function () {
 
     /*
     | Sesión — cualquier rol autenticado

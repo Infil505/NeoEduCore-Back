@@ -42,6 +42,15 @@ class StudyResourceController extends Controller
      */
     public function index(Request $request)
     {
+        // Filtros validados: `resource_type` y `subject_id` van a columnas enum/uuid
+        // y un valor ajeno era un 500 de PostgreSQL.
+        $request->validate([
+            'resource_type' => ['nullable', Rule::in(array_map(fn ($e) => $e->value, ResourceType::cases()))],
+            'difficulty'    => ['nullable', Rule::in(Difficulty::values())],
+            'subject_id'    => ['nullable', 'uuid'],
+            'grade'         => ['nullable', 'integer'],
+        ]);
+
         $query = StudyResource::query()
             ->visibleTo($request->user())
             ->with(['creator', 'subject', 'groups'])
@@ -95,7 +104,7 @@ class StudyResourceController extends Controller
                 ResourceType::cases()
             ))],
 
-            'url' => ['required', 'url', 'max:500', function ($attr, $value, $fail) {
+            'url' => ['bail', 'required', 'string', 'url', 'max:500', function ($attr, $value, $fail) {
                 if (!(new AiOutputValidator())->isUrlAllowed($value)) {
                     $fail('La URL debe provenir de un dominio educativo permitido.');
                 }
@@ -187,7 +196,7 @@ class StudyResourceController extends Controller
                 ResourceType::cases()
             ))],
 
-            'url' => ['sometimes', 'url', 'max:500', function ($attr, $value, $fail) {
+            'url' => ['bail', 'sometimes', 'string', 'url', 'max:500', function ($attr, $value, $fail) {
                 if (!(new AiOutputValidator())->isUrlAllowed($value)) {
                     $fail('La URL debe provenir de un dominio educativo permitido.');
                 }

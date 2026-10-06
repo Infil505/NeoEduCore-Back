@@ -42,6 +42,12 @@ class QueryBudgetTest extends TestCase
     {
         parent::setUp();
         $this->institution = Institution::factory()->create();
+
+        // El middleware `activa` consulta una vez si el centro está dado de alta y
+        // lo cachea. La primera petición de cada test pagaría esa consulta y la
+        // comparación «pocas filas vs muchas» saldría desigual por un motivo que no
+        // es el que se mide (el coste por fila). Se calienta para medir el régimen estable.
+        Institution::estaActiva($this->institution->id);
     }
 
     /** Cuenta las queries que dispara un callable. */
@@ -493,7 +499,7 @@ class QueryBudgetTest extends TestCase
         $this->assertLessThanOrEqual(
             14,
             $con15,
-            "Presupuesto excedido en el submit: {$con15} queries (eran 13 tras O3)"
+            "Presupuesto excedido en el submit: {$con15} queries (13 tras O3; 14 con la revalidación del máximo de intentos)"
         );
     }
 }

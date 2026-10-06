@@ -22,6 +22,27 @@ class ExamAttemptRulesService
         };
     }
 
+    /**
+     * Segundos de pausa que se le acreditan al intento: lo ya acumulado más la
+     * pausa en curso, **sin pasar de `academic.exam.max_pause_seconds`**.
+     *
+     * Es la única definición: la usan `resume()` (para guardar) y el plazo de
+     * entrega (para calcular), de modo que nunca pueden discrepar.
+     */
+    public function pausaAcreditada(ExamAttempt $attempt): int
+    {
+        $tope = max(0, (int) config('academic.exam.max_pause_seconds'));
+        $acumulado = min((int) ($attempt->total_paused_seconds ?? 0), $tope);
+
+        if ($attempt->paused_at) {
+            // abs(): en Carbon 3 `diffInSeconds` es con signo y `paused_at` está en el pasado.
+            $enCurso = (int) abs(now()->diffInSeconds($attempt->paused_at));
+            $acumulado = min($acumulado + $enCurso, $tope);
+        }
+
+        return $acumulado;
+    }
+
     public function assertExamIsStartable(Exam $exam): void
     {
         if ($exam->status->value !== 'active') {
@@ -59,11 +80,9 @@ class ExamAttemptRulesService
             $multiplier  = $this->timeMultiplierFor($student);
             $adjustedMin = (int) ceil($exam->duration_minutes * $multiplier);
 
-            // Descontar tiempo acumulado en pausas + 30 s de gracia para latencia
-            $pausedSoFar = (int) ($attempt->total_paused_seconds ?? 0);
-            if ($attempt->paused_at) {
-                $pausedSoFar += now()->diffInSeconds($attempt->paused_at);
-            }
+            // Descontar tiempo acumulado en pausas + 30 s de gracia para latencia.
+            // La pausa en curso también cuenta, pero con el mismo tope que al reanudar.
+            $pausedSoFar = $this->pausaAcreditada($attempt);
             $deadline = $attempt->started_at->copy()
                 ->addMinutes($adjustedMin)
                 ->addSeconds($pausedSoFar)

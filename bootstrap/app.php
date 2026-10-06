@@ -17,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'tenant' => \App\Http\Middleware\SetTenantFromAuth::class,
             'role'   => \App\Http\Middleware\RequireRole::class,
+            'activa' => \App\Http\Middleware\EnsureAccountIsActive::class,
         ]);
 
         // Global, y lo primero de todo: marca que esto es HTTP para que
@@ -27,6 +28,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // SetTenantFromAuth must run before SubstituteBindings so TenantScoped
         // global scopes are active during route model binding.
         $middleware->prependToGroup('api', \App\Http\Middleware\SetTenantFromAuth::class);
+
+        // Fuera el carácter NUL de toda entrada: PostgreSQL no lo admite (500 en el
+        // chat del tutor; truncado silencioso en el resto). Ver `RemoveNullBytes`.
+        $middleware->appendToGroup('api', \App\Http\Middleware\RemoveNullBytes::class);
 
         // Red de seguridad para toda la API. Se prepone DESPUÉS del anterior a
         // propósito: cada `prependToGroup` se coloca delante del que ya estaba,

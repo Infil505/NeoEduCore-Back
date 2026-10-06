@@ -9,6 +9,7 @@ use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
@@ -24,11 +25,29 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
+     * Los ids de las rutas que NO son un modelo (`{student_user_id}`, `{sessionId}`…)
+     * llegaban como texto libre hasta una consulta sobre una columna `uuid`, y
+     * PostgreSQL responde a `'no-es-un-uuid'` con un error: 500 en nueve rutas de
+     * alumno y en el cierre de sesión del tutor. Con el patrón, un id que no tiene
+     * forma de UUID es un 404 en el enrutador, sin llegar a la base de datos.
+     * (Los parámetros de modelo —`{exam}`, `{group}`…— ya los resuelve Eloquent.)
+     */
+    private function registrarPatronesDeRuta(): void
+    {
+        $uuid = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
+
+        foreach (['student_user_id', 'teacherUserId', 'sessionId', 'subject'] as $parametro) {
+            Route::pattern($parametro, $uuid);
+        }
+    }
+
+    /**
      * Bootstrap any application services.
      */
     public function boot(): void
     {
         $this->configurarProxiesDeConfianza();
+        $this->registrarPatronesDeRuta();
         $this->registrarLimitadores();
         $this->avisarSiLaCacheAnulaLosLimites();
         $this->limitarDuracionDeConsultas();
@@ -226,7 +245,11 @@ class AppServiceProvider extends ServiceProvider
         |      que es justo el pico de este sistema.
         */
         RateLimiter::for('login', function (Request $request) {
-            $correo = strtolower(trim((string) $request->input('email')));
+            // Este limitador corre ANTES de validar, así que `email` puede ser
+            // cualquier cosa: con un array, `(string)` lanzaba un error y el login
+            // respondía 500 sin autenticar. Lo que no es texto cuenta como «sin correo».
+            $enviado = $request->input('email');
+            $correo = is_string($enviado) ? strtolower(trim($enviado)) : '';
 
             $respuesta = fn () => response()->json([
                 'message' => 'Demasiados intentos de acceso. Espera un minuto antes de volver a probar.',

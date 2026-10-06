@@ -56,33 +56,71 @@ class ExamAttemptController extends Controller
         // Transacción con lock para evitar race condition si el estudiante
         // lanza dos requests simultáneos (doble clic, re-submit del navegador)
         try {
-            $attempt = DB::transaction(function () use ($exam, $user, $rules) {
+            $resultado = DB::transaction(function () use ($exam, $user, $rules, $student) {
                 // Bloquear fila del estudiante → serializa starts concurrentes del mismo usuario
                 Student::where('user_id', $user->id)->lockForUpdate()->firstOrFail();
 
-                $usedAttempts = ExamAttempt::where('exam_id', $exam->id)
+                $intentos = ExamAttempt::where('exam_id', $exam->id)
                     ->where('student_user_id', $user->id)
-                    ->whereNotNull('submitted_at')
-                    ->count();
+                    ->get();
 
-                $rules->assertAttemptsAvailable($exam, $usedAttempts);
+                /*
+                 | Un solo intento en curso a la vez. Antes `start` solo contaba los
+                 | intentos YA ENTREGADOS, así que con `max_attempts = 1` se podían
+                 | abrir los que se quisieran y entregarlos todos: la nota más alta
+                 | de N. Si hay uno abierto y aún dentro de plazo, no se crea otro:
+                 | se devuelve cuál es para que el cliente lo retome.
+                 */
+                $enCurso = $intentos->first(function (ExamAttempt $a) use ($rules, $exam, $student) {
+                    if ($a->submitted_at) {
+                        return false;
+                    }
 
-                return ExamAttempt::create([
+                    try {
+                        $rules->assertAttemptIsSubmittable($exam, $a, $student);
+
+                        return true;
+                    } catch (\RuntimeException) {
+                        return false;   // vencido sin entregar
+                    }
+                });
+
+                if ($enCurso) {
+                    return ['intento' => $enCurso, 'nuevo' => false];
+                }
+
+                // Gastan turno los entregados Y los abandonados (abiertos que ya
+                // vencieron): si no, bastaba abrir, mirar las preguntas y empezar
+                // de nuevo sin consumir el intento.
+                $usados = $intentos->count();
+
+                $rules->assertAttemptsAvailable($exam, $usados);
+
+                $intento = ExamAttempt::create([
                     'exam_id'         => $exam->id,
                     'student_user_id' => $user->id,
-                    'attempt_number'  => $usedAttempts + 1,
+                    'attempt_number'  => $usados + 1,
                     'started_at'      => now(),
                     'submitted_at'    => null,
                     'score'           => 0,
                     'max_score'       => (float) $exam->questions()->sum('points'),
                     'grade_status'    => 'pending',
                 ]);
+
+                return ['intento' => $intento, 'nuevo' => true];
             });
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 409);
         }
 
-        return response()->json(['data' => $attempt], 201);
+        if (!$resultado['nuevo']) {
+            return response()->json([
+                'message' => 'Ya tienes un intento en curso de este examen: retómalo.',
+                'data'    => $resultado['intento'],
+            ], 409);
+        }
+
+        return response()->json(['data' => $resultado['intento']], 201);
     }
 
     /**
@@ -191,6 +229,7 @@ class ExamAttemptController extends Controller
         }
 
         // Ejecutar todo en transacción
+        try {
         $result = DB::transaction(function () use (
             $exam,
             $attempt,
@@ -198,8 +237,21 @@ class ExamAttemptController extends Controller
             $questions,
             $grading,
             $progressService,
-            $aiService
+            $aiService,
+            $rules
         ) {
+            // Se vuelve a comprobar el máximo de intentos: `start` ya impide abrir de
+            // más (un solo intento en curso, bajo bloqueo), pero esta es la última
+            // puerta antes de que se guarde una nota. Es UNA consulta: no lleva
+            // bloqueo propio porque, con esa regla, un alumno nunca tiene dos
+            // intentos abiertos que entregar a la vez.
+            $entregados = ExamAttempt::where('exam_id', $exam->id)
+                ->where('student_user_id', $attempt->student_user_id)
+                ->whereNotNull('submitted_at')
+                ->count();
+
+            $rules->assertAttemptsAvailable($exam, $entregados);
+
             // 1) Calificar intento + guardar respuestas. Las preguntas viajan ya
             // cargadas: se acaban de leer arriba para validar (O3).
             $gradedAttempt = $grading->gradeAttempt($exam, $attempt, $data['answers'], $questions);
@@ -226,6 +278,9 @@ class ExamAttemptController extends Controller
                 'recommendations' => $recommendations,
             ];
         });
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
+        }
 
         return response()->json([
             'data' => [
@@ -299,12 +354,16 @@ class ExamAttemptController extends Controller
             return response()->json(['message' => 'El intento ya está pausado'], 409);
         }
 
+        if ((int) $attempt->total_paused_seconds >= (int) config('academic.exam.max_pause_seconds')) {
+            return response()->json(['message' => 'Ya agotaste el tiempo de pausa permitido para este intento'], 409);
+        }
+
         $attempt->update(['paused_at' => now()]);
 
         return response()->json(['data' => $attempt->fresh()]);
     }
 
-    public function resume(Request $request, Exam $exam, ExamAttempt $attempt)
+    public function resume(Request $request, Exam $exam, ExamAttempt $attempt, ExamAttemptRulesService $rules)
     {
         $user = $request->user();
 
@@ -320,11 +379,11 @@ class ExamAttemptController extends Controller
             return response()->json(['message' => 'El intento no está pausado'], 409);
         }
 
-        $pausedSeconds = (int) abs(now()->diffInSeconds($attempt->paused_at));
-
+        // Se acredita la pausa hasta el tope configurable: reanudar tras dos horas
+        // no da dos horas más de examen. (`pausaAcreditada` suma la pausa en curso.)
         $attempt->update([
+            'total_paused_seconds' => $rules->pausaAcreditada($attempt),
             'paused_at'            => null,
-            'total_paused_seconds' => $attempt->total_paused_seconds + $pausedSeconds,
         ]);
 
         return response()->json(['data' => $attempt->fresh()]);

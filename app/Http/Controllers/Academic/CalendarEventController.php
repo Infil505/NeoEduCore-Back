@@ -8,6 +8,7 @@ use App\Http\Controllers\Concerns\ResuelveAulasDestino;
 use App\Http\Controllers\Controller;
 use App\Models\Academic\CalendarEvent;
 use App\Models\Exams\Exam;
+use App\Rules\FechaRazonable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -52,8 +53,8 @@ class CalendarEventController extends Controller
             'event_type' => ['nullable', Rule::in(['exam', 'activity', 'reminder', 'meeting'])],
             'group_id'   => ['nullable', 'uuid'],
             'exam_id'    => ['nullable', 'uuid'],
-            'from'       => ['nullable', 'date'],
-            'to'         => ['nullable', 'date', 'after_or_equal:from'],
+            'from'       => ['nullable', new FechaRazonable()],
+            'to'         => ['bail', 'nullable', new FechaRazonable(), ...FechaRazonable::posteriorA($request, 'from')],
         ]);
 
         $query = CalendarEvent::query()
@@ -104,8 +105,8 @@ class CalendarEventController extends Controller
             'title'       => ['required', 'string', 'min:2', 'max:150'],
             'description' => ['nullable', 'string', 'max:2000'],
 
-            'start_at' => ['required', 'date'],
-            'end_at'   => ['required', 'date', 'after_or_equal:start_at'],
+            'start_at' => ['required', new FechaRazonable()],
+            'end_at'   => ['bail', 'required', new FechaRazonable(), ...FechaRazonable::posteriorA($request, 'start_at')],
 
             'event_type' => ['required', Rule::in(['exam', 'activity', 'reminder', 'meeting'])],
 
@@ -180,8 +181,8 @@ class CalendarEventController extends Controller
             'title'       => ['sometimes', 'string', 'min:2', 'max:150'],
             'description' => ['nullable', 'string', 'max:2000'],
 
-            'start_at' => ['sometimes', 'date'],
-            'end_at'   => ['sometimes', 'date'],
+            'start_at' => ['sometimes', new FechaRazonable()],
+            'end_at'   => ['sometimes', new FechaRazonable()],
 
             'event_type' => ['sometimes', Rule::in(['exam', 'activity', 'reminder', 'meeting'])],
 

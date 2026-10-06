@@ -123,7 +123,14 @@ class ProtectedRoutesRequireAuthTest extends TestCase
             ['GET',  '/api/reports/students/1/history.xlsx'],
         ];
 
+        // Los ids de ruta que no son un modelo (`{student_user_id}`, `{subject}`…) solo
+        // casan si tienen forma de UUID: un `1` es un 404 del enrutador, antes incluso
+        // de autenticar (ver `AppServiceProvider::registrarPatronesDeRuta`). Este test
+        // comprueba que la RUTA existe y exige sesión, así que se le da un id válido.
+        $uuid = '00000000-0000-4000-8000-000000000000';
+
         foreach ($endpoints as [$method, $uri]) {
+            $uri = preg_replace('#/\d+(?=/|\.|$)#', "/{$uuid}", $uri);
             $res = $this->json($method, $uri, []);
             $this->assertNotEquals(404, $res->status(), "Endpoint missing (404): {$method} {$uri}");
             $this->assertEquals(401, $res->status(), "Protected endpoint should be 401 without auth: {$method} {$uri}. Got {$res->status()}");
