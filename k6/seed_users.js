@@ -6,8 +6,17 @@
 // como administrador y enviar el token en cada alta. Todos los usuarios se crean
 // en la institución de ese admin (no se pueden crear instituciones aquí).
 //
-// Requisito: debe existir un admin. El seeder lo crea:
+// Requisito: debe existir un admin y al menos un aula con una materia. El seeder
+// los crea (4-A y 4-B, con asignaciones de docentes):
 //   php artisan db:seed   ->  admin@neoeducore.edu.co / password123
+//
+// Reglas del sistema que este script respeta:
+//   - Un estudiante SIEMPRE se da de alta en un aula (`group_id`): sin ella queda
+//     invisible para todo docente. Por defecto, la primera aula del centro; se
+//     fija otra con -e GROUP_ID=<uuid>.
+//   - Un docente nuevo no ve nada hasta que el admin lo asigna a un aula y una
+//     materia: tras crearlo, el script le asigna esa aula y la primera materia
+//     (-e SUBJECT_ID=<uuid> para otra).
 //
 // Uso:
 //   k6 run k6/seed_users.js
@@ -74,7 +83,28 @@ export function setup() {
   const institutionId = res.json('user.institution_id');
   console.log(`Admin autenticado. Institución=${institutionId} (runId=${runId})`);
 
-  return { runId, token, institutionId };
+  // Aula y materia donde se darán de alta el alumnado y los docentes.
+  const groupId = __ENV.GROUP_ID || firstId(`${BASE}/groups`, token);
+  const subjectId = __ENV.SUBJECT_ID || firstId(`${BASE}/subjects`, token);
+  if (!groupId || !subjectId) {
+    throw new Error(
+      'El centro no tiene ningún aula o ninguna materia: sin aula no se puede dar de alta a un estudiante. ' +
+      'Ejecuta "php artisan db:seed" o pasa -e GROUP_ID=... -e SUBJECT_ID=...'
+    );
+  }
+  console.log(`Aula=${groupId} Materia=${subjectId}`);
+
+  return { runId, token, institutionId, groupId, subjectId };
+}
+
+/** Primer id de un listado paginado (`data.data[0].id`). */
+function firstId(url, token) {
+  const r = http.get(url, jsonHeaders(token));
+  try {
+    return r.json('data.data.0.id');
+  } catch (e) {
+    return null;
+  }
 }
 
 export default function (data) {
@@ -99,6 +129,7 @@ export default function (data) {
       password: PASSWORD,
       password_confirmation: PASSWORD,
       user_type: 'student',
+      group_id: data.groupId,   // obligatorio: el alumnado se da de alta EN un aula
     };
   }
 
@@ -109,6 +140,27 @@ export default function (data) {
 
   if (res.status !== 201) {
     console.error(`Fallo creando ${payload.email}: status=${res.status} body=${res.body}`);
+    return;
+  }
+
+  // Un docente recién creado no ve nada hasta que el admin lo asigna a un aula y
+  // una materia: de esa asignación sale todo lo que puede ver y hacer.
+  if (isTeacher) {
+    const asignacion = http.post(
+      `${BASE}/teacher-assignments`,
+      JSON.stringify({
+        teacher_user_id: res.json('user.id'),
+        group_ids: [data.groupId],
+        subject_ids: [data.subjectId],
+      }),
+      jsonHeaders(data.token)
+    );
+    check(asignacion, {
+      'docente asignado (200/201)': (r) => r.status === 200 || r.status === 201,
+    });
+    if (asignacion.status >= 300) {
+      console.error(`Fallo asignando a ${payload.email}: status=${asignacion.status} body=${asignacion.body}`);
+    }
   }
 }
 

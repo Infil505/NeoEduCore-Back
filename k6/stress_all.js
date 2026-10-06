@@ -128,6 +128,14 @@ export function setup() {
     event: pick('/calendar-events', 'id'),
   };
 
+  // El docente solo envía recursos y avisos a las aulas que el administrador le
+  // asignó: se toma la primera suya (/groups, para un docente, ya viene acotado).
+  ids.teacherGroup = null;
+  try {
+    const d = http.get(`${BASE}/groups`, H(teacher)).json('data.data');
+    ids.teacherGroup = d && d.length ? d[0].id : null;
+  } catch (e) {}
+
   console.log('IDs descubiertos: ' + JSON.stringify(ids));
   return { admin, teacher, student, ids };
 }
@@ -199,24 +207,44 @@ export function writes(data) {
 
   // Group efímero
   r = hit('POST /groups', http.post(`${BASE}/groups`, JSON.stringify({
-    name: `Stress Grp ${uniq}`, grade: 10, section: 'A', year: 2026, group_code: `STR-${uniq}`,
+    name: `Stress Grp ${uniq}`, grade: 4, section: 'A', year: 2026, group_code: `STR-${uniq}`,
   }), a), [200, 201, 422]);
   let gid = null;
   try { gid = r.json('data.id') || r.json('id'); } catch (e) {}
   if (gid) hit('DELETE /groups/{id}', http.del(`${BASE}/groups/${gid}`, null, a), [200, 204]);
 
-  // Calendar event efímero
-  r = hit('POST /calendar-events', http.post(`${BASE}/calendar-events`, JSON.stringify({
-    title: `Stress Ev ${uniq}`, start_at: '2026-09-01T10:00:00Z', event_type: 'reminder',
-  }), a), [200, 201, 422]);
-  let eid = null;
-  try { eid = r.json('data.id') || r.json('id'); } catch (e) {}
-  if (eid) hit('DELETE /calendar-events/{id}', http.del(`${BASE}/calendar-events/${eid}`, null, a), [200, 204]);
+  // Recursos y avisos son actividades DEL DOCENTE: el administrador no los crea (403) y
+  // el docente los envía a un aula suya (`group_ids`).
+  const t = H(data.teacher);
+  const aula = data.ids.teacherGroup;
 
-  // Study resource efímero
-  hit('POST /study-resources', http.post(`${BASE}/study-resources`, JSON.stringify({
-    title: `Stress Res ${uniq}`, resource_type: 'link', url: 'https://example.com/x', difficulty: 'basic',
-  }), a), [200, 201, 422]);
+  hit('ADMIN no crea eventos (403)', http.post(`${BASE}/calendar-events`, JSON.stringify({
+    title: `Stress Ev ${uniq}`, start_at: '2026-11-01T10:00:00Z', end_at: '2026-11-01T11:00:00Z', event_type: 'reminder',
+    group_id: aula,
+  }), a), [403]);
+  hit('ADMIN no crea recursos (403)', http.post(`${BASE}/study-resources`, JSON.stringify({
+    title: `Stress Res ${uniq}`, resource_type: 'link', url: 'https://es.khanacademy.org/x', group_ids: [aula],
+  }), a), [403]);
+
+  if (aula) {
+    // Calendar event efímero (un evento por aula; con una sola, la respuesta es el evento)
+    r = hit('POST /calendar-events', http.post(`${BASE}/calendar-events`, JSON.stringify({
+      title: `Stress Ev ${uniq}`, start_at: '2026-11-01T10:00:00Z', end_at: '2026-11-01T11:00:00Z',
+      event_type: 'reminder', group_ids: [aula],
+    }), t), [201]);
+    let eid = null;
+    try { eid = r.json('data.id') || r.json('data.0.id'); } catch (e) {}
+    if (eid) hit('DELETE /calendar-events/{id}', http.del(`${BASE}/calendar-events/${eid}`, null, t), [200, 204]);
+
+    // Study resource efímero
+    r = hit('POST /study-resources', http.post(`${BASE}/study-resources`, JSON.stringify({
+      title: `Stress Res ${uniq}`, resource_type: 'link', url: 'https://es.khanacademy.org/x',
+      difficulty: 'basic', group_ids: [aula],
+    }), t), [201]);
+    let rid = null;
+    try { rid = r.json('data.id'); } catch (e) {}
+    if (rid) hit('DELETE /study-resources/{id}', http.del(`${BASE}/study-resources/${rid}`, null, t), [200, 204]);
+  }
 }
 
 // ---------------------------------------------------------------------------

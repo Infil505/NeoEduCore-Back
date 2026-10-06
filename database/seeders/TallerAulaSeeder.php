@@ -40,7 +40,7 @@ class TallerAulaSeeder extends Seeder
         'ai_recommendations', 'ai_tutor_incidents', 'ai_chat_sessions',
         'exam_attempts', 'student_progress', 'student_subjects', 'group_students',
         'exam_targets', 'question_options', 'questions',
-        'calendar_events', 'exams', 'teacher_assignments', 'study_resources',
+        'calendar_events', 'exams', 'teacher_assignments', 'study_resource_groups', 'study_resources',
         'students',
     ];
 
@@ -62,6 +62,13 @@ class TallerAulaSeeder extends Seeder
         ['Andrés Villalobos Paz', 'lector'],    ['Bianca Sandí Trejos', 'visual'],
     ];
 
+    /** 6 alumnos de la segunda aula, 4-B: para ver que cada estudiante solo ve lo de la suya. */
+    private const ALUMNADO_B = [
+        ['Beatriz Cordero Vílchez', 'visual'],  ['Cristian Lobo Mena', 'lector'],
+        ['Daniela Porras Elizondo', 'auditivo'], ['Esteban Mata Brenes', 'visual'],
+        ['Fiorella Quesada Arce', 'lector'],    ['Gerald Monge Zamora', 'auditivo'],
+    ];
+
     public function run(): void
     {
         $this->command?->warn('Vaciando la base (se conserva la cuenta de superadmin)...');
@@ -69,23 +76,33 @@ class TallerAulaSeeder extends Seeder
 
         $institutionId = $this->institucion();
 
-        $this->command?->info('Sembrando el aula de 4.º A...');
+        // El tenant scope se alimenta del contenedor; aquí se inserta por DB::table,
+        // pero se fija por si algún modelo interviene.
+        app()->instance('tenant_id', $institutionId);
+
+        $this->command?->info('Sembrando las aulas 4-A y 4-B...');
 
         $admin    = $this->admin($institutionId);
         $docentes = $this->docentes($institutionId);
         $materias = $this->materias($institutionId);
-        $grupo    = $this->grupo($institutionId);
-        $alumnos  = $this->alumnado($institutionId, $grupo, $materias);
+        $grupo    = $this->grupo($institutionId, '4-A 2026', 'A', '4A2026', count(self::ALUMNADO));
+        $grupoB   = $this->grupo($institutionId, '4-B 2026', 'B', '4B2026', count(self::ALUMNADO_B));
 
-        $this->asignaciones($institutionId, $docentes, $grupo, $materias);
+        // 4-A cursa las cuatro materias; 4-B, solo Español (la única con docente asignado allí).
+        $alumnos  = $this->alumnado($institutionId, $grupo, array_values($materias), self::ALUMNADO, 'A', '4A2026', 1);
+        $alumnosB = $this->alumnado($institutionId, $grupoB, [$materias['Español']], self::ALUMNADO_B, 'B', '4B2026', 101);
+
+        $this->asignaciones($institutionId, $docentes, $grupo, $grupoB, $materias);
 
         $examen = $this->examenDeMatematicas($institutionId, $docentes['mate'], $materias['Matemáticas'], $grupo);
         $this->entregas($institutionId, $examen, $alumnos, $materias['Matemáticas']);
 
-        $this->recursos($institutionId, $materias, $docentes['mate']);
-        $this->calendario($institutionId, $grupo, $examen, $docentes['mate']);
+        $this->recursos($institutionId, $materias, $docentes, $grupo, $grupoB);
+        $this->calendario($institutionId, $grupo, $grupoB, $examen, $docentes);
 
-        $this->resumen($alumnos, $docentes, $admin);
+        app()->forgetInstance('tenant_id');
+
+        $this->resumen($alumnos, $alumnosB, $docentes, $admin);
     }
 
     /* =========================================================
@@ -169,19 +186,19 @@ class TallerAulaSeeder extends Seeder
         return $materias;
     }
 
-    private function grupo(string $institutionId): string
+    private function grupo(string $institutionId, string $nombre, string $seccion, string $codigo, int $alumnos): string
     {
         $id = (string) Str::uuid();
 
         DB::table('groups')->insert([
             'id'             => $id,
             'institution_id' => $institutionId,
-            'name'           => '4-A 2026',
+            'name'           => $nombre,
             'grade'          => 4,
-            'section'        => 'A',
+            'section'        => $seccion,
             'year'           => 2026,
-            'group_code'     => '4A2026',
-            'student_count'  => count(self::ALUMNADO),
+            'group_code'     => $codigo,
+            'student_count'  => $alumnos,
             'created_at'     => now(),
             'updated_at'     => now(),
         ]);
@@ -190,28 +207,33 @@ class TallerAulaSeeder extends Seeder
     }
 
     /**
-     * El aula entera: cuenta, perfil de estudiante, matrícula en el grupo y en
-     * las cuatro materias.
+     * Un aula entera: cuenta, perfil de estudiante, matrícula en el grupo y en
+     * las materias que ahí se cursan.
      *
+     * @param  array<int,string>  $materias  ids de las materias que cursa el aula
+     * @param  array<int,array{0:string,1:string}>  $lista  [nombre, estilo de aprendizaje]
+     * @param  int  $primerCodigo  para que los códigos EST-xxxx no choquen entre aulas
      * @return array<int, array{id:string,nombre:string}>
      */
-    private function alumnado(string $institutionId, string $grupoId, array $materias): array
-    {
+    private function alumnado(
+        string $institutionId, string $grupoId, array $materias,
+        array $lista, string $seccion, string $codigoAula, int $primerCodigo
+    ): array {
         $alumnos = [];
 
-        foreach (self::ALUMNADO as $i => [$nombre, $estilo]) {
+        foreach ($lista as $i => [$nombre, $estilo]) {
             $correo = Str::of($nombre)->lower()->ascii()->explode(' ')->take(2)->implode('.');
             $user   = $this->usuario($institutionId, $nombre, $correo, UserType::Student);
 
             DB::table('students')->insert([
                 'user_id'               => $user['id'],
                 'institution_id'        => $institutionId,
-                'student_code'          => sprintf('EST-%04d', $i + 1),
+                'student_code'          => sprintf('EST-%04d', $primerCodigo + $i),
                 'grade'                 => 4,
-                'section'               => 'A',
+                'section'               => $seccion,
                 'year'                  => 2026,
                 'status'                => 'active',
-                'group_code'            => '4A2026',
+                'group_code'            => $codigoAula,
                 'enrolled_at'           => now()->subMonths(6),
                 'learning_style'        => $estilo,
                 // 4.º de primaria: entre 9 y 10 años.
@@ -219,7 +241,7 @@ class TallerAulaSeeder extends Seeder
                 'exams_completed_count' => 0,
                 // Dos adecuaciones curriculares en el aula, que es lo normal y
                 // hace visible el tiempo extra de examen.
-                'adecuacion_type'       => in_array($i, [3, 17], true) ? 'acceso' : null,
+                'adecuacion_type'       => $seccion === 'A' && in_array($i, [3, 17], true) ? 'acceso' : null,
                 'created_at'            => now(),
                 'updated_at'            => now(),
             ]);
@@ -253,27 +275,33 @@ class TallerAulaSeeder extends Seeder
     /**
      * Sin esto ningún docente ve a ningún estudiante: el permiso sale de aquí,
      * no de haber creado un examen.
+     *
+     * Rodrigo da clase solo en 4-A. Lucía da Español también en 4-B: con dos aulas,
+     * al enviar un recurso o un aviso **tiene que elegir** a cuál(es), y el
+     * alumnado de 4-B ve lo suyo y no lo de 4-A.
      */
-    private function asignaciones(string $institutionId, array $docentes, string $grupoId, array $materias): void
+    private function asignaciones(string $institutionId, array $docentes, string $grupoA, string $grupoB, array $materias): void
     {
+        // [docente, aula, materia]
         $reparto = [
-            $docentes['mate']['id']    => ['Matemáticas', 'Ciencias'],
-            $docentes['espanol']['id'] => ['Español', 'Estudios Sociales'],
+            [$docentes['mate']['id'],    $grupoA, 'Matemáticas'],
+            [$docentes['mate']['id'],    $grupoA, 'Ciencias'],
+            [$docentes['espanol']['id'], $grupoA, 'Español'],
+            [$docentes['espanol']['id'], $grupoA, 'Estudios Sociales'],
+            [$docentes['espanol']['id'], $grupoB, 'Español'],
         ];
 
-        foreach ($reparto as $docenteId => $suyas) {
-            foreach ($suyas as $nombre) {
-                DB::table('teacher_assignments')->insert([
-                    'id'              => (string) Str::uuid(),
-                    'institution_id'  => $institutionId,
-                    'teacher_user_id' => $docenteId,
-                    'group_id'        => $grupoId,
-                    'subject_id'      => $materias[$nombre],
-                    'assigned_at'     => now()->subMonths(6),
-                    'created_at'      => now(),
-                    'updated_at'      => now(),
-                ]);
-            }
+        foreach ($reparto as [$docenteId, $grupoId, $nombre]) {
+            DB::table('teacher_assignments')->insert([
+                'id'              => (string) Str::uuid(),
+                'institution_id'  => $institutionId,
+                'teacher_user_id' => $docenteId,
+                'group_id'        => $grupoId,
+                'subject_id'      => $materias[$nombre],
+                'assigned_at'     => now()->subMonths(6),
+                'created_at'      => now(),
+                'updated_at'      => now(),
+            ]);
         }
     }
 
@@ -459,20 +487,31 @@ class TallerAulaSeeder extends Seeder
      | Material de apoyo
      ========================================================= */
 
-    private function recursos(string $institutionId, array $materias, array $docente): void
+    /**
+     * Cada recurso lo crea **el docente que imparte esa materia** y lo envía a
+     * aulas suyas: sin envío a un aula, ningún estudiante lo vería. El de lectura
+     * de Lucía va a las dos aulas donde da Español.
+     */
+    private function recursos(string $institutionId, array $materias, array $docentes, string $grupoA, string $grupoB): void
     {
+        $mate = $docentes['mate'];
+        $esp  = $docentes['espanol'];
+
+        // [título, tipo, url, materia, dificultad, minutos, autor, aulas]
         $catalogo = [
-            ['Fracciones equivalentes explicadas', 'video', 'https://es.khanacademy.org/math/fracciones-equivalentes', 'Matemáticas', 'basic', 8],
-            ['Práctica de suma de fracciones', 'exercise', 'https://www.geogebra.org/m/fracciones-suma', 'Matemáticas', 'basic', 15],
-            ['Decimales paso a paso', 'video', 'https://www.youtube.com/watch?v=decimales-primaria', 'Matemáticas', 'intermediate', 10],
-            ['Comprensión de lectura: cuentos cortos', 'article', 'https://es.wikipedia.org/wiki/Comprensión_lectora', 'Español', 'basic', 12],
-            ['El ciclo del agua', 'video', 'https://www.youtube.com/watch?v=ciclo-del-agua', 'Ciencias', 'basic', 6],
-            ['Provincias de Costa Rica', 'article', 'https://www.mep.go.cr/recursos/provincias', 'Estudios Sociales', 'basic', 10],
+            ['Fracciones equivalentes explicadas', 'video', 'https://es.khanacademy.org/math/fracciones-equivalentes', 'Matemáticas', 'basic', 8, $mate, [$grupoA]],
+            ['Práctica de suma de fracciones', 'exercise', 'https://www.geogebra.org/m/fracciones-suma', 'Matemáticas', 'basic', 15, $mate, [$grupoA]],
+            ['Decimales paso a paso', 'video', 'https://www.youtube.com/watch?v=decimales-primaria', 'Matemáticas', 'intermediate', 10, $mate, [$grupoA]],
+            ['Comprensión de lectura: cuentos cortos', 'article', 'https://es.wikipedia.org/wiki/Comprensión_lectora', 'Español', 'basic', 12, $esp, [$grupoA, $grupoB]],
+            ['El ciclo del agua', 'video', 'https://www.youtube.com/watch?v=ciclo-del-agua', 'Ciencias', 'basic', 6, $mate, [$grupoA]],
+            ['Provincias de Costa Rica', 'article', 'https://www.mep.go.cr/recursos/provincias', 'Estudios Sociales', 'basic', 10, $esp, [$grupoA]],
         ];
 
-        foreach ($catalogo as [$titulo, $tipo, $url, $materia, $dificultad, $minutos]) {
+        foreach ($catalogo as [$titulo, $tipo, $url, $materia, $dificultad, $minutos, $docente, $aulas]) {
+            $recursoId = (string) Str::uuid();
+
             DB::table('study_resources')->insert([
-                'id'                 => (string) Str::uuid(),
+                'id'                 => $recursoId,
                 'institution_id'     => $institutionId,
                 'subject_id'         => $materias[$materia],
                 'title'              => $titulo,
@@ -488,18 +527,34 @@ class TallerAulaSeeder extends Seeder
                 'created_at'         => now()->subDays(20),
                 'updated_at'         => now()->subDays(20),
             ]);
+
+            // El envío a las aulas: de aquí sale quién lo ve.
+            foreach ($aulas as $aulaId) {
+                DB::table('study_resource_groups')->insert([
+                    'id'                => (string) Str::uuid(),
+                    'institution_id'    => $institutionId,
+                    'study_resource_id' => $recursoId,
+                    'group_id'          => $aulaId,
+                ]);
+            }
         }
     }
 
-    private function calendario(string $institutionId, string $grupoId, array $examen, array $docente): void
+    /**
+     * Avisos del calendario: siempre con aula y de un docente asignado a ella. La
+     * reunión de Lucía va a las dos aulas, así que son **dos eventos** (uno por aula).
+     */
+    private function calendario(string $institutionId, string $grupoA, string $grupoB, array $examen, array $docentes): void
     {
+        // [título, tipo, cuándo, examen, autor, aula]
         $eventos = [
-            ['Prueba corta de fracciones', 'exam', now()->subDays(5), $examen['id']],
-            ['Repaso de decimales', 'activity', now()->addDays(3), null],
-            ['Reunión de padres y madres', 'meeting', now()->addDays(10), null],
+            ['Prueba corta de fracciones', 'exam', now()->subDays(5), $examen['id'], $docentes['mate'], $grupoA],
+            ['Repaso de decimales', 'activity', now()->addDays(3), null, $docentes['mate'], $grupoA],
+            ['Reunión de padres y madres', 'meeting', now()->addDays(10), null, $docentes['espanol'], $grupoA],
+            ['Reunión de padres y madres', 'meeting', now()->addDays(10), null, $docentes['espanol'], $grupoB],
         ];
 
-        foreach ($eventos as [$titulo, $tipo, $cuando, $examenId]) {
+        foreach ($eventos as [$titulo, $tipo, $cuando, $examenId, $docente, $aulaId]) {
             DB::table('calendar_events')->insert([
                 'id'             => (string) Str::uuid(),
                 'institution_id' => $institutionId,
@@ -509,7 +564,7 @@ class TallerAulaSeeder extends Seeder
                 'end_at'         => $cuando->copy()->addHour(),
                 'event_type'     => $tipo,
                 'exam_id'        => $examenId,
-                'group_id'       => $grupoId,
+                'group_id'       => $aulaId,
                 'created_by'     => $docente['id'],
                 'created_at'     => now(),
                 'updated_at'     => now(),
@@ -544,20 +599,21 @@ class TallerAulaSeeder extends Seeder
         return ['id' => $id, 'email' => $correo, 'full_name' => $nombre];
     }
 
-    private function resumen(array $alumnos, array $docentes, array $admin): void
+    private function resumen(array $alumnos, array $alumnosB, array $docentes, array $admin): void
     {
         $this->command?->newLine();
-        $this->command?->info('Aula lista. Contraseña para todas las cuentas: ' . self::CLAVE);
+        $this->command?->info('Aulas listas. Contraseña para todas las cuentas: ' . self::CLAVE);
         $this->command?->newLine();
         $this->command?->table(
             ['Rol', 'Correo', 'Qué enseña en el taller'],
             [
-                ['Admin', $admin['email'], 'Ve el centro entero; asigna docentes'],
-                ['Docente', $docentes['mate']['email'], 'Matemáticas y Ciencias de 4-A: ve a los 28'],
-                ['Docente', $docentes['espanol']['email'], 'Español y Estudios Sociales de 4-A'],
-                ['Docente', $docentes['sinasignar']['email'], 'SIN asignación: no ve a ningún estudiante'],
-                ['Alumno', $alumnos[0]['nombre'] . ' (nota 8/8)', 'El mejor resultado del aula'],
-                ['Alumno', $alumnos[20]['nombre'] . ' (nota 2/8)', 'El que más apoyo necesita'],
+                ['Admin', $admin['email'], 'Ve el centro entero; asigna docentes a aulas y materias'],
+                ['Docente', $docentes['mate']['email'], 'Matemáticas y Ciencias de 4-A: ve a los 28; no ve a 4-B'],
+                ['Docente', $docentes['espanol']['email'], 'Español en 4-A y 4-B: al enviar un recurso o aviso elige aula'],
+                ['Docente', $docentes['sinasignar']['email'], 'SIN asignación: no ve estudiantes ni materias'],
+                ['Alumno 4-A', $alumnos[0]['nombre'] . ' (nota 8/8)', 'El mejor resultado del aula'],
+                ['Alumno 4-A', $alumnos[20]['nombre'] . ' (nota 2/8)', 'El que más apoyo necesita'],
+                ['Alumno 4-B', $alumnosB[0]['nombre'], 'Ve solo lo enviado a 4-B (no el examen ni los avisos de 4-A)'],
             ]
         );
     }

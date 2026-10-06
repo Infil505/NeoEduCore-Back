@@ -39,7 +39,7 @@ class LoadTestSeeder extends Seeder
         $nEstudiantes = (int) (env('ESTUDIANTES') ?: 200);
         $nPreguntas   = (int) (env('PREGUNTAS') ?: 20);
 
-        $this->command->info("Sembrando {$nEstudiantes} estudiantes y un examen de {$nPreguntas} preguntas...");
+        $this->command?->info("Sembrando {$nEstudiantes} estudiantes y un examen de {$nPreguntas} preguntas...");
 
         $institution = Institution::create([
             'code' => self::CODIGO_INSTITUCION,
@@ -68,8 +68,16 @@ class LoadTestSeeder extends Seeder
         ]);
         $group = Group::create([
             'institution_id' => $institution->id, 'name' => 'Grupo Carga',
-            'grade' => 7, 'section' => 'A', 'year' => (int) date('Y'),
+            'grade' => 4, 'section' => 'A', 'year' => (int) date('Y'),
             'group_code' => 'CARGA', 'student_count' => 0,
+        ]);
+
+        // El docente solo ve al alumnado de las aulas que el administrador le asignó:
+        // sin esta fila, sus informes y su listado de estudiantes saldrían vacíos.
+        DB::table('teacher_assignments')->insert([
+            'id' => (string) Str::uuid(), 'institution_id' => $institution->id,
+            'teacher_user_id' => $teacher->id, 'group_id' => $group->id, 'subject_id' => $subject->id,
+            'assigned_at' => now(), 'created_at' => now(), 'updated_at' => now(),
         ]);
 
         // max_attempts alto: cada VU de k6 entrega muchas veces durante la prueba.
@@ -77,7 +85,7 @@ class LoadTestSeeder extends Seeder
             'institution_id' => $institution->id,
             'created_by_teacher_id' => $teacher->id,
             'title' => 'Examen de carga', 'subject_id' => $subject->id,
-            'grade' => 7, 'duration_minutes' => 180, 'status' => 'active',
+            'grade' => 4, 'duration_minutes' => 180, 'status' => 'active',
             'max_attempts' => 100000, 'available_from' => now()->subDay(),
             'available_until' => now()->addYear(),
         ]);
@@ -116,7 +124,7 @@ class LoadTestSeeder extends Seeder
             $perfiles[] = [
                 'user_id' => $id, 'institution_id' => $institution->id,
                 'student_code' => sprintf('CARGA-%06d', $i),
-                'grade' => 7, 'section' => 'A', 'year' => (int) date('Y'),
+                'grade' => 4, 'section' => 'A', 'year' => (int) date('Y'),
                 'status' => 'active', 'enrolled_at' => $ahora,
                 'exams_completed_count' => 0, 'group_code' => 'CARGA',
                 'created_at' => $ahora, 'updated_at' => $ahora,
@@ -133,7 +141,7 @@ class LoadTestSeeder extends Seeder
 
         DB::table('groups')->where('id', $group->id)->update(['student_count' => $nEstudiantes]);
 
-        $this->command->info("OK — institución {$institution->id}, examen {$exam->id}");
-        $this->command->info("Credenciales: alumnoN@carga.test / " . self::PASSWORD);
+        $this->command?->info("OK — institución {$institution->id}, examen {$exam->id}");
+        $this->command?->info("Credenciales: alumnoN@carga.test / " . self::PASSWORD);
     }
 }
