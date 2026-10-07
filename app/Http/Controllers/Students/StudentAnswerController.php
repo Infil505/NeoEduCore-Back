@@ -100,10 +100,13 @@ class StudentAnswerController extends Controller
             $total = (float) $attempt->answers->sum('points_awarded');
             $max   = (float) $attempt->answers->sum(fn ($a) => (float) ($a->question?->points ?? 0));
 
+            // Sigue pendiente mientras quede alguna respuesta sin revisar.
+            $quedanPendientes = $attempt->answers->contains(fn ($a) => ($a->review_status?->value ?? $a->review_status) === 'needs_review');
+
             $attempt->update([
                 'score' => round($total, 2),
                 'max_score' => round($max, 2),
-                'grade_status' => 'completed',
+                'grade_status' => $quedanPendientes ? 'pending' : 'completed',
             ]);
 
             // 3) Recalcular progreso por materia

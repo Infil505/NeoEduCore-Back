@@ -74,7 +74,7 @@ class BulkUploadValidationTest extends TestCase
         $this->assertCount(1, $lineas);
         $cabecera = str_getcsv($lineas[0], ';');
         $this->assertSame(
-            ['Nombre completo *', 'Correo institucional *', 'Aula *', 'Código de estudiante', 'Estado',
+            ['Nombre completo *', 'Correo institucional *', 'Sección *', 'Código de estudiante', 'Estado',
              'Fecha de nacimiento', 'Nombre del tutor', 'Correo del tutor', 'Tipo de adecuación'],
             $cabecera
         );

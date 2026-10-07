@@ -90,7 +90,7 @@ class BulkFileReader
      */
     private function linesToRecords(array $lines): array
     {
-        $known = ['full_name', 'email', 'aula', 'user_id', 'student_code'];
+        $known = ['full_name', 'email', 'seccion', 'aula', 'user_id', 'student_code'];
         $toKeys = fn(array $line) => array_map(fn($h) => BulkTemplateService::columnForHeader((string) $h), $line);
 
         $headerIdx = 0;

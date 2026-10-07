@@ -114,4 +114,34 @@ class StudentSubjectAssignmentTest extends TestCase
         $res->assertOk();
         $this->assertCount(3, $res->json('data'));
     }
+
+    /**
+     * El estudiante hereda las materias de su sección: lo que el admin asignó
+     * en Docencia a esa sección, sin inscribirlo una por una.
+     */
+    public function test_el_estudiante_hereda_las_materias_de_su_seccion(): void
+    {
+        $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
+
+        $seccion = Group::factory()->create(['institution_id' => $institution->id, 'section' => '5-1']);
+        $otra    = Group::factory()->create(['institution_id' => $institution->id, 'section' => '6-1']);
+        $mate    = Subject::factory()->create(['institution_id' => $institution->id, 'name' => 'Matemáticas']);
+        $ingles  = Subject::factory()->create(['institution_id' => $institution->id, 'name' => 'Inglés']);
+
+        $docente = User::factory()->teacher()->create(['institution_id' => $institution->id, 'full_name' => 'Laura Docente']);
+        $this->asignarDocente($docente, $seccion->id, $mate->id);
+        $this->asignarDocente($docente, $otra->id, $ingles->id); // de otra sección: no la hereda
+
+        $alumno = User::factory()->student()->create(['institution_id' => $institution->id]);
+        Student::factory()->create(['user_id' => $alumno->id, 'institution_id' => $institution->id]);
+        $this->matricularEnGrupo($alumno->id, $seccion->id, $institution->id);
+
+        $res = $this->getJson("/api/students/{$alumno->id}/subjects")->assertOk();
+
+        $this->assertSame(['Matemáticas'], collect($res->json('data'))->pluck('name')->all());
+        $res->assertJsonPath('data.0.origin', 'seccion')
+            ->assertJsonPath('data.0.section', '5-1')
+            ->assertJsonPath('data.0.teachers.0', 'Laura Docente');
+    }
 }

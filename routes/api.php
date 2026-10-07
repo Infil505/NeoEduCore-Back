@@ -119,6 +119,8 @@ Route::middleware(['auth:sanctum', 'activa'])->group(function () {
         Route::get('/student-progress/me', [StudentProgressController::class, 'me']);
         Route::get('/ai-recommendations/me', [AiRecommendationController::class, 'myRecommendations']);
         Route::get('/students/me/available-exams', [StudentController::class, 'availableExams']);
+        // Historial de exámenes entregados, con su nota (pantalla «Resultados»).
+        Route::get('/students/me/attempts', [StudentController::class, 'myAttempts']);
 
         // Estrategias del tutor, en el grupo de alumno y ANTES de la ruta con
         // comodín del grupo docente: si se registrara después, `me` entraría por
@@ -224,6 +226,9 @@ Route::middleware(['auth:sanctum', 'activa'])->group(function () {
 
         // Eventos del calendario: editar y borrar (crear es solo del docente, más
         // abajo). El docente solo toca los suyos; el admin puede ordenarlos.
+        // Crear avisos: el docente, a sus secciones; el administrador, a secciones o a
+        // toda la institución por público (`audience`). Ver CalendarEventController::store.
+        Route::post('/calendar-events', [CalendarEventController::class, 'store']);
         Route::put('/calendar-events/{calendar_event}', [CalendarEventController::class, 'update']);
         Route::patch('/calendar-events/{calendar_event}', [CalendarEventController::class, 'update']);
         Route::delete('/calendar-events/{calendar_event}', [CalendarEventController::class, 'destroy']);
@@ -268,13 +273,12 @@ Route::middleware(['auth:sanctum', 'activa'])->group(function () {
     |--------------------------------------------------------------------------
     | SOLO DOCENTE — actividades que pertenecen al rol docente
     |--------------------------------------------------------------------------
-    | Recursos de estudio y avisos del calendario los crea únicamente el docente
-    | y los envía a las aulas que tiene asignadas (`group_ids`). El administrador
-    | no los crea: puede verlos, ordenarlos y retirarlos.
+    | Los recursos de estudio los crea únicamente el docente y los envía a las
+    | secciones que tiene asignadas (`group_ids`). El administrador no los crea:
+    | puede verlos, ordenarlos y retirarlos.
     */
     Route::middleware('role:teacher')->group(function () {
         Route::post('/study-resources', [StudyResourceController::class, 'store']);
-        Route::post('/calendar-events', [CalendarEventController::class, 'store']);
     });
 
     /*

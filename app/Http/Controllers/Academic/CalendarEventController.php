@@ -7,6 +7,7 @@ use App\Http\Controllers\Concerns\ExigeAutoria;
 use App\Http\Controllers\Concerns\ResuelveAulasDestino;
 use App\Http\Controllers\Controller;
 use App\Models\Academic\CalendarEvent;
+use App\Jobs\NotificarAviso;
 use App\Models\Exams\Exam;
 use App\Rules\FechaRazonable;
 use Illuminate\Http\JsonResponse;
@@ -116,15 +117,51 @@ class CalendarEventController extends Controller
             'group_id'    => ['nullable', 'uuid'],
             'group_ids'   => ['nullable', 'array'],
             'group_ids.*' => ['uuid', 'distinct'],
+
+            // Solo el administrador: aviso para toda la institución, sin sección.
+            'audience' => ['nullable', Rule::in(CalendarEvent::AUDIENCES)],
         ]);
 
         $user = $request->user();
+        $esAdmin = $user->user_type === UserType::Admin;
+
+        if (!empty($data['audience']) && !$esAdmin) {
+            return response()->json(['message' => 'Solo el administrador publica avisos para toda la institución.'], 403);
+        }
 
         if (!empty($data['exam_id']) && !$this->examenVisible($user, $data['exam_id'])) {
             return response()->json(['message' => 'Examen no encontrado'], 404);
         }
 
+        $campos = fn (?string $grupoId, ?string $audience) => [
+            'title' => trim($data['title']),
+            'description' => $data['description'] ?? null,
+            'start_at' => $data['start_at'],
+            'end_at' => $data['end_at'],
+            'event_type' => $data['event_type'],
+            'exam_id' => $data['exam_id'] ?? null,
+            'group_id' => $grupoId,
+            'audience' => $audience,
+            'created_by' => $user->id,
+        ];
+
+        // Aviso del centro: un solo evento, sin sección, para el público elegido.
+        if (!empty($data['audience'])) {
+            $evento = CalendarEvent::create($campos(null, $data['audience']))->load(['creator', 'group', 'exam']);
+            NotificarAviso::dispatchAfterResponse([$evento->id]);
+
+            return response()->json(['data' => [$evento]], 201);
+        }
+
         $pedidas = $data['group_ids'] ?? (isset($data['group_id']) ? [$data['group_id']] : null);
+
+        // El administrador que no elige público tiene que elegir secciones.
+        if ($esAdmin && empty($pedidas)) {
+            return response()->json([
+                'message' => 'Elige a quién va el aviso: estudiantes, docentes, todos o unas secciones.',
+                'errors' => ['audience' => ['Elige los destinatarios del aviso.']],
+            ], 422);
+        }
 
         $grupos = $this->resolverAulasDestino($user, $pedidas);
         if ($grupos instanceof JsonResponse) {
@@ -132,18 +169,12 @@ class CalendarEventController extends Controller
         }
 
         $eventos = DB::transaction(fn () => array_map(
-            fn (string $grupoId) => CalendarEvent::create([
-                'title' => trim($data['title']),
-                'description' => $data['description'] ?? null,
-                'start_at' => $data['start_at'],
-                'end_at' => $data['end_at'],
-                'event_type' => $data['event_type'],
-                'exam_id' => $data['exam_id'] ?? null,
-                'group_id' => $grupoId,
-                'created_by' => $user->id,
-            ])->load(['creator', 'group', 'exam']),
+            fn (string $grupoId) => CalendarEvent::create($campos($grupoId, null))->load(['creator', 'group', 'exam']),
             $grupos
         ));
+
+        // Los estudiantes de esas secciones reciben el aviso en su campana.
+        NotificarAviso::dispatchAfterResponse(array_map(fn ($e) => $e->id, $eventos));
 
         return response()->json([
             'data' => $eventos,
@@ -189,9 +220,16 @@ class CalendarEventController extends Controller
 
             'exam_id'  => ['nullable', 'uuid'],
 
-            // Un evento siempre tiene aula: no se puede dejar en `null`.
+            // Un evento de sección siempre tiene aula: no se puede dejar en `null`.
             'group_id' => ['sometimes', 'uuid'],
+
+            // Público de un aviso del centro (solo admin, y solo en avisos del centro).
+            'audience' => ['sometimes', Rule::in(CalendarEvent::AUDIENCES)],
         ]);
+
+        if (array_key_exists('audience', $data) && ($request->user()->user_type !== UserType::Admin || $calendarEvent->audience === null)) {
+            return response()->json(['message' => 'Solo se cambia el público de un aviso del centro, y lo hace el administrador.'], 403);
+        }
 
         // Si vienen ambos, validamos consistencia
         $start = $data['start_at'] ?? $calendarEvent->start_at;

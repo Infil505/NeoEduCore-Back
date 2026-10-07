@@ -45,5 +45,38 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->appendToGroup('web', \App\Http\Middleware\SecurityHeaders::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        /*
+         | Mensajes en español para los errores que genera el framework en la API.
+         | Sin esto, el frontend mostraba «Unauthenticated.», «Not Found» o «This
+         | action is unauthorized.» tal cual. Solo cambia el texto: el código HTTP
+         | es el mismo de siempre.
+         */
+        $enApi = fn (\Illuminate\Http\Request $request) => $request->is('api/*') || $request->expectsJson();
+        $json = fn (string $message, int $status) => response()->json(['message' => $message], $status);
+
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, $request) use ($enApi, $json) {
+            return $enApi($request) ? $json('Tu sesión expiró o no has iniciado sesión.', 401) : null;
+        });
+
+        $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException $e, $request) use ($enApi, $json) {
+            // Si el controlador ya puso un mensaje propio, se respeta.
+            $propio = $e->getMessage() !== '' && $e->getMessage() !== 'This action is unauthorized.';
+
+            return $enApi($request) ? $json($propio ? $e->getMessage() : 'No tienes permiso para hacer esto.', 403) : null;
+        });
+
+        $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\NotFoundHttpException $e, $request) use ($enApi, $json) {
+            return $enApi($request) ? $json('No encontrado.', 404) : null;
+        });
+
+        $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException $e, $request) use ($enApi, $json) {
+            return $enApi($request) ? $json('Operación no permitida en esta ruta.', 405) : null;
+        });
+
+        $exceptions->render(function (\Illuminate\Http\Exceptions\ThrottleRequestsException $e, $request) use ($enApi) {
+            // Conserva las cabeceras Retry-After / X-RateLimit-* del límite.
+            return $enApi($request)
+                ? response()->json(['message' => 'Demasiadas solicitudes seguidas. Espera un momento e inténtalo de nuevo.'], 429, $e->getHeaders())
+                : null;
+        });
     })->create();

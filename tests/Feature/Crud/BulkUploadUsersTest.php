@@ -31,7 +31,7 @@ class BulkUploadUsersTest extends TestCase
         $this->signInAdmin();
 
         $esperado = [
-            'student' => 'Nombre completo *;Correo institucional *;Aula *;Código de estudiante;',
+            'student' => 'Nombre completo *;Correo institucional *;Sección *;Código de estudiante;',
             'teacher' => 'Nombre completo *;Correo institucional *',
             'admin'   => 'Nombre completo *;Correo institucional *',
         ];

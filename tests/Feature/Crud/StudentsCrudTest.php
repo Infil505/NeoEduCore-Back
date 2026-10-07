@@ -253,4 +253,34 @@ class StudentsCrudTest extends TestCase
             'status' => 'inactive',
         ]);
     }
+
+    /** «Resultados»: el estudiante ve solo SUS intentos entregados, con nota. */
+    public function test_student_sees_only_his_submitted_attempts(): void
+    {
+        $institution = Institution::factory()->create();
+        $yo = User::factory()->student()->create(['institution_id' => $institution->id]);
+        Student::factory()->create(['user_id' => $yo->id, 'institution_id' => $institution->id]);
+        $otro = User::factory()->student()->create(['institution_id' => $institution->id]);
+        Student::factory()->create(['user_id' => $otro->id, 'institution_id' => $institution->id]);
+
+        $exam = \App\Models\Exams\Exam::factory()->create(['institution_id' => $institution->id, 'title' => 'Parcial 1']);
+        \App\Models\Exams\ExamAttempt::factory()->submitted()->create([
+            'institution_id' => $institution->id, 'exam_id' => $exam->id, 'student_user_id' => $yo->id, 'score' => 8, 'max_score' => 10,
+        ]);
+        // En curso (sin entregar) y de otro alumno: no salen.
+        \App\Models\Exams\ExamAttempt::factory()->create([
+            'institution_id' => $institution->id, 'exam_id' => $exam->id, 'student_user_id' => $yo->id, 'submitted_at' => null,
+        ]);
+        \App\Models\Exams\ExamAttempt::factory()->submitted()->create([
+            'institution_id' => $institution->id, 'exam_id' => $exam->id, 'student_user_id' => $otro->id,
+        ]);
+
+        $this->actingAs($yo, 'sanctum');
+
+        $this->getJson('/api/students/me/attempts')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.exam_title', 'Parcial 1')
+            ->assertJsonPath('data.0.percentage', 80.0);
+    }
 }

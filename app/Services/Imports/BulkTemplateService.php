@@ -19,7 +19,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * Plantillas de carga masiva, una por rol, en CSV y en XLSX.
  *
  * Cada rol pide solo lo que necesita:
- *  - Estudiante: nombre, correo y aula (obligatorios) más sus datos de ficha.
+ *  - Estudiante: nombre, correo y sección (obligatorios) más sus datos de ficha.
  *  - Docente y administrador: nombre y correo. No tienen ficha propia; las
  *    materias y grupos del docente se asignan después desde Gestión académica.
  * Nadie lleva contraseña: cada usuario recibe un correo para crearla.
@@ -50,7 +50,9 @@ class BulkTemplateService
             'columns'  => [
                 'full_name'       => 'Nombre completo *',
                 'email'           => 'Correo institucional *',
-                'aula'            => 'Aula *',
+                // La sección («6-1») y no el código del aula: es lo que conoce
+                // quien arma el archivo. El importador sigue aceptando «Aula».
+                'seccion'         => 'Sección *',
                 'student_code'    => 'Código de estudiante',
                 'status'          => 'Estado',
                 'birth_date'      => 'Fecha de nacimiento',
@@ -89,6 +91,7 @@ class BulkTemplateService
         'correo_institucional' => 'email',
         'correo'               => 'email',
         'aula'                 => 'aula',
+        'seccion'              => 'seccion',
         'id_de_usuario'        => 'user_id',
         'codigo_de_estudiante' => 'student_code',
         'estado'               => 'status',
@@ -165,13 +168,14 @@ class BulkTemplateService
     {
         $filename = self::TEMPLATES[$role]['filename'] . '.xlsx';
 
-        // Aulas de la institución (TenantScoped): alimentan el desplegable.
-        $codigosAula = $role === UserType::Student->value
-            ? Group::query()->whereNotNull('group_code')->orderBy('grade')->orderBy('section')->pluck('group_code')->all()
+        // Secciones de las aulas de la institución (TenantScoped): alimentan el desplegable.
+        $secciones = $role === UserType::Student->value
+            ? Group::query()->whereNotNull('section')->where('section', '!=', '')->orderBy('grade')->orderBy('section')
+                ->pluck('section')->unique()->values()->all()
             : [];
 
-        return response()->streamDownload(function () use ($role, $codigosAula) {
-            $book = $this->buildWorkbook($role, $codigosAula);
+        return response()->streamDownload(function () use ($role, $secciones) {
+            $book = $this->buildWorkbook($role, $secciones);
 
             (new XlsxWriter($book))->save('php://output');
 
@@ -184,8 +188,8 @@ class BulkTemplateService
         ]);
     }
 
-    /** @param array<int,string> $codigosAula */
-    public function buildWorkbook(string $role, array $codigosAula = []): Spreadsheet
+    /** @param array<int,string> $secciones */
+    public function buildWorkbook(string $role, array $secciones = []): Spreadsheet
     {
         $template = self::TEMPLATES[$role];
         $columns  = $template['columns'];
@@ -219,7 +223,7 @@ class BulkTemplateService
             $sheet->setCellValueExplicit("{$col}{$headerRow}", $label, DataType::TYPE_STRING);
             $sheet->getColumnDimension($col)->setWidth(match ($key) {
                 'full_name', 'email', 'parent_name', 'parent_email' => 32,
-                'aula', 'status'                                    => 14,
+                'seccion', 'status'                                 => 14,
                 default                                             => 22,
             });
             // Texto en todo salvo la fecha: evita que Excel convierta códigos
@@ -247,7 +251,7 @@ class BulkTemplateService
         $sheet->setSelectedCell("A{$firstData}");
 
         if ($role === UserType::Student->value) {
-            $this->addStudentDropdowns($book, $sheet, $letras, $firstData, $lastRow, $codigosAula);
+            $this->addStudentDropdowns($book, $sheet, $letras, $firstData, $lastRow, $secciones);
         }
 
         $book->setActiveSheetIndex(0);
@@ -261,16 +265,16 @@ class BulkTemplateService
      * para muchas aulas.
      *
      * @param array<string,string> $letras
-     * @param array<int,string>    $codigosAula
+     * @param array<int,string>    $secciones
      */
-    private function addStudentDropdowns(Spreadsheet $book, Worksheet $sheet, array $letras, int $firstData, int $lastRow, array $codigosAula): void
+    private function addStudentDropdowns(Spreadsheet $book, Worksheet $sheet, array $letras, int $firstData, int $lastRow, array $secciones): void
     {
         $listas = $book->createSheet();
         $listas->setTitle('Listas');
         $listas->setSheetState(Worksheet::SHEETSTATE_HIDDEN);
 
         $opciones = [
-            'aula'            => [array_values($codigosAula), 'Elige un aula de la lista.'],
+            'seccion'         => [array_values($secciones), 'Elige una sección de la lista.'],
             'status'          => [array_keys(self::STATUS_LABELS), 'Elige activo, inactivo o suspendido.'],
             'adecuacion_type' => [self::ADECUACION_OPTIONS, 'Elige un tipo de la lista o deja la celda vacía.'],
         ];

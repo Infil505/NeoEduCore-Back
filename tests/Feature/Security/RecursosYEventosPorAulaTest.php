@@ -17,7 +17,9 @@ use Tests\Traits\ApiAuth;
 /**
  * Recursos de estudio y avisos del calendario (regla del centro, 05/10/2026):
  *
- *  - Son actividades **del docente**: solo él los crea; el administrador no.
+ *  - Los recursos son actividades **del docente**: solo él los crea. Los avisos
+ *    también los publica el administrador, a secciones o a toda la institución
+ *    (ver los tests de «Avisos del centro» al final).
  *  - Los envía a las aulas que elige **de las que el administrador le asignó**:
  *    con una sola aula va por defecto, con varias tiene que elegir.
  *  - Entre docentes no se ve lo que tiene cada uno.
@@ -50,12 +52,11 @@ class RecursosYEventosPorAulaTest extends TestCase
      | Quién crea
      ===================================================== */
 
-    public function test_el_administrador_no_crea_recursos_ni_eventos(): void
+    public function test_el_administrador_no_crea_recursos(): void
     {
         $this->signInAdmin(['institution_id' => $this->centro->id]);
 
         $this->postJson('/api/study-resources', $this->recurso(['group_ids' => [$this->aulaA->id]]))->assertForbidden();
-        $this->postJson('/api/calendar-events', $this->evento(['group_id' => $this->aulaA->id]))->assertForbidden();
     }
 
     /* =====================================================
@@ -336,6 +337,65 @@ class RecursosYEventosPorAulaTest extends TestCase
     /* =====================================================
      | Helpers
      ===================================================== */
+
+    /* =====================================================
+     | Avisos del centro (administrador)
+     ===================================================== */
+
+    public function test_el_administrador_publica_un_aviso_a_una_seccion_y_le_llega_a_sus_estudiantes(): void
+    {
+        $alumnoA = $this->alumnoEn($this->aulaA);
+        $alumnoB = $this->alumnoEn($this->aulaB);
+        $this->signInAdmin(['institution_id' => $this->centro->id]);
+
+        $this->postJson('/api/calendar-events', $this->evento(['group_ids' => [$this->aulaA->id], 'title' => 'Reunión de padres']))
+            ->assertCreated()
+            ->assertJsonPath('data.0.group_id', $this->aulaA->id);
+
+        Sanctum::actingAs($alumnoA);
+        $this->assertSame(['Reunión de padres'], collect($this->getJson('/api/calendar-events')->json('data.data'))->pluck('title')->all());
+        $this->assertSame(1, $alumnoA->notifications()->count(), 'El estudiante de la sección recibe la notificación');
+
+        Sanctum::actingAs($alumnoB);
+        $this->assertSame([], $this->getJson('/api/calendar-events')->json('data.data'));
+        $this->assertSame(0, $alumnoB->notifications()->count());
+    }
+
+    public function test_un_aviso_del_centro_llega_solo_al_publico_elegido(): void
+    {
+        $alumno = $this->alumnoEn($this->aulaA);
+        $this->signInAdmin(['institution_id' => $this->centro->id]);
+
+        $this->postJson('/api/calendar-events', $this->evento(['audience' => 'students', 'title' => 'Para estudiantes']))->assertCreated()
+            ->assertJsonPath('data.0.group_id', null)
+            ->assertJsonPath('data.0.audience', 'students');
+        $this->postJson('/api/calendar-events', $this->evento(['audience' => 'teachers', 'title' => 'Para docentes']))->assertCreated();
+        $this->postJson('/api/calendar-events', $this->evento(['audience' => 'all', 'title' => 'Para todos']))->assertCreated();
+
+        Sanctum::actingAs($alumno);
+        $this->assertEqualsCanonicalizing(['Para estudiantes', 'Para todos'], collect($this->getJson('/api/calendar-events')->json('data.data'))->pluck('title')->all());
+        $this->assertSame(2, $alumno->notifications()->count());
+
+        Sanctum::actingAs($this->docente);
+        $this->assertEqualsCanonicalizing(['Para docentes', 'Para todos'], collect($this->getJson('/api/calendar-events')->json('data.data'))->pluck('title')->all());
+        $this->assertSame(2, $this->docente->notifications()->count());
+    }
+
+    public function test_el_administrador_tiene_que_elegir_destinatarios(): void
+    {
+        $this->signInAdmin(['institution_id' => $this->centro->id]);
+
+        $this->postJson('/api/calendar-events', $this->evento())->assertStatus(422);
+        $this->postJson('/api/calendar-events', $this->evento(['audience' => 'padres']))->assertStatus(422);
+    }
+
+    public function test_un_docente_no_publica_avisos_para_toda_la_institucion(): void
+    {
+        $this->asignarDocente($this->docente, $this->aulaA->id, $this->mate->id);
+
+        $this->postJson('/api/calendar-events', $this->evento(['audience' => 'all']))->assertForbidden();
+        $this->assertSame(0, CalendarEvent::count());
+    }
 
     private function recurso(array $extra = []): array
     {
