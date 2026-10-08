@@ -201,4 +201,70 @@ class QuestionRulesTest extends TestCase
         $this->assertCount(5, $ids);
         $this->assertCount(5, $ids->unique());
     }
+
+    /* ---- Examen con intentos: lo que puntúa queda congelado ---- */
+
+    private function conIntento(): void
+    {
+        $alumno = User::factory()->student()->create(['institution_id' => $this->institution->id]);
+        \App\Models\Students\Student::factory()->create(['user_id' => $alumno->id, 'institution_id' => $this->institution->id]);
+
+        \App\Models\Exams\ExamAttempt::factory()->submitted()->create([
+            'institution_id' => $this->institution->id, 'exam_id' => $this->exam->id, 'student_user_id' => $alumno->id,
+        ]);
+    }
+
+    /** Las mismas opciones, pero con otra como correcta. */
+    private function otraCorrecta(int $n): array
+    {
+        return array_map(fn ($o) => ['is_correct' => $o['option_index'] === 1] + $o, $this->opciones($n));
+    }
+
+    public function test_con_intentos_no_se_puede_borrar_una_pregunta(): void
+    {
+        $this->pregunta('multiple_choice');
+        $q = $this->pregunta('multiple_choice');
+        $this->conIntento();
+
+        $this->deleteJson("/api/questions/{$q->id}")->assertStatus(409);
+        $this->assertDatabaseHas('questions', ['id' => $q->id]);
+    }
+
+    public function test_con_intentos_no_se_cambian_puntos_opciones_ni_respuesta_correcta(): void
+    {
+        $mc    = $this->pregunta('multiple_choice');
+        $corta = $this->pregunta('short_answer', false);
+        $this->conIntento();
+
+        $this->putJson("/api/questions/{$mc->id}", ['points' => $mc->points + 1])->assertStatus(409);
+        $this->putJson("/api/questions/{$mc->id}", ['options' => $this->otraCorrecta(4)])->assertStatus(409);
+        $this->putJson("/api/questions/{$corta->id}", ['correct_answer_text' => 'Madrid'])->assertStatus(409);
+
+        $this->assertSame($mc->points, $mc->fresh()->points);
+        $this->assertSame('París', $corta->fresh()->correct_answer_text);
+    }
+
+    public function test_con_intentos_si_se_corrige_el_enunciado_aunque_se_reenvie_todo(): void
+    {
+        $mc = $this->pregunta('multiple_choice');
+        $this->conIntento();
+
+        $iguales = $mc->options()->orderBy('option_index')->get()
+            ->map(fn ($o) => ['option_index' => $o->option_index, 'option_text' => $o->option_text, 'is_correct' => $o->is_correct])->all();
+
+        $this->putJson("/api/questions/{$mc->id}", [
+            'question_text' => 'Enunciado sin erratas', 'points' => $mc->points, 'options' => $iguales,
+        ])->assertOk();
+
+        $this->assertSame('Enunciado sin erratas', $mc->fresh()->question_text);
+    }
+
+    public function test_sin_intentos_todo_sigue_editable_y_borrable(): void
+    {
+        $this->pregunta('multiple_choice');
+        $q = $this->pregunta('multiple_choice');
+
+        $this->putJson("/api/questions/{$q->id}", ['points' => 5, 'options' => $this->otraCorrecta(4)])->assertOk();
+        $this->deleteJson("/api/questions/{$q->id}")->assertNoContent();
+    }
 }

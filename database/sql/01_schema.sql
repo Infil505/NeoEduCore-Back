@@ -283,7 +283,9 @@ CREATE TABLE public.calendar_events (
     group_id uuid,
     created_by uuid,
     created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    audience character varying(16),
+    CONSTRAINT calendar_events_audience_check CHECK (((audience IS NULL) OR ((audience)::text = ANY ((ARRAY['students'::character varying, 'teachers'::character varying, 'all'::character varying])::text[]))))
 );
 
 
@@ -1260,6 +1262,13 @@ CREATE INDEX idx_attempts_student ON public.exam_attempts USING btree (student_u
 --
 
 CREATE INDEX idx_attempts_submitted ON public.exam_attempts USING btree (submitted_at);
+
+
+--
+-- Name: idx_calendar_events_audience; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_calendar_events_audience ON public.calendar_events USING btree (institution_id, audience);
 
 
 --

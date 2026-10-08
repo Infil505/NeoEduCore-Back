@@ -270,4 +270,37 @@ Las siguientes mejoras de seguridad proactivas se implementaron durante la sesi�
 
 ---
 
+## 6. Revisión de los cambios de la rama `Joseph` (merge del 06/10/2026)
+
+Revisión solo documental: **no se modificó código de aplicación**. Commits revisados: `6c09218` (caché fuera del repo) y `1fd79da` («caso 22»). Suite tras el merge: 754 verdes y 1 fallo (un test de `BulkUploadStudentsTest` comparaba contra el total global de `group_students`; se ajustó a «antes/después»; ese archivo pasa entero, la suite completa no se repitió tras el ajuste).
+
+### 6.1 Cambios que mejoran la seguridad
+
+| # | Cambio | Archivo | Efecto |
+|---|--------|---------|--------|
+| J1 | `/overview` aplica `visibleTo($user)` a recursos y eventos | `OverviewController.php` | Cierra una **fuga de información**: el docente veía recursos y avisos de colegas, y el alumno los de todo el centro. Del autor solo se devuelve `id` y `full_name`. |
+| J2 | Las recomendaciones de IA solo sugieren recursos que el alumno puede abrir | `AiRecommendationService.php` | Antes valía cualquier recurso del centro (de otros docentes o sin aula); ahora solo los de aulas donde está matriculado (`left_at IS NULL`). |
+| J3 | `PUT /students/{id}` rechaza `grade`, `section` y `group_code` con 422 | `StudentController.php` | La matrícula solo cambia moviendo al alumno de aula. Evita que la ficha y la matrícula queden desincronizadas y reduce la superficie de asignación masiva. |
+| J4 | El correo de contacto pasa de `settings` a la columna `institutions.email` | `SystemConfigController.php` | Sin impacto de seguridad; un solo origen del dato. |
+| J5 | `storage/framework/cache` deja de versionarse | `.gitignore` | El repo es público. Lo que había en caché eran marcas de tiempo (`1791265940i:…`), sin datos personales ni secretos; el historial las conserva, riesgo nulo. |
+
+### 6.2 Cambios nuevos que conviene vigilar
+
+| # | Observación | Severidad | Detalle y recomendación (sin aplicar) |
+|---|-------------|-----------|---------------------------------------|
+| O-J1 | Enlace de alta **en cola** (`EnviarEnlaceDeAlta`) | 🟡 Media | Depende de que `queue:work` esté activo. Si el worker cae, las cuentas quedan `inactive` sin enlace y la respuesta de la carga ya no informa fallos de envío (`emailFailures` desapareció): la API contesta «N correos encolados» aunque no se envíen. Hay 3 reintentos y después el fallo queda solo en `failed_jobs`. Revisar monitorización de la cola y valorar un reenvío de enlace para cuentas inactivas. |
+| O-J2 | **Un mismo `password_hash` inservible para todas las cuentas de una carga** | 🟢 Baja | Se genera un hash por carga (no por fila) de una contraseña aleatoria de 40 caracteres que se descarta. No permite entrar (el secreto no existe), pero todas las cuentas de una carga comparten hash. Aceptable; el login debe seguir rechazando cuentas `inactive`, y el reset/alta debe sobrescribir el hash. Pendiente de confirmar que ningún flujo trate el hash compartido como credencial válida. |
+| O-J3 | `dry_run` ejecuta la carga real y la revierte | 🟢 Baja | Mismas validaciones que la carga real, sin segunda copia de reglas. No se envían correos (van tras el commit). Efectos laterales: consume secuencias y mantiene la transacción abierta durante el proceso; la ruta está bajo `throttle:bulk-upload` (también para `dry_run`). |
+| O-J4 | Enumeración de correos en la carga masiva | 🟢 Baja (preexistente) | El mensaje «el correo X ya está en uso» revela si un correo existe en **cualquier** institución (`users.email` es único global). Solo lo ve un administrador autenticado y con límite de peticiones, pero la vista previa lo hace más cómodo de explotar. Opción: mensaje genérico («correo no disponible»). |
+| O-J5 | Tarea en cola sin contexto de institución | 🟢 Baja | `EnviarEnlaceDeAlta` carga el usuario con `withoutGlobalScopes()` por id. Es correcto porque el worker no tiene tenant, y solo actúa si la cuenta sigue `inactive`. Mantener ese control si se amplía el job. |
+
+### 6.3 Seguimiento (07/10/2026)
+
+- **O-J1 corregido.** El fallo era peor de lo descrito: `PasswordSetupService::sendSetupLink` es best-effort (se traga el error y devuelve `false`) y `EnviarEnlaceDeAlta` ignoraba ese resultado, así que un fallo al preparar el token o encolar el correo terminaba «bien»: sin reintento y sin fila en `failed_jobs`. Ahora el job lanza excepción si el enlace no se preparó y reintenta con `backoff` 30/120 s. Quien no reciba el enlace puede pedirlo en `/password/forgot` (acepta cuentas `inactive`). Sigue sin existir un reenvío por parte del administrador. Tests: `AtaquesALaColaDeAltaTest`.
+- **O-J6 (nuevo, corregido): `/dashboard/staff-overview` devolvía a cualquier docente los últimos 20 usuarios del centro, alumnos incluidos** (nombre y correo de menores de aulas que no tiene asignadas). Misma puerta que se cerró en `UserController::index()`. Ahora el docente recibe el personal del centro y solo sus alumnos.
+- J1 y J3 probados con ataques: `AtaquesAlOverviewYALaFichaTest` (panel del docente y del alumno, ficha editada por el alumno, mover de aula por la ficha).
+- **O-J4 sin cambiar:** cualquier rechazo por correo existente revela que existe; un mensaje genérico no lo evita, solo ocultaría de qué centro es. Queda como riesgo aceptado salvo decisión contraria.
+
+---
+
 *Revisión de la Sesión S realizada el 21/04/2026. Mejoras adicionales (S5–S9) el 09/05/2026. Rama `Darwin`.*
