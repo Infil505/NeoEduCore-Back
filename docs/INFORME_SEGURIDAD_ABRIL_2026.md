@@ -294,10 +294,12 @@ Revisión solo documental: **no se modificó código de aplicación**. Commits r
 | O-J4 | Enumeración de correos en la carga masiva | 🟢 Baja (preexistente) | El mensaje «el correo X ya está en uso» revela si un correo existe en **cualquier** institución (`users.email` es único global). Solo lo ve un administrador autenticado y con límite de peticiones, pero la vista previa lo hace más cómodo de explotar. Opción: mensaje genérico («correo no disponible»). |
 | O-J5 | Tarea en cola sin contexto de institución | 🟢 Baja | `EnviarEnlaceDeAlta` carga el usuario con `withoutGlobalScopes()` por id. Es correcto porque el worker no tiene tenant, y solo actúa si la cuenta sigue `inactive`. Mantener ese control si se amplía el job. |
 
-### 6.3 Pendiente de documentar / probar
+### 6.3 Seguimiento (07/10/2026)
 
-- Test de ataque para J1 (docente y alumno contra `/overview`) y para J3 (intento de cambiar el aula editando la ficha), en la línea de los `Ataques*Test`.
-- Decisión del usuario sobre O-J1 (monitorización de la cola) y O-J4 (mensaje genérico).
+- **O-J1 corregido.** El fallo era peor de lo descrito: `PasswordSetupService::sendSetupLink` es best-effort (se traga el error y devuelve `false`) y `EnviarEnlaceDeAlta` ignoraba ese resultado, así que un fallo al preparar el token o encolar el correo terminaba «bien»: sin reintento y sin fila en `failed_jobs`. Ahora el job lanza excepción si el enlace no se preparó y reintenta con `backoff` 30/120 s. Quien no reciba el enlace puede pedirlo en `/password/forgot` (acepta cuentas `inactive`). Sigue sin existir un reenvío por parte del administrador. Tests: `AtaquesALaColaDeAltaTest`.
+- **O-J6 (nuevo, corregido): `/dashboard/staff-overview` devolvía a cualquier docente los últimos 20 usuarios del centro, alumnos incluidos** (nombre y correo de menores de aulas que no tiene asignadas). Misma puerta que se cerró en `UserController::index()`. Ahora el docente recibe el personal del centro y solo sus alumnos.
+- J1 y J3 probados con ataques: `AtaquesAlOverviewYALaFichaTest` (panel del docente y del alumno, ficha editada por el alumno, mover de aula por la ficha).
+- **O-J4 sin cambiar:** cualquier rechazo por correo existente revela que existe; un mensaje genérico no lo evita, solo ocultaría de qué centro es. Queda como riesgo aceptado salvo decisión contraria.
 
 ---
 

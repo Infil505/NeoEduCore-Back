@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\UserType;
 use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Models\Academic\CalendarEvent;
 use App\Models\Academic\Group;
@@ -38,8 +39,19 @@ class OverviewController extends Controller
 
         $subjectIds = $subjects->pluck('id');
 
+        // Docente: el personal del centro se le deja (directorio interno entre
+        // adultos), pero del alumnado solo los suyos. Sin esto el panel le daba
+        // nombre y correo de menores que no son de sus aulas, la misma puerta
+        // que ya se cerró en UserController::index().
         $users = User::query()
             ->where('institution_id', $institutionId)
+            ->when($esDocente, function ($query) use ($user) {
+                $alcanzados = $this->estudiantesDelDocente($user->id);
+
+                $query->where(fn ($w) => $w
+                    ->where('user_type', '!=', UserType::Student->value)
+                    ->orWhereIn('id', $alcanzados));
+            })
             ->orderByDesc('created_at')
             ->limit(20)
             ->get();
