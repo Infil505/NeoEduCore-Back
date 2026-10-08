@@ -52,6 +52,11 @@ class QuestionController extends Controller
 
         return response()->json([
             'data' => $questions,
+            // Para el personal: con intentos, el editor bloquea borrar preguntas y
+            // cambiar puntos, opciones o respuesta correcta (ver update()/destroy()).
+            'meta' => $this->puedeVerRespuestas($request->user())
+                ? ['locked' => $this->examenConIntentos($exam->id)]
+                : (object) [],
         ]);
     }
 
