@@ -36,6 +36,9 @@ class CalendarEvent extends Model
         // Tipo de evento
         'event_type',      // exam | activity | reminder | meeting
 
+        // Avisos del centro (admin): 'students' | 'teachers' | 'all'. NULL = evento de sección.
+        'audience',
+
         // Asociación opcional
         'exam_id',
         'group_id',
@@ -74,13 +77,18 @@ class CalendarEvent extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /** Destinatarios de un aviso del centro. */
+    public const AUDIENCES = ['students', 'teachers', 'all'];
+
     /**
-     * Quién ve qué (regla del centro, 05/10/2026). Único sitio donde se define.
+     * Quién ve qué. Único sitio donde se define.
      *
      *  - **Administrador**: todos los de la institución.
-     *  - **Docente**: solo los que él creó.
-     *  - **Estudiante**: solo los de un aula donde está matriculado ahora. Un
-     *    evento sin aula (anteriores a la regla) no llega a ningún estudiante.
+     *  - **Docente**: los que él creó, más los avisos del centro para docentes
+     *    (`audience` teachers/all).
+     *  - **Estudiante**: los de un aula donde está matriculado ahora, más los
+     *    avisos del centro para estudiantes (`audience` students/all). Un evento
+     *    sin aula ni destinatarios (anteriores a la regla) no llega a nadie.
      */
     public function scopeVisibleTo($query, ?object $user)
     {
@@ -89,18 +97,22 @@ class CalendarEvent extends Model
         }
 
         if ($user->user_type === UserType::Teacher) {
-            return $query->where('created_by', $user->id);
+            return $query->where(fn ($q) => $q
+                ->where('created_by', $user->id)
+                ->orWhereIn('audience', ['teachers', 'all']));
         }
 
         if ($user->user_type === UserType::Student) {
-            return $query->whereIn(
-                'group_id',
-                DB::table('group_students')
-                    ->select('group_id')
-                    ->where('institution_id', $user->institution_id)
-                    ->where('student_user_id', $user->id)
-                    ->whereNull('left_at')
-            );
+            return $query->where(fn ($q) => $q
+                ->whereIn(
+                    'group_id',
+                    DB::table('group_students')
+                        ->select('group_id')
+                        ->where('institution_id', $user->institution_id)
+                        ->where('student_user_id', $user->id)
+                        ->whereNull('left_at')
+                )
+                ->orWhereIn('audience', ['students', 'all']));
         }
 
         return $query;

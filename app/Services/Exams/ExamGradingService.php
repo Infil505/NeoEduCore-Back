@@ -45,6 +45,7 @@ class ExamGradingService
 
         $totalScore = 0;
         $maxScore = $questions->sum('points');
+        $pendientes = 0;
 
         $byQuestion = collect($answersPayload)->keyBy('question_id');
 
@@ -64,10 +65,13 @@ class ExamGradingService
             $reviewStatus = 'auto_graded';
 
             if ($question->question_type->value === 'short_answer') {
-                $isCorrect = mb_strtolower(trim((string)$answerText))
-                    === mb_strtolower(trim((string)$question->correct_answer_text));
+                // Coincide con la esperada (sin importar mayúsculas, tildes ni
+                // signos) => se califica sola. Si no, la revisa el profesor.
+                $isCorrect = self::normalizarTexto($answerText) !== ''
+                    && self::normalizarTexto($answerText) === self::normalizarTexto($question->correct_answer_text);
                 $points = $isCorrect ? $question->points : 0;
-                $reviewStatus = 'needs_review';
+                // En blanco no hay nada que revisar: 0 puntos directamente.
+                $reviewStatus = $isCorrect || self::normalizarTexto($answerText) === '' ? 'auto_graded' : 'needs_review';
                 $correctSnapshot = ['correct_answer_text' => $question->correct_answer_text];
             } elseif ($question->question_type->value === 'essay') {
                 // Essay siempre requiere revisión manual
@@ -84,6 +88,9 @@ class ExamGradingService
             }
 
             $totalScore += $points;
+            if ($reviewStatus === 'needs_review') {
+                $pendientes++;
+            }
 
             // El id se genera aquí porque el INSERT masivo no pasa por HasUuids
             // (y `student_answers.id` no tiene DEFAULT en la BD). orderedUuid()
@@ -144,9 +151,25 @@ class ExamGradingService
             'score' => round($totalScore, 2),
             'max_score' => round($maxScore, 2),
             'submitted_at' => now()->startOfSecond(),
-            'grade_status' => 'completed',
+            // Con respuestas por revisar la nota aún puede subir: queda pendiente.
+            'grade_status' => $pendientes > 0 ? 'pending' : 'completed',
         ]);
 
         return $attempt;
+    }
+
+    /**
+     * Texto comparable de una respuesta corta: minúsculas, sin tildes y sin
+     * signos, con los espacios colapsados. «Pérdida de tierras.» y
+     * «perdida de tierras» cuentan como la misma respuesta.
+     */
+    public static function normalizarTexto(?string $texto): string
+    {
+        $texto = mb_strtolower(trim((string) $texto));
+        $sinTildes = \Normalizer::normalize($texto, \Normalizer::FORM_D);
+        $texto = preg_replace('/\p{Mn}+/u', '', $sinTildes === false ? $texto : $sinTildes);
+        $texto = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $texto);
+
+        return trim($texto);
     }
 }

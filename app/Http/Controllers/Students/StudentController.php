@@ -12,6 +12,7 @@ use App\Enums\LearningStyle;
 use App\Models\Academic\Group;
 use App\Models\Admin\User;
 use App\Models\Exams\Exam;
+use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
 use App\Jobs\EnviarEnlaceDeAlta;
 use App\Services\Imports\BulkFileReader;
@@ -247,24 +248,40 @@ class StudentController extends Controller
         // etiqueta de sección en la ficha pero sin matrícula en ningún grupo, y
         // desde el modelo de asignaciones eso los vuelve invisibles: no los ve
         // ningún docente, no reciben exámenes y no salen en informes.
-        if (!array_key_exists('aula', $firstRow)) {
+        // Se identifica por «Sección» (lo que el administrador conoce, p. ej.
+        // «6-1»). La columna «Aula» con el código del grupo sigue valiendo para
+        // los archivos anteriores a la plantilla por sección.
+        if (!array_key_exists('seccion', $firstRow) && !array_key_exists('aula', $firstRow)) {
             return response()->json([
-                'message' => 'El archivo debe contener la columna «Aula» con el código del grupo de cada estudiante '
-                    . '(por ejemplo 11B2026). Descargá la plantilla actualizada.',
+                'message' => 'El archivo debe contener la columna «Sección» con la sección de cada estudiante '
+                    . '(por ejemplo 6-1). Descarga la plantilla actualizada.',
             ], 422);
         }
 
         // Aulas de la institución indexadas por código en mayúsculas: una sola
         // consulta en lugar de una por fila.
-        $aulasPorCodigo = Group::query()
-            ->whereNotNull('group_code')
-            ->get()
+        $grupos = Group::query()->get();
+        $aulasPorCodigo = $grupos
+            ->filter(fn ($g) => trim((string) $g->group_code) !== '')
             ->keyBy(fn ($g) => Str::upper(trim($g->group_code)));
 
-        if ($aulasPorCodigo->isEmpty()) {
+        // Por sección puede haber más de un grupo (la misma «6-1» en dos años):
+        // se prefiere el del año en curso; si aun así hay varios, la fila es
+        // ambigua y se rechaza en vez de adivinar.
+        $anioActual = (string) now()->year;
+        $aulasPorSeccion = $grupos
+            ->filter(fn ($g) => trim((string) $g->section) !== '')
+            ->groupBy(fn ($g) => Str::upper(trim((string) $g->section)))
+            ->map(function ($candidatos) use ($anioActual) {
+                $delAnio = $candidatos->filter(fn ($g) => (string) $g->year === $anioActual);
+
+                return $delAnio->isNotEmpty() ? $delAnio->values() : $candidatos->values();
+            });
+
+        if ($grupos->isEmpty()) {
             return response()->json([
-                'message' => 'No hay ningún grupo con código definido en esta institución. '
-                    . 'Creá las aulas primero (POST /api/groups) antes de cargar estudiantes.',
+                'message' => 'Tu institución todavía no tiene aulas. '
+                    . 'Créalas primero en Académico → Estructura antes de cargar estudiantes.',
             ], 422);
         }
 
@@ -294,7 +311,7 @@ class StudentController extends Controller
 
         try {
             DB::transaction(function () use (
-                $rows, $validAdeValues, $validStatValues, $institutionId, $aulasPorCodigo,
+                $rows, $validAdeValues, $validStatValues, $institutionId, $aulasPorCodigo, $aulasPorSeccion,
                 &$created, &$updated, &$errors, &$usersCreated, &$newUsers,
                 &$matriculados, &$reasignados, &$aulasTocadas, $enrollment, &$acciones, $simular, &$correosVistos, $hashInservible
             ) {
@@ -331,19 +348,44 @@ class StudentController extends Controller
                     // Un typo en el código crearía un grupo fantasma con un alumno
                     // dentro, invisible para el docente que sí tiene asignada la
                     // buena. Las aulas las crea el admin con POST /api/groups.
-                    $codigoAula = Str::upper(trim((string) ($row['aula'] ?? '')));
+                    if (array_key_exists('seccion', $row)) {
+                        $seccion = Str::upper(trim((string) ($row['seccion'] ?? '')));
 
-                    if ($codigoAula === '') {
-                        $errors[] = "Fila {$lineNumber}: «Aula» es obligatoria. Indicá el código del grupo (por ejemplo 11B2026).";
-                        continue;
-                    }
+                        if ($seccion === '') {
+                            $errors[] = "Fila {$lineNumber}: «Sección» es obligatoria (por ejemplo 6-1).";
+                            continue;
+                        }
 
-                    $aula = $aulasPorCodigo->get($codigoAula);
+                        $candidatos = $aulasPorSeccion->get($seccion);
 
-                    if (!$aula) {
-                        $disponibles = $aulasPorCodigo->keys()->take(8)->implode(', ');
-                        $errors[] = "Fila {$lineNumber}: el aula «{$row['aula']}» no existe en tu institución. Aulas disponibles: {$disponibles}.";
-                        continue;
+                        if (!$candidatos) {
+                            $disponibles = $aulasPorSeccion->keys()->take(10)->implode(', ');
+                            $errors[] = "Fila {$lineNumber}: la sección «{$row['seccion']}» no existe en tu institución. Secciones disponibles: {$disponibles}.";
+                            continue;
+                        }
+
+                        if ($candidatos->count() > 1) {
+                            $errors[] = "Fila {$lineNumber}: la sección «{$row['seccion']}» corresponde a varias aulas ("
+                                . $candidatos->pluck('name')->implode(', ') . '). Revisa las secciones en Académico.';
+                            continue;
+                        }
+
+                        $aula = $candidatos->first();
+                    } else {
+                        $codigoAula = Str::upper(trim((string) ($row['aula'] ?? '')));
+
+                        if ($codigoAula === '') {
+                            $errors[] = "Fila {$lineNumber}: «Aula» es obligatoria. Indica el código del grupo (por ejemplo 61).";
+                            continue;
+                        }
+
+                        $aula = $aulasPorCodigo->get($codigoAula);
+
+                        if (!$aula) {
+                            $disponibles = $aulasPorCodigo->keys()->take(8)->implode(', ');
+                            $errors[] = "Fila {$lineNumber}: el aula «{$row['aula']}» no existe en tu institución. Aulas disponibles: {$disponibles}.";
+                            continue;
+                        }
                     }
 
                     // --- parent_email ---
@@ -547,7 +589,7 @@ class StudentController extends Controller
                 }
             });
         } catch (SimulacionRevertida) {
-            return response()->json(BulkPreview::respuesta($rows, $errors, $acciones, ['full_name', 'email', 'aula']));
+            return response()->json(BulkPreview::respuesta($rows, $errors, $acciones, ['full_name', 'email', 'seccion', 'aula']));
         }
 
         // Recuento de las aulas afectadas (RN-STU-012). Una sola pasada al
@@ -645,6 +687,39 @@ class StudentController extends Controller
         ]);
     }
 
+    /**
+     * GET /students/me/attempts — los exámenes que el estudiante ya entregó,
+     * con su nota. Es su historial: lo que ve en «Resultados».
+     *
+     * Solo intentos entregados (`submitted_at`): uno en curso no tiene nota.
+     * `review_available` sigue la misma regla que `ExamAttemptController::show`
+     * —el docente decide con `allow_review_after_submission` si se pueden
+     * revisar las respuestas—; la nota en sí ya se le muestra al entregar.
+     */
+    public function myAttempts(Request $request)
+    {
+        $attempts = ExamAttempt::query()
+            ->where('student_user_id', $request->user()->id)
+            ->whereNotNull('submitted_at')
+            ->with(['exam:id,title,subject_id,allow_review_after_submission', 'exam.subject:id,name'])
+            ->orderByDesc('submitted_at')
+            ->get()
+            ->map(fn (ExamAttempt $a) => [
+                'id'               => $a->id,
+                'exam_id'          => $a->exam_id,
+                'exam_title'       => $a->exam?->title,
+                'subject'          => $a->exam?->subject?->name,
+                'attempt_number'   => $a->attempt_number,
+                'submitted_at'     => $a->submitted_at,
+                'score'            => (float) $a->score,
+                'max_score'        => (float) $a->max_score,
+                'percentage'       => $a->percentage,
+                'grade_status'     => $a->grade_status,
+                'review_available' => (bool) $a->exam?->allow_review_after_submission,
+            ]);
+
+        return response()->json(['data' => $attempts]);
+    }
     public function availableExams(Request $request)
     {
         $user = $request->user();

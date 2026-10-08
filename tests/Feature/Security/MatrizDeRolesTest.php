@@ -114,7 +114,8 @@ class MatrizDeRolesTest extends TestCase
 
             // --- Actividades del docente: solo el docente las crea ---
             ['POST',   '/api/study-resources',               [$D],       false],
-            ['POST',   '/api/calendar-events',               [$D],       false],
+            // Avisos: el docente a sus secciones; el admin a secciones o a toda la institución.
+            ['POST',   '/api/calendar-events',               [$A, $D],   false],
 
             // --- Docente y administrador ---
             ['GET',    '/api/system/config',                 [$A, $D],   false],

@@ -164,7 +164,7 @@ class BulkUploadStudentsTest extends TestCase
 
         $this->uploadCsv($csv)
             ->assertStatus(422)
-            ->assertJsonPath('message', fn ($m) => str_contains($m, 'POST /api/groups'));
+            ->assertJsonPath('message', fn ($m) => str_contains($m, 'no tiene aulas'));
     }
 
     /**
@@ -508,7 +508,7 @@ class BulkUploadStudentsTest extends TestCase
         $content = $res->streamedContent();
         $firstLine = strtok(ltrim($content, "\xEF\xBB\xBF"), "\n");
 
-        $this->assertStringStartsWith('Nombre completo *;Correo institucional *;Aula *;Código de estudiante;Estado;', $firstLine);
+        $this->assertStringStartsWith('Nombre completo *;Correo institucional *;Sección *;Código de estudiante;Estado;', $firstLine);
     }
 
     public function test_spanish_semicolon_csv_is_uploaded_and_instruction_row_is_ignored(): void
@@ -552,9 +552,9 @@ class BulkUploadStudentsTest extends TestCase
         $sheet = $book->getSheetByName('Estudiantes');
         $this->assertNotNull($sheet);
         // Título y descripción arriba; la cabecera va en la fila 4.
-        $this->assertSame(['Nombre completo *', 'Correo institucional *', 'Aula *'], $sheet->rangeToArray('A4:C4')[0]);
+        $this->assertSame(['Nombre completo *', 'Correo institucional *', 'Sección *'], $sheet->rangeToArray('A4:C4')[0]);
 
-        $sheet->fromArray([['Luis Mora', 'luis.xlsx@ejemplo.com', '4A2026', 'EST-XLSX', 'suspendido']], null, 'A5');
+        $sheet->fromArray([['Luis Mora', 'luis.xlsx@ejemplo.com', 'A', 'EST-XLSX', 'suspendido']], null, 'A5');
         $book->setActiveSheetIndexByName('Listas'); // el parser no depende de la hoja activa
         (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($path);
         $book->disconnectWorksheets();

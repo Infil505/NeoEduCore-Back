@@ -15,6 +15,13 @@ use Illuminate\Validation\Rule;
 
 class QuestionController extends Controller
 {
+    /**
+     * Opciones de una pregunta de selección múltiple. Antes eran exactamente 4;
+     * el docente elige cuántas (06/10/2026). Siempre con una sola correcta.
+     */
+    private const MC_MIN_OPTIONS = 2;
+    private const MC_MAX_OPTIONS = 8;
+
     use RevelaRespuestas;
 
     /**
@@ -103,9 +110,10 @@ class QuestionController extends Controller
         }
 
         if ($type === QuestionType::MultipleChoice->value) {
-            if (empty($data['options']) || count($data['options']) !== 4) {
+            $n = count($data['options'] ?? []);
+            if ($n < self::MC_MIN_OPTIONS || $n > self::MC_MAX_OPTIONS) {
                 return response()->json([
-                    'message' => 'multiple_choice debe tener exactamente 4 opciones',
+                    'message' => 'La pregunta de selección múltiple debe tener entre ' . self::MC_MIN_OPTIONS . ' y ' . self::MC_MAX_OPTIONS . ' opciones.',
                 ], 422);
             }
         }
@@ -225,11 +233,16 @@ class QuestionController extends Controller
                 ], 422);
             }
 
-            $expected = $type === QuestionType::MultipleChoice->value ? 4 : 2;
+            $n = count($data['options'] ?? []);
+            $valido = $type === QuestionType::MultipleChoice->value
+                ? $n >= self::MC_MIN_OPTIONS && $n <= self::MC_MAX_OPTIONS
+                : $n === 2;
 
-            if (empty($data['options']) || count($data['options']) !== $expected) {
+            if (!$valido) {
                 return response()->json([
-                    'message' => "{$type} debe tener exactamente {$expected} opciones",
+                    'message' => $type === QuestionType::MultipleChoice->value
+                        ? 'La pregunta de selección múltiple debe tener entre ' . self::MC_MIN_OPTIONS . ' y ' . self::MC_MAX_OPTIONS . ' opciones.'
+                        : 'La pregunta de verdadero o falso debe tener exactamente 2 opciones.',
                 ], 422);
             }
 

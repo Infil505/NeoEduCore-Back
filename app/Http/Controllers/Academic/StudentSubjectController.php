@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Academic\Subject;
 use App\Models\Academic\StudentSubject;
 use App\Models\Students\Student;
+use App\Services\Students\StudentSubjectsService;
 use Illuminate\Http\Request;
 
 class StudentSubjectController extends Controller
@@ -17,7 +18,7 @@ class StudentSubjectController extends Controller
      * GET /api/students/{student_user_id}/subjects
      * Lista las materias en las que está inscrito un estudiante (admin/teacher).
      */
-    public function index(string $studentUserId, Request $request)
+    public function index(string $studentUserId, Request $request, StudentSubjectsService $materias)
     {
         $student = Student::where('user_id', $studentUserId)->firstOrFail();
 
@@ -25,30 +26,19 @@ class StudentSubjectController extends Controller
             return $this->noAutorizadoPorAsignacion();
         }
 
-        $subjects = $student->subjects()->get()->map(fn ($s) => [
-            'subject_id'  => $s->id,
-            'name'        => $s->name,
-            'enrolled_at' => $s->pivot->enrolled_at,
-        ]);
-
-        return response()->json(['data' => $subjects]);
+        // Heredadas de su sección + inscritas individualmente (ver el servicio).
+        return response()->json(['data' => $materias->materias($student->user_id, $student->institution_id)]);
     }
 
     /**
      * GET /api/students/me/subjects
      * Materias propias del estudiante autenticado.
      */
-    public function mySubjects(Request $request)
+    public function mySubjects(Request $request, StudentSubjectsService $materias)
     {
         $student = Student::where('user_id', $request->user()->id)->firstOrFail();
 
-        $subjects = $student->subjects()->get()->map(fn ($s) => [
-            'subject_id'  => $s->id,
-            'name'        => $s->name,
-            'enrolled_at' => $s->pivot->enrolled_at,
-        ]);
-
-        return response()->json(['data' => $subjects]);
+        return response()->json(['data' => $materias->materias($student->user_id, $student->institution_id)]);
     }
 
     /**

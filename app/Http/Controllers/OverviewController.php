@@ -15,6 +15,7 @@ use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
 use App\Models\Students\StudentProgress;
+use App\Services\Students\StudentSubjectsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 
@@ -205,11 +206,8 @@ class OverviewController extends Controller
             ->limit(10)
             ->get();
 
-        $subjects = $student->subjects()->get()->map(fn ($subject) => [
-            'subject_id' => $subject->id,
-            'name' => $subject->name,
-            'enrolled_at' => $subject->pivot->enrolled_at,
-        ])->values();
+        // Las de su sección más las individuales (ver StudentSubjectsService).
+        $subjects = app(StudentSubjectsService::class)->materias($student->user_id, $student->institution_id);
 
         return response()->json([
             'data' => [

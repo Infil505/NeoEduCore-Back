@@ -16,7 +16,7 @@ use Tests\Traits\ApiAuth;
  * puede tocarlas.
  *
  * `QuestionsCrudTest` cubre el camino feliz. Aquí van los rechazos: cada tipo
- * tiene una forma fija (4 opciones, 2, texto o nada) y exactamente una opción
+ * tiene una forma fija (de 2 a 8 opciones, 2, texto o nada) y exactamente una opción
  * correcta, y un docente solo toca las preguntas de sus propios exámenes.
  */
 class QuestionRulesTest extends TestCase
@@ -84,7 +84,8 @@ class QuestionRulesTest extends TestCase
         $casos = [
             'short_answer sin respuesta'  => ['question_type' => 'short_answer'],
             'short_answer con opciones'   => ['question_type' => 'short_answer', 'correct_answer_text' => 'X', 'options' => $this->opciones(2)],
-            'multiple_choice con 3'       => ['question_type' => 'multiple_choice', 'options' => $this->opciones(3)],
+            'multiple_choice con 1'       => ['question_type' => 'multiple_choice', 'options' => $this->opciones(1)],
+            'multiple_choice con 9'       => ['question_type' => 'multiple_choice', 'options' => $this->opciones(9)],
             'multiple_choice sin opciones'=> ['question_type' => 'multiple_choice'],
             'true_false con 4'            => ['question_type' => 'true_false', 'options' => $this->opciones(4)],
             'essay con opciones'          => ['question_type' => 'essay', 'options' => $this->opciones(2)],
@@ -109,6 +110,14 @@ class QuestionRulesTest extends TestCase
         $this->assertSame(3, $essay->json('data.order_index'));
     }
 
+    /** El docente elige cuántas opciones tiene una de selección múltiple: de 2 a 8. */
+    public function test_multiple_choice_accepts_between_two_and_eight_options(): void
+    {
+        foreach ([2, 3, 6, 8] as $n) {
+            $this->crear(['question_type' => 'multiple_choice', 'options' => $this->opciones($n)])->assertCreated();
+        }
+    }
+
     public function test_a_teacher_cannot_add_questions_to_someone_elses_exam(): void
     {
         Sanctum::actingAs(User::factory()->teacher()->create(['institution_id' => $this->institution->id]));
@@ -127,7 +136,8 @@ class QuestionRulesTest extends TestCase
         $this->putJson("/api/questions/{$corta->id}", ['options' => $this->opciones(2)])->assertStatus(422);
 
         $mc = $this->pregunta('multiple_choice');
-        $this->putJson("/api/questions/{$mc->id}", ['options' => $this->opciones(2)])->assertStatus(422);
+        $this->putJson("/api/questions/{$mc->id}", ['options' => $this->opciones(1)])->assertStatus(422);
+        $this->putJson("/api/questions/{$mc->id}", ['options' => $this->opciones(9)])->assertStatus(422);
         $this->putJson("/api/questions/{$mc->id}", ['options' => $this->opciones(4, 2)])->assertStatus(422);
     }
 
