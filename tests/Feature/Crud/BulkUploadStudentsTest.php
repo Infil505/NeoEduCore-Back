@@ -587,6 +587,7 @@ class BulkUploadStudentsTest extends TestCase
             . "Ana Solis;ana.previa@ejemplo.com;4A2026\n"
             . "Luis Mora;luis.previa@ejemplo.com;NOEXISTE\n"
             . "Otra Ana;ana.previa@ejemplo.com;4A2026\n";
+        $antes = DB::table('group_students')->count();
 
         $file = UploadedFile::fake()->createWithContent('estudiantes.csv', $csv);
         $res = $this->post('/api/students/bulk-upload', ['file' => $file, 'dry_run' => 1]);
@@ -599,7 +600,7 @@ class BulkUploadStudentsTest extends TestCase
         $this->assertStringContainsString('repetido', $res->json('rows.2.errors.0'));
 
         $this->assertDatabaseMissing('users', ['email' => 'ana.previa@ejemplo.com']);
-        $this->assertSame(0, DB::table('group_students')->count());
+        $this->assertSame($antes, DB::table('group_students')->count());
         Mail::assertNothingQueued();
     }
 }

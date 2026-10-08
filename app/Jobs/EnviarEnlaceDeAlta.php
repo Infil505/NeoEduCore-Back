@@ -35,6 +35,17 @@ class EnviarEnlaceDeAlta implements ShouldQueue
             return;
         }
 
-        $passwordSetup->sendSetupLink($user);
+        // `sendSetupLink` es best-effort: se traga el error y devuelve false.
+        // Aquí eso dejaría la cuenta inactiva para siempre sin que el job
+        // fallara, así que no se reintentaría ni quedaría en `failed_jobs`.
+        if (! $passwordSetup->sendSetupLink($user)) {
+            throw new \RuntimeException("No se pudo preparar el enlace de alta de la cuenta {$this->userId}.");
+        }
+    }
+
+    /** Segundos entre reintentos: da tiempo a que el SMTP o la base se recuperen. */
+    public function backoff(): array
+    {
+        return [30, 120];
     }
 }
