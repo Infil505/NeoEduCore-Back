@@ -7,6 +7,7 @@ use App\Http\Controllers\Concerns\RevelaRespuestas;
 use App\Enums\Difficulty;
 use App\Enums\QuestionType;
 use App\Models\Exams\Exam;
+use App\Models\Exams\ExamAttempt;
 use App\Models\Exams\Question;
 use App\Models\Exams\QuestionOption;
 use Illuminate\Http\Request;
@@ -254,6 +255,12 @@ class QuestionController extends Controller
             }
         }
 
+        if ($this->examenConIntentos($question->exam_id) && $this->cambiaLoQuePuntua($question, $data)) {
+            return response()->json([
+                'message' => 'Este examen ya tiene intentos: no se pueden cambiar las opciones, la respuesta correcta ni los puntos de una pregunta. El enunciado sí se puede corregir.',
+            ], 409);
+        }
+
         return DB::transaction(function () use ($question, $data, $request) {
             $question->fill($data);
             $question->save();
@@ -293,6 +300,14 @@ class QuestionController extends Controller
             return response()->json(['message' => 'No autorizado'], 403);
         }
 
+        if ($this->examenConIntentos($exam->id)) {
+            // `student_answers.question_id` es ON DELETE CASCADE: borrarla se
+            // llevaría las respuestas y las notas ya calculadas de los alumnos.
+            return response()->json([
+                'message' => 'Este examen ya tiene intentos: no se pueden eliminar sus preguntas.',
+            ], 409);
+        }
+
         if ($exam->questions()->limit(2)->count() <= 1) {
             return response()->json([
                 'message' => 'No se puede eliminar la última pregunta del examen',
@@ -302,6 +317,41 @@ class QuestionController extends Controller
         $question->delete(); // opciones eliminadas en cascada por DB
 
         return response()->noContent();
+    }
+
+    /** ¿Alguien ha empezado o entregado este examen? Desde ahí sus notas dependen de las preguntas. */
+    private function examenConIntentos(string $examId): bool
+    {
+        return ExamAttempt::query()->where('exam_id', $examId)->exists();
+    }
+
+    /**
+     * ¿La petición cambia algo de lo que puntúa (puntos, respuesta correcta,
+     * opciones)? Se compara con lo guardado: un formulario que reenvía todos los
+     * campos al corregir una errata no debe recibir un 409.
+     */
+    private function cambiaLoQuePuntua(Question $question, array $data): bool
+    {
+        if (array_key_exists('points', $data) && (int) $data['points'] !== (int) $question->points) {
+            return true;
+        }
+
+        if (array_key_exists('correct_answer_text', $data)
+            && trim((string) $data['correct_answer_text']) !== trim((string) $question->correct_answer_text)) {
+            return true;
+        }
+
+        if (array_key_exists('options', $data)) {
+            $forma = fn ($opciones) => collect($opciones)
+                ->map(fn ($o) => [(int) $o['option_index'], (string) $o['option_text'], (bool) $o['is_correct']])
+                ->sortBy(0)->values()->all();
+
+            return $forma($data['options'] ?? []) !== $forma($question->options()->get()->map(fn ($o) => [
+                'option_index' => $o->option_index, 'option_text' => $o->option_text, 'is_correct' => $o->is_correct,
+            ])->all());
+        }
+
+        return false;
     }
 
     private function sanitizeForStudent(Question $question): array
