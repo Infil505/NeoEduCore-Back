@@ -190,9 +190,21 @@ class AiRecommendationService
                 $attempt->id
             );
 
-            $resource = $this->recursoSugerido($attempt);
+            // Primero lo que el docente dejó en el examen; si no hay nada, el catálogo.
+            $delDocente = $this->recursoDelDocente($attempt);
+            $resource   = $delDocente ? null : $this->recursoSugeridoDisponible($attempt);
 
-            if ($resource) {
+            if ($delDocente) {
+                $created[] = $this->nueva(
+                    $studentUserId,
+                    $subjectId,
+                    $examId,
+                    'resource',
+                    'Tu docente dejó este material para reforzar.',
+                    $delDocente,
+                    $attempt->id
+                );
+            } elseif ($resource) {
                 $created[] = $this->nueva(
                     $studentUserId,
                     $subjectId,
@@ -407,9 +419,24 @@ class AiRecommendationService
         $created[] = $this->create($studentUserId, $subjectId, $examId, 'weakness', $weaknessText, null, $attempt->id, $ia);
         $created[] = $this->create($studentUserId, $subjectId, $examId, 'action', $actionText, null, $attempt->id, $ia);
 
+        // El material que el docente dejó en el examen manda sobre lo que proponga
+        // el modelo y sobre el catálogo: lo eligió una persona, no la IA.
+        $delDocente = $this->recursoDelDocente($attempt);
+
+        if ($delDocente !== null) {
+            $resourceJson = $delDocente;
+        }
+
+        // La URL que traiga el modelo pasó la lista blanca, pero puede estar
+        // inventada o borrada: si no responde, se descarta.
+        // Sin URL viva el recurso no sirve: se pasa al catálogo comprobado.
+        if (isset($resourceJson['url']) && !app(EnlaceDisponible::class)->disponible($resourceJson['url'])) {
+            $resourceJson = null;
+        }
+
         // Si OpenAI no dio JSON útil, intentamos sugerir un recurso del catálogo
         if ($resourceJson === null) {
-            $r = $this->recursoSugerido($attempt);
+            $r = $this->recursoSugeridoDisponible($attempt);
             if ($r) {
                 $resourceJson = [
                     'title' => $r->title,
@@ -425,6 +452,21 @@ class AiRecommendationService
         $created[] = $this->create($studentUserId, $subjectId, $examId, 'resource', $resourceText, $resourceJson, $attempt->id, $ia);
 
         return $created;
+    }
+
+    /**
+     * El enlace de apoyo que el docente puso en el examen, según el estilo del
+     * alumno (ver `FormatoPorEstilo::recursoDeApoyo()`), o null.
+     */
+    private function recursoDelDocente(ExamAttempt $attempt): ?array
+    {
+        $attempt->loadMissing(['student', 'exam']);
+
+        return app(FormatoPorEstilo::class)->recursoDeApoyo(
+            $attempt->student?->learning_style,
+            $attempt->exam,
+            $attempt->student
+        );
     }
 
     /**
@@ -453,7 +495,36 @@ class AiRecommendationService
      * ninguno: el texto de la recomendación ya es útil sin él, pero el alumno
      * agradece un punto de partida.
      */
-    private function recursoSugerido(ExamAttempt $attempt): ?StudyResource
+    /**
+     * El recurso del catálogo que `recursoSugerido()` elegiría, pero que además
+     * responda: si el primero está roto se descarta y se prueba el siguiente,
+     * hasta 3 veces. Null si ninguno está vivo (la recomendación sale entonces
+     * sin enlace, que es mejor que con uno roto).
+     */
+    private function recursoSugeridoDisponible(ExamAttempt $attempt): ?StudyResource
+    {
+        $enlaces = app(EnlaceDisponible::class);
+        $rotos   = [];
+
+        for ($i = 0; $i < 3; $i++) {
+            $r = $this->recursoSugerido($attempt, $rotos);
+
+            if ($r === null) {
+                return null;
+            }
+
+            if ($enlaces->disponible($r->url)) {
+                return $r;
+            }
+
+            $rotos[] = $r->id;
+        }
+
+        return null;
+    }
+
+    /** @param array<int,string> $excluir ids de recursos ya descartados por rotos */
+    private function recursoSugerido(ExamAttempt $attempt, array $excluir = []): ?StudyResource
     {
         $attempt->loadMissing(['student', 'exam']);
         $grade     = $attempt->student?->grade;
@@ -463,7 +534,7 @@ class AiRecommendationService
         // está matriculado ahora (misma regla que StudyResource::scopeVisibleTo).
         // Antes valía cualquier recurso del centro —de otros docentes o sin aula—
         // y el enlace sugerido le daba 404 al abrirlo.
-        $visibles = fn () => StudyResource::query()->whereHas('groups', fn ($g) => $g->whereIn(
+        $visibles = fn () => StudyResource::query()->whereNotIn('id', $excluir)->whereHas('groups', fn ($g) => $g->whereIn(
             'groups.id',
             DB::table('group_students')
                 ->select('group_id')

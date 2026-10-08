@@ -1,8 +1,8 @@
 # NeoEduCore — Estado del proyecto y pendientes
-**Última actualización:** 15 de septiembre de 2026  
+**Última actualización:** 8 de octubre de 2026  
 **Rama activa:** Darwin  
-**Tests:** 499 pasando / 0 fallando  
-**Endpoints:** 122
+**Tests:** 818 pasando / 0 fallando  
+**Endpoints:** 136 documentados en OpenAPI (`php artisan openapi:generate`; incluye `POST /api/broadcasting/auth`, desde el 08/10)
 
 > ☑️ **Control de avance:** todo lo abierto de este documento está resumido como checklist
 > marcable en [`CHECKLIST_PENDIENTES.md`](CHECKLIST_PENDIENTES.md). Al cerrar algo, marcarlo
@@ -36,6 +36,30 @@
 > `/password/forgot` solo encola `EnviarEnlaceRecuperacion`, y el token se crea en el worker.
 >
 > **Ya no queda ninguna decisión bloqueante abierta:** D1–D8 están todas cerradas. Lo siguiente es S1 (revisión de seguridad por rol) y P1–P2 (despliegue), en ese orden.
+
+> ### Qué cambió el 08/10/2026
+>
+> | | Qué se hizo | Dónde está |
+> |---|---|---|
+> | **WebSocket** | Al activar un examen, el alumnado que puede verlo lo recibe **en vivo, sin recargar** (Laravel Reverb) | [§2 Aviso en vivo](#-aviso-en-vivo-del-examen-activado-websocket) |
+> | **Calendario** | Activar un examen lo pone solo en el calendario de cada aula destino | [§2 Calendario](#-calendario) |
+> | **Enlaces de apoyo** | El docente deja hasta 5 enlaces (vídeo o texto) en el examen y el tutor los usa al recomendar | [§2 Enlaces de apoyo](#-enlaces-de-apoyo-del-examen-y-enlaces-vivos) |
+> | **Enlaces vivos** | El tutor comprueba que un enlace responde antes de entregarlo; si necesita un vídeo y no hay, lo busca en el catálogo **del grado del alumno** | ídem |
+> | **Tokens** | Prompts del tutor recortados y topes de coste más bajos | [§2 Tutor IA](#-tutor-ia-conversacional) |
+>
+> Suite en **818 tests**. Una migración nueva (`exams.support_resources`), ya aplicada en la
+> base remota, y `schema:check-drift` sin diferencias.
+>
+> **En desarrollo hay un proceso más que levantar: `php artisan reverb:start`** (además de
+> `queue:work`). **En producción no**: Reverb arranca solo dentro del contenedor de la App
+> (`docker/entrypoint.sh`). En ningún caso es imprescindible: sin él nada se rompe, el aviso en
+> vivo se pierde y el alumno ve el examen al recargar o en su notificación.
+>
+> ⚠️ **`composer.lock` cambió bastante.** Instalar Reverb obligó a resolver una desincronización
+> previa (`phpoffice/phpspreadsheet` estaba bloqueado en 2.4.4 aunque `composer.json` pedía
+> ^5.4): subió a 5.10.0 y `laravel/framework` pasó de 12.24 a **12.56**, con otras
+> dependencias menores. La suite completa pasa, pero conviene revisar el diff del lock antes
+> de desplegar.
 
 ---
 
@@ -192,6 +216,8 @@ PostgreSQL (schema en database/sql/01_schema.sql)
 - Reglas de transición: solo `draft→published`, `published→{active, draft}` y `active→completed`; `completed` es terminal. No se publica sin preguntas ni se activa con la ventana expirada
 - Asignación a grupos via `exam_targets`. Un docente solo puede apuntar a grupos que tenga asignados **en la materia del examen** (403 con `grupos_no_asignados`), y la comprobación se repite al publicar o activar, que es cuando el examen llega al alumnado
 - Campos: `randomize_questions`, `duration_minutes`, `max_attempts`, `available_from/until`
+- **`video_url`** (un vídeo de YouTube) y **`support_resources`** (hasta 5 enlaces de vídeo o texto): material de apoyo que el tutor usa al recomendar — ver [Enlaces de apoyo](#-enlaces-de-apoyo-del-examen-y-enlaces-vivos)
+- Al pasar a `active` ocurren **tres cosas**: aviso en la app a cada alumno (`NotificarExamenDisponible`), evento en el calendario de cada aula destino y aviso en vivo por WebSocket (`ExamenActivado`). Las tres siguen la misma regla de quién lo ve (`Exam::destinatarios()` / matrícula vigente en el aula)
 - Ruta: `/api/exams`
 
 ---
@@ -442,6 +468,7 @@ examen ya creado; que el banco de ítems los lleve es criterio editorial, no del
   - Devuelve `{status, recommendations}` y **encola el análisis de IA la primera vez**
   - `status`: `preparing` (lo que se ve son plantillas), `ready` (ya es el análisis),
     `failed` (el modelo no respondió tras los reintentos), `null` (no hay nada encolado)
+- **Recurso (08/10/2026):** la recomendación `resource` sale primero de los enlaces que el docente dejó en el examen, comprobados y según el estilo del alumno; solo si no hay, del catálogo. Detalle en [Enlaces de apoyo](#-enlaces-de-apoyo-del-examen-y-enlaces-vivos)
 - **Regenerate post-examen** `POST /api/exam-attempts/{attempt}/recommendations/regenerate`
   - Llama GPT-4o-mini; límite: la generación automática + 3 regeneraciones a mano
   - El cupo es **por intento**, contado por `attempt_id` (columna añadida el 13/09):
@@ -497,6 +524,7 @@ volvería a meter la llamada a OpenAI dentro de la petición.
 ---
 
 ### ✅ Tutor IA conversacional
+- **Consumo de tokens reducido (08/10/2026).** Prompts recortados sin perder las reglas de seguridad (nada de nombres propios, el mensaje del alumno como dato, no revelar instrucciones): sistema, directivas de modo, diagnóstico, registro por grado y formato por estilo (`config/openai.php`); la respuesta pide **3 párrafos cortos** en vez de 4. Topes más bajos: `OPENAI_HISTORY_MESSAGES` 20 → **10** (el que más pesa: cada mensaje del historial viaja en todas las peticiones siguientes), `OPENAI_MAX_TOKENS` 600 → **450**, `OPENAI_MAX_TOKENS_PRACTICE` 800 → **650**. Todos ajustables por `.env`. Los textos pedagógicos quedaron más escuetos: conviene que el profesorado les dé una lectura. Medición real pendiente (M-): la bajada es estimada, no medida.
 - **Chat** `POST /api/ai/tutor/chat` — chat con contexto del estudiante (perfil + progreso + historial)
   - Adapta el prompt según `learning_style` del estudiante
   - Contexto opcional: `subject_id` y `exam_id` (ambos validados contra lo que el
@@ -710,8 +738,100 @@ usar una cuenta admin.
 
 ---
 
+### ✅ Aviso en vivo del examen activado (WebSocket)
+Cuando el docente activa un examen (`PATCH /api/exams/{exam}/status` → `active`), el alumnado
+que puede presentarlo lo recibe **al instante, sin recargar la página**.
+
+- **Servidor:** Laravel **Reverb** (`laravel/reverb`), WebSocket propio, sin servicio de terceros.
+  Es un **proceso aparte**: `php artisan reverb:start` (escucha en `REVERB_SERVER_PORT`, 8080).
+  Si no está levantado **no se rompe nada**: el evento viaja por la cola y el aviso en vivo
+  simplemente se pierde; el alumno ve el examen al recargar o en su notificación (O1).
+  `BROADCAST_CONNECTION=log` lo apaga del todo.
+- **Evento:** `App\Events\ExamenActivado` (`ShouldBroadcast`, por la cola, no `...Now`: si Reverb
+  cae, la petición del docente no falla ni se retrasa). Nombre en el canal: **`examen.activado`**.
+- **Payload mínimo:** `{exam_id, title, available_from, available_until}`. Nada más: el detalle
+  se pide por la API, que aplica `Exam::scopeVisibleTo()`. Las fechas van para que el frontend
+  pinte «disponible desde…» cuando la ventana aún no abrió; **el evento informa, no autoriza**.
+- **Canal:** privado **por alumno**, `private-alumno.{userId}`. Cada uno escucha solo el suyo
+  (`routes/channels.php`: el id del canal tiene que ser el del usuario autenticado y ser
+  estudiante). Un canal por aula dejaba recibir avisos a quien salía del grupo o era suspendido
+  hasta reconectar.
+- **Quién lo recibe — una sola regla:** `Exam::destinatarios()`, la **misma** que usa la
+  notificación en la app (`NotificarExamenDisponible`): matrícula vigente (`left_at` nulo) en un
+  grupo destino, misma institución y cuenta **activa**. Una regla en un solo sitio para que
+  notificación y aviso en vivo no diverjan.
+- **Autenticación del canal:** `POST /api/broadcasting/auth` con el **mismo token Bearer** de la
+  API, detrás de `auth:sanctum` y `activa` (cuenta y centro activos). Un suspendido o de un centro
+  dado de baja no puede abrir ni su propio canal. CORS: ya cubierto por `api/*`; Reverb solo
+  acepta conexiones desde el host de `FRONTEND_URL`.
+- **Configuración (`.env`):** `BROADCAST_CONNECTION=reverb`, `REVERB_APP_ID`, `REVERB_APP_KEY`,
+  `REVERB_APP_SECRET` (las tres las inventamos nosotros; el `SECRET` nunca sale del servidor),
+  `REVERB_HOST`, `REVERB_PORT`, `REVERB_SCHEME`, `REVERB_SERVER_HOST`, `REVERB_SERVER_PORT`.
+- **Frontend (F21):** Laravel Echo + `pusher-js` con `REVERB_APP_KEY`, host y puerto;
+  `authEndpoint = /api/broadcasting/auth` con el Bearer; escuchar `.examen.activado` en el canal
+  privado `alumno.{id}`.
+- **Tests:** `Notifications/ExamenActivadoEnVivoTest` (9): a quién se emite y a quién no (salió
+  del grupo, suspendido, otra aula), ventana aún cerrada, payload mínimo y quién puede o no
+  suscribirse al canal (propio sí; ajeno, docente, suspendido y sin token no).
+- **Producción (P9):** **no es un recurso aparte**. `docker/entrypoint.sh` lo arranca dentro del
+  contenedor de la App cuando el comando es `octane:start` (el worker de cola y el scheduler, que
+  usan la misma imagen, no lo arrancan) y lo reinicia con espera creciente si cae. Si no puede
+  arrancar, la API sigue. Lo único que se configura en Coolify es un segundo dominio hacia el
+  puerto 8080 (`https://ws.…:8080`) y las variables `REVERB_*`, también en el worker. Una sola
+  réplica de la App. Ver `DEPLOY_COOLIFY.md` §3b.
+
+---
+
+### ✅ Enlaces de apoyo del examen y enlaces vivos
+El docente puede dejar, además del `video_url` clásico, **hasta 5 enlaces de apoyo** en el
+examen, y el tutor los usa como recurso al armar las recomendaciones.
+
+- **Campo:** `exams.support_resources` (JSONB, nullable), migración
+  `2026_10_08_000001_add_support_resources_to_exams`. Cada elemento:
+  `{"type": "video"|"text", "url": "...", "title": "..."}`. Se envía en `POST/PUT/PATCH
+  /api/exams`; omitirlo al editar no lo toca, `[]` lo vacía. Tope: `EXAM_MAX_SUPPORT_RESOURCES`
+  (5).
+- **Validación al guardar** (`App\Rules\EnlaceDeApoyo`): solo http(s); los de texto, de
+  `ai_resources.allowed_domains`; los de tipo vídeo, de YouTube (`UrlDeVideo`). Se rechaza el
+  sufijo engañoso (`wikipedia.org.sitio-malo.net`).
+- **El modelo nunca elige la URL.** La pone una persona; no viaja en el prompt (no sube el
+  consumo de tokens) y, si el modelo propone una, la del docente manda.
+- **Qué se entrega y en qué orden** (`FormatoPorEstilo::recursoDeApoyo()`):
+  1. Lo del docente: vídeo para `visual` y `auditivo`, texto para el resto; si no hay del tipo
+     preferido, el que haya. El `video_url` clásico entra como un vídeo más, el primero.
+  2. **Si el estilo necesita vídeo y el docente no dejó ninguno vivo**, uno del **catálogo del
+     centro acorde a la edad** (`videoDelCatalogo()`): el grado del alumno (o el del examen) debe
+     caer en `grade_min`/`grade_max`; un vídeo sin rango vale como genérico pero va después de
+     uno que lo declara; materia del examen antes que genérico; solo los que el alumno puede
+     abrir (aula donde está matriculado). **No se afloja el grado**: mejor ningún vídeo que uno
+     de otra edad.
+  3. Si no hay nada, la cadena habitual del catálogo (`recursoSugerido`) o la plantilla.
+- **Dónde aparece:** la recomendación de tipo `resource` (campo `resource.source`: `teacher` o
+  `catalog`) y el campo `video` del chat y de `GET /exam-attempts/{id}/recommendations`, que
+  ahora lleva también `title` y `source`.
+- **Enlaces vivos** (`App\Services\AI\EnlaceDisponible`): antes de entregar **cualquier**
+  enlace —del docente, del catálogo o propuesto por el modelo— se comprueba que responde.
+  - *Roto:* 404/410; vídeo de YouTube borrado o privado (se usa `oembed`, porque la página de
+    YouTube da 200 aunque el vídeo no exista); dominio fuera de la lista blanca; redirección que
+    acaba fuera de ella (el sondeo no sirve para hacer consultar direcciones internas).
+  - *Sin veredicto* (tiempo agotado, sin red, 5xx, 403/429 de antibots): **se da por vivo**, para
+    que una caída pasajera de YouTube no deje al alumnado sin recursos; se guarda solo 60 s.
+  - Si el primero está roto se prueba el siguiente (hasta 3 del catálogo, 5 en vídeos); si la URL
+    del modelo está rota se descarta y se pasa al catálogo.
+  - Veredicto **cacheado** (`ai_resources.link_check`: vivo 6 h, roto 15 min, sin veredicto 60 s;
+    `timeout` 3 s). `AI_LINK_CHECK=false` lo apaga; en `phpunit.xml` está apagado para que la
+    suite no use red.
+- **Tests:** `AI/EnlacesDeApoyoEnRecomendacionesTest` (10) y `AI/EnlacesVivosYVideoPorEdadTest`
+  (15).
+- **Frontend (F22):** campo `support_resources` en el formulario del examen; mostrar la
+  recomendación `resource` con `source`, y el `video` con su `title`.
+
+---
+
 ### ✅ Calendario
 - CRUD completo
+- **Al activar un examen se crea solo un evento por aula destino** (`Exam::publicarEnCalendario()`, tipo `exam`, a nombre del docente del examen): título «Examen: …», descripción = materia. Empieza en `available_from` (o ahora) y acaba en `available_until` (o, sin él, tras `duration_minutes`). El alumnado lo ve por su matrícula vigente en el aula (`CalendarEvent::scopeVisibleTo()`). Si el aula ya tiene un evento de ese examen —p. ej. uno que el docente puso a mano— no se duplica. Las fechas son informativas: quien decide si se puede abrir sigue siendo `available_from`, aplicada por la API
+- Tests: `Exams/ExamenEnElCalendarioTest` (6)
 - Ruta: `/api/calendar-events`
 
 ---

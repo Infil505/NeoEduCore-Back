@@ -445,13 +445,14 @@ class ExamAttemptController extends Controller
 
         // El vídeo de apoyo que el docente puso en el examen, para el alumnado
         // visual o auditivo. El examen ya está cargado; solo cuesta leer el estilo.
-        $estilo = Student::where('user_id', $user->id)->first()?->learning_style;
+        $alumno = Student::where('user_id', $user->id)->first();
+        $estilo = $alumno?->learning_style;
 
         return response()->json([
             'data' => [
                 'status'          => $attempt->ai_recommendations_status,
                 'recommendations' => $recomendaciones,
-                'video'           => app(FormatoPorEstilo::class)->videoPara($estilo, $attempt->exam),
+                'video'           => app(FormatoPorEstilo::class)->videoPara($estilo, $attempt->exam, $alumno),
             ],
         ]);
     }

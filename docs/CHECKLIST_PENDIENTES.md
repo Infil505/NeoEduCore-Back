@@ -1,8 +1,23 @@
 # NeoEduCore — Checklist de pendientes
 
-**Creada:** 10 de septiembre de 2026 · **última actualización:** 15 de septiembre de 2026
+**Creada:** 10 de septiembre de 2026 · **última actualización:** 8 de octubre de 2026
 **Base:** estado registrado al 08/08/2026 (375 tests, 117 endpoints)
-**Ahora:** 499 tests, 122 endpoints, 5 migraciones aplicadas, base remota limpia con el aula del taller
+**Ahora:** 818 tests, 136 endpoints documentados, migraciones aplicadas hasta `add_support_resources_to_exams` (08/10/2026), base remota limpia con el aula del taller
+
+## Avance al 08/10/2026
+
+Cuatro piezas cerradas en el backend, todas con tests (suite en 818) y `schema:check-drift` sin
+diferencias: **aviso en vivo por WebSocket** (Reverb) al activar un examen, **evento automático en
+el calendario** de cada aula destino, **enlaces de apoyo del examen** (vídeo/texto, hasta 5) que el
+tutor usa al recomendar —con **comprobación de que el enlace responde** y **vídeo del catálogo
+acorde al grado** si hace falta uno y no hay— y **prompts del tutor recortados** para bajar el
+consumo de tokens. Detalle en `ESTADO_Y_PENDIENTES.md` («Qué cambió el 08/10/2026»).
+
+Abierto de aquí: **P9** (configurar Reverb en Coolify; el código ya está), **F21** y **F22** (frontend), y medir de
+verdad la bajada de tokens cuando haya créditos de OpenAI.
+
+⚠️ Instalar Reverb cambió `composer.lock` más de lo esperado (`laravel/framework` 12.24 → 12.56,
+`phpspreadsheet` 2.4.4 → 5.10.0 por una desincronización previa): revisar el diff antes de desplegar.
 
 ## Avance al 15/09/2026
 
@@ -233,6 +248,14 @@ Primero decidir, después ejecutar. Al tomar la decisión, anotar **qué se elig
 - [ ] 🟠 **P6 · Backups cifrados de la base de datos** — no hay script ni documentación (RNF de seguridad)
 - [ ] 🟠 **P7 · Monitoreo y alertas de caída** — Sentry o equivalente (RNF de disponibilidad)
 - [ ] **P8 · Documentar HTTPS/TLS** en `DEPLOY_COOLIFY.md` (lo resuelve Coolify, pero debe quedar escrito)
+- [ ] 🔴 **P9 · WebSocket (Reverb) en producción** — el código ya está hecho: **no es un recurso aparte**, `docker/entrypoint.sh` lo arranca dentro de la App. Falta configurarlo en Coolify
+  - [x] Entrypoint + `Dockerfile` (`EXPOSE 8080`): solo con `octane:start`, reinicio con espera creciente, no tumba la API; probado el script con las cuatro ramas (08/10/2026)
+  - [ ] Segundo dominio en el recurso App hacia el puerto 8080: `https://api.…:8000,https://ws.…:8080`
+  - [ ] Variables en la App **y en el worker**: `BROADCAST_CONNECTION=reverb`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET` (largas y aleatorias; el secret solo en el servidor), `REVERB_HOST=ws.…`, `REVERB_PORT=443`, `REVERB_SCHEME=https`, `REVERB_SERVER_HOST=0.0.0.0`, `REVERB_SERVER_PORT=8080`, `FRONTEND_URL`
+  - [ ] Construir la imagen y comprobar en el log `[entrypoint] Arrancando Reverb…` (no se pudo probar el build: el daemon de Docker no estaba arrancado)
+  - [ ] Probar de punta a punta: activar un examen y verlo llegar a un alumno sin recargar
+  - Una sola réplica de la App; para escalar, Redis (`REVERB_SCALING_ENABLED`). Sin Reverb nada se rompe
+  - Fuente: `DEPLOY_COOLIFY.md` §3b y §10 (pasos en orden)
 
 ---
 
@@ -270,6 +293,8 @@ Lo que el backend ya dejó listo y falta consumir, más los cambios que lo rompe
 - [ ] **F7 · Aviso de IA en cada respuesta del tutor** — 🔓 listo para consumir: el backend lo manda en `data.ai_notice` (D4)
 - [ ] **F18 · Campanita de notificaciones** — 🔓 backend listo (O1): `GET /api/notifications` (`meta.unread_count`), `PATCH /api/notifications/{id}/read`, `POST /api/notifications/read-all`. Hoy el único tipo es `exam_available`, con título, materia y ventana en `data`
 - [ ] **F19 · Presentar la respuesta del tutor según `presentation`** — 🔓 backend listo (O2): con `auditivo`, ofrecer leerla en voz alta (p. ej. Web Speech API); `visual` y `lector` llegan ya formateadas como texto. Si viene `video` (visual/auditivo, lo puso el docente en el examen), incrustar el reproductor de YouTube; y en el formulario de crear/editar examen, campo opcional `video_url`
+- [ ] **F21 · Aviso en vivo de examen activado (WebSocket)** — 🔓 backend listo (B4): Laravel Echo + `pusher-js` con `REVERB_APP_KEY`, host y puerto; `authEndpoint` = `/api/broadcasting/auth` con el Bearer; escuchar `.examen.activado` en el canal privado `alumno.{id}`. Payload: `{exam_id, title, available_from, available_until}` — con `available_from` futura, pintar «disponible desde…» y no un botón activo
+- [ ] **F22 · Enlaces de apoyo del examen** — 🔓 backend listo (B6): en el formulario de crear/editar examen, lista `support_resources` (hasta 5, `type` = `video`|`text`, `url`, `title` opcional; vídeos solo de YouTube, textos de la lista blanca); mostrar la recomendación `resource` con su `source` (`teacher`/`catalog`) y el `video` del chat y de las recomendaciones con su `title`
 - [ ] 🟠 **F17 · Panel de métricas del tutor IA para el superadmin**
   - Datos: `GET /platform/ai-tutor-metrics` (ventana, totales, `validation_pass_rate`, por tipo, por etapa, por institución y serie diaria).
   - El umbral de [173] es 75 %: que se vea de un vistazo si se cumple.
@@ -432,3 +457,18 @@ Requisitos nuevos, anotados después de crear esta lista.
   - Queda abierto de aquí:
     - [x] **B1a · Zona horaria de los reportes.** — ✅ 03/10/2026 · **decisión del usuario: se queda en UTC** en CSV, XLSX y JSON (`config/app.php` → `timezone = UTC`). Si el centro necesita su hora, la conversión la hace el frontend con `institutions.settings.timezone`. Texto original: Las fechas salen en **UTC** en los tres formatos. `institutions.settings.timezone` existe pero ningún reporte lo lee. Decidir si se convierte a la hora del centro (y entonces en CSV, XLSX y JSON a la vez, no en uno solo).
     - [ ] **B1b · Informe:** donde dice «PDF y CSV» ([236], [390], [732]) añadir XLSX. Ya está implementado, así que la frase puede ir en presente.
+- [x] 🟠 **B4 · Aviso en vivo al activar un examen (WebSocket)** — ✅ 08/10/2026
+  - Laravel Reverb (proceso aparte `php artisan reverb:start`, sin terceros). Evento `ExamenActivado` por la cola, canal privado **por alumno** (`alumno.{id}`) autenticado en `POST /api/broadcasting/auth` con el Bearer, tras `activa`.
+  - **Una sola regla de quién lo ve:** `Exam::destinatarios()`, compartida con la notificación en la app (matrícula vigente en un grupo destino, mismo centro, cuenta activa). El evento informa, no autoriza: la ventana la sigue aplicando la API.
+  - Sin Reverb levantado no se rompe nada. Pendiente: P9 (despliegue) y F21 (frontend).
+  - Fuente: `ESTADO_Y_PENDIENTES.md` §2 «Aviso en vivo del examen activado»
+- [x] 🟠 **B5 · Examen activado → evento en el calendario del aula** — ✅ 08/10/2026
+  - Un evento por aula destino (`Exam::publicarEnCalendario()`), con las fechas de la ventana o la duración del examen, a nombre del docente; no duplica uno ya puesto a mano.
+- [x] 🟠 **B6 · Enlaces de apoyo del examen, enlaces vivos y vídeo por edad** — ✅ 08/10/2026
+  - `exams.support_resources` (hasta 5 enlaces de vídeo o texto) que el tutor usa al recomendar; el modelo nunca elige la URL. Lo del docente manda sobre lo que proponga la IA y sobre el catálogo.
+  - **Antes de entregar un enlace se comprueba que responde** (`EnlaceDisponible`: 404/410, vídeos de YouTube borrados o privados, redirecciones fuera de la lista blanca; sin veredicto = vivo; cacheado).
+  - Si el estilo necesita vídeo y no hay uno vivo del docente, uno del catálogo **del grado del alumno** (nunca de otra edad).
+  - Pendiente: F22 (frontend).
+- [x] **B7 · Menos tokens en el tutor** — ✅ 08/10/2026
+  - Prompts recortados (3 párrafos en vez de 4) y topes más bajos: historial 20 → 10, respuesta 600 → 450, práctica 800 → 650 (`.env`).
+  - ⚠️ La bajada es estimada: sin créditos de OpenAI no se pudo medir. Los textos pedagógicos quedaron más escuetos: conviene una lectura del profesorado.

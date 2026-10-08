@@ -50,4 +50,32 @@ return [
         'youtube.com',
         'youtu.be',
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Enlaces de apoyo del examen
+    |--------------------------------------------------------------------------
+    | Cuántos enlaces (vídeos, textos) puede dejar el docente en un examen
+    | (`exams.support_resources`). Los usa el tutor al recomendar recursos.
+    */
+    'max_support_resources' => (int) env('EXAM_MAX_SUPPORT_RESOURCES', 5),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Comprobación de enlaces antes de entregarlos
+    |--------------------------------------------------------------------------
+    | El tutor comprueba que un enlace siga vivo antes de dárselo al alumno
+    | (`App\Services\AI\EnlaceDisponible`). El veredicto se cachea: `ttl_ok`
+    | para los vivos, `ttl_broken` para los rotos (se reintenta pronto, por si
+    | el docente lo arregla) y `ttl_unknown` cuando no hubo veredicto (tiempo
+    | agotado, sin red). `timeout` en segundos: el sondeo no puede alargar la
+    | petición del alumno.
+    */
+    'link_check' => [
+        'enabled'     => (bool) env('AI_LINK_CHECK', true),
+        'timeout'     => (int) env('AI_LINK_CHECK_TIMEOUT', 3),
+        'ttl_ok'      => (int) env('AI_LINK_CHECK_TTL_OK', 21600),
+        'ttl_broken'  => (int) env('AI_LINK_CHECK_TTL_BROKEN', 900),
+        'ttl_unknown' => (int) env('AI_LINK_CHECK_TTL_UNKNOWN', 60),
+    ],
 ];

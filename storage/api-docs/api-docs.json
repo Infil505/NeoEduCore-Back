@@ -61,7 +61,13 @@
             "name": "15 · Notificaciones"
         },
         {
+            "name": "16 · Tiempo real (WebSocket)"
+        },
+        {
             "name": "99 · Bulk"
+        },
+        {
+            "name": "99 · Dashboard"
         },
         {
             "name": "99 · Institution-admins"
@@ -502,6 +508,47 @@
                 ]
             }
         },
+        "/api/analytics/teachers/{teacherUserId}/subjects": {
+            "get": {
+                "tags": [
+                    "13 · Analíticas"
+                ],
+                "summary": "Teacher subjects (AnalyticsController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\AnalyticsController@teacherSubjects`. **Roles permitidos:** admin.",
+                "operationId": "get_api_analytics_teachers_teacherUserId_subjects",
+                "parameters": [
+                    {
+                        "name": "teacherUserId",
+                        "in": "path",
+                        "required": true,
+                        "description": "teacherUserId",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
         "/api/auth/login": {
             "post": {
                 "tags": [
@@ -568,6 +615,29 @@
                 "summary": "Me (AuthController)",
                 "description": "Controlador: `App\\Http\\Controllers\\AuthController@me`.",
                 "operationId": "get_api_auth_me",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/broadcasting/auth": {
+            "get": {
+                "tags": [
+                    "16 · Tiempo real (WebSocket)"
+                ],
+                "summary": "Authenticate (BroadcastController)",
+                "description": "Controlador: `\\Illuminate\\Broadcasting\\BroadcastController@authenticate`.",
+                "operationId": "get_api_broadcasting_auth",
                 "responses": {
                     "200": {
                         "description": "Operación correcta"
@@ -931,6 +1001,58 @@
                 ]
             }
         },
+        "/api/dashboard/staff-overview": {
+            "get": {
+                "tags": [
+                    "99 · Dashboard"
+                ],
+                "summary": "Staff overview (OverviewController)",
+                "description": "Controlador: `App\\Http\\Controllers\\OverviewController@staffOverview`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_dashboard_staff_overview",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/dashboard/student-overview": {
+            "get": {
+                "tags": [
+                    "99 · Dashboard"
+                ],
+                "summary": "Student overview (OverviewController)",
+                "description": "Controlador: `App\\Http\\Controllers\\OverviewController@studentOverview`. **Roles permitidos:** student.",
+                "operationId": "get_api_dashboard_student_overview",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
         "/api/exam-attempts/{attempt}/answers": {
             "get": {
                 "tags": [
@@ -1113,6 +1235,18 @@
                                 "grade": 4,
                                 "instructions": "Responder todas las preguntas.",
                                 "video_url": "https://www.youtube.com/watch?v=VIDEO_ID",
+                                "support_resources": [
+                                    {
+                                        "type": "video",
+                                        "url": "https://www.youtube.com/watch?v=VIDEO_ID",
+                                        "title": "Repaso en 5 minutos"
+                                    },
+                                    {
+                                        "type": "text",
+                                        "url": "https://es.wikipedia.org/wiki/Fracci%C3%B3n",
+                                        "title": "Lectura de apoyo"
+                                    }
+                                ],
                                 "duration_minutes": 60,
                                 "max_attempts": 2,
                                 "show_results_immediately": true,
@@ -1841,7 +1975,7 @@
                     "05 · Grupos"
                 ],
                 "summary": "Store (GroupController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@store`. **Roles permitidos:** admin, teacher.",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@store`. **Roles permitidos:** admin.",
                 "operationId": "post_api_groups",
                 "requestBody": {
                     "required": true,
@@ -1926,7 +2060,7 @@
                     "05 · Grupos"
                 ],
                 "summary": "Update (GroupController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@update`. **Roles permitidos:** admin, teacher.",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@update`. **Roles permitidos:** admin.",
                 "operationId": "put_api_groups_group_",
                 "parameters": [
                     {
@@ -1979,12 +2113,54 @@
                     }
                 ]
             },
+            "patch": {
+                "tags": [
+                    "05 · Grupos"
+                ],
+                "summary": "Update (GroupController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@update`. **Roles permitidos:** admin.",
+                "operationId": "patch_api_groups_group_",
+                "parameters": [
+                    {
+                        "name": "group",
+                        "in": "path",
+                        "required": true,
+                        "description": "group_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
             "delete": {
                 "tags": [
                     "05 · Grupos"
                 ],
                 "summary": "Destroy (GroupController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@destroy`. **Roles permitidos:** admin, teacher.",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\GroupController@destroy`. **Roles permitidos:** admin.",
                 "operationId": "delete_api_groups_group_",
                 "parameters": [
                     {
@@ -3484,6 +3660,47 @@
                 ]
             }
         },
+        "/api/reports/teachers/{teacherUserId}/topics": {
+            "get": {
+                "tags": [
+                    "12 · Reportes"
+                ],
+                "summary": "Teacher topic mastery (ReportController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\ReportController@teacherTopicMastery`. **Roles permitidos:** admin.",
+                "operationId": "get_api_reports_teachers_teacherUserId_topics",
+                "parameters": [
+                    {
+                        "name": "teacherUserId",
+                        "in": "path",
+                        "required": true,
+                        "description": "teacherUserId",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
         "/api/reports/topics": {
             "get": {
                 "tags": [
@@ -3830,6 +4047,32 @@
                 ]
             }
         },
+        "/api/students/me/attempts": {
+            "get": {
+                "tags": [
+                    "04 · Estudiantes"
+                ],
+                "summary": "My attempts (StudentController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentController@myAttempts`. **Roles permitidos:** student.",
+                "operationId": "get_api_students_me_attempts",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
         "/api/students/me/available-exams": {
             "get": {
                 "tags": [
@@ -3986,13 +4229,54 @@
                 ]
             }
         },
+        "/api/students/{student_user_id}/assignable-subjects": {
+            "get": {
+                "tags": [
+                    "04 · Estudiantes"
+                ],
+                "summary": "Assignable by me (StudentSubjectController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\StudentSubjectController@assignableByMe`. **Roles permitidos:** admin, teacher.",
+                "operationId": "get_api_students_student_user_id_assignable_subjects",
+                "parameters": [
+                    {
+                        "name": "student_user_id",
+                        "in": "path",
+                        "required": true,
+                        "description": "student_user_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "404": {
+                        "description": "No encontrado, o fuera de la institución del usuario"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
         "/api/students/{student_user_id}/status": {
             "patch": {
                 "tags": [
                     "04 · Estudiantes"
                 ],
                 "summary": "Set status (StudentController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentController@setStatus`. **Roles permitidos:** admin, teacher.",
+                "description": "Controlador: `App\\Http\\Controllers\\Students\\StudentController@setStatus`. **Roles permitidos:** admin.",
                 "operationId": "patch_api_students_student_user_id_status",
                 "parameters": [
                     {
@@ -4220,7 +4504,7 @@
                     "09 · Recursos de estudio"
                 ],
                 "summary": "Store (StudyResourceController)",
-                "description": "Controlador: `App\\Http\\Controllers\\Academic\\StudyResourceController@store`. **Roles permitidos:** admin, teacher.",
+                "description": "Controlador: `App\\Http\\Controllers\\Academic\\StudyResourceController@store`. **Roles permitidos:** teacher.",
                 "operationId": "post_api_study_resources",
                 "requestBody": {
                     "required": true,
@@ -4910,6 +5194,61 @@
                 "summary": "Index (UserController)",
                 "description": "Controlador: `App\\Http\\Controllers\\Admin\\UserController@index`. **Roles permitidos:** admin, teacher.",
                 "operationId": "get_api_users",
+                "responses": {
+                    "200": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/users/bulk-upload": {
+            "post": {
+                "tags": [
+                    "02 · Usuarios (admin)"
+                ],
+                "summary": "Upload (UserBulkUploadController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\UserBulkUploadController@upload`. **Roles permitidos:** admin. Limitado por `throttle:bulk-upload`.",
+                "operationId": "post_api_users_bulk_upload",
+                "responses": {
+                    "201": {
+                        "description": "Operación correcta"
+                    },
+                    "401": {
+                        "description": "No autenticado: falta el token o ha caducado"
+                    },
+                    "403": {
+                        "description": "El rol del usuario no tiene permiso, o el recurso es de otro docente"
+                    },
+                    "422": {
+                        "description": "Error de validación"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/users/bulk-upload/template": {
+            "get": {
+                "tags": [
+                    "02 · Usuarios (admin)"
+                ],
+                "summary": "Template (UserBulkUploadController)",
+                "description": "Controlador: `App\\Http\\Controllers\\Admin\\UserBulkUploadController@template`. **Roles permitidos:** admin.",
+                "operationId": "get_api_users_bulk_upload_template",
                 "responses": {
                     "200": {
                         "description": "Operación correcta"

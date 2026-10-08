@@ -6,6 +6,7 @@ use App\Enums\ExamStatus;
 use App\Models\Admin\Institution;
 use App\Models\Admin\User;
 use App\Models\Academic\Subject;
+use App\Models\Academic\CalendarEvent;
 use App\Models\Academic\Group;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -35,6 +36,8 @@ class Exam extends Model
 
         // Vídeo de apoyo opcional (03/10/2026); ver migración add_video_url_to_exams
         'video_url',
+        // Enlaces de apoyo (vídeo/texto) que el tutor usa al recomendar; ver migración 08/10/2026
+        'support_resources',
 
         // RN-EXAM-004..007
         'duration_minutes',
@@ -57,6 +60,7 @@ class Exam extends Model
         'grade' => 'integer',
         'duration_minutes' => 'integer',
         'status' => ExamStatus::class,
+        'support_resources' => 'array',
 
         'max_attempts' => 'integer',
         'show_results_immediately' => 'boolean',
@@ -140,6 +144,86 @@ class Exam extends Model
     public function institution()
     {
         return $this->belongsTo(Institution::class);
+    }
+
+    /**
+     * Los alumnos a quienes hay que avisar de este examen: LA regla de «quién
+     * lo ve», en un solo sitio. La usan la notificación en la app
+     * (`NotificarExamenDisponible`) y el aviso en vivo (`ExamenActivado`).
+     *
+     * Miembros vigentes (sin `left_at`) de algún grupo destino, de la misma
+     * institución y con la cuenta activa: una inactiva todavía no ha entrado
+     * nunca y una suspendida no debe recibir nada. Es el mismo criterio de
+     * grupo que `scopeAsignadoAlAulaDe()`, visto desde el lado del alumno.
+     *
+     * **El tenant va explícito.** En el worker no hay `SetTenantFromAuth`, así
+     * que `TenantScoped` no filtra y nada más ataría la consulta al centro.
+     */
+    public function destinatarios(): \Illuminate\Database\Eloquent\Builder
+    {
+        return User::query()
+            ->where('institution_id', $this->institution_id)
+            ->where('user_type', \App\Enums\UserType::Student->value)
+            ->where('status', \App\Enums\UserStatus::Active->value)
+            ->whereIn('id', \Illuminate\Support\Facades\DB::table('group_students')
+                ->select('student_user_id')
+                ->where('institution_id', $this->institution_id)
+                ->whereNull('left_at')
+                ->whereIn('group_id', \Illuminate\Support\Facades\DB::table('exam_targets')
+                    ->select('group_id')
+                    ->where('institution_id', $this->institution_id)
+                    ->where('exam_id', $this->id)));
+    }
+
+    /**
+     * Pone el examen en el calendario de cada aula destino, al activarse.
+     *
+     * Un evento por aula, como el resto del calendario (`CalendarEvent` lleva
+     * un solo `group_id`): el alumnado lo ve por su matrícula vigente en el
+     * aula (`CalendarEvent::scopeVisibleTo()`), que es la misma regla de «quién
+     * ve el examen». Las fechas son informativas; quien decide si se puede
+     * abrir sigue siendo `available_from`, aplicada por la API.
+     *
+     * - Empieza en `available_from` (o ahora si no hay) y acaba en
+     *   `available_until` (o, sin él, tras `duration_minutes`).
+     * - Lo crea a nombre del docente del examen, así también lo ve en su agenda.
+     * - Si el aula ya tiene un evento de este examen —p. ej. uno que el docente
+     *   puso a mano— no se duplica.
+     *
+     * @return int cuántos eventos se crearon
+     */
+    public function publicarEnCalendario(): int
+    {
+        $inicio = $this->available_from ?? now();
+        $fin    = $this->available_until ?? $inicio->copy()->addMinutes((int) $this->duration_minutes);
+
+        $yaTienen = CalendarEvent::query()
+            ->where('exam_id', $this->id)
+            ->pluck('group_id')
+            ->all();
+
+        $creados = 0;
+
+        foreach ($this->groups()->pluck('groups.id') as $groupId) {
+            if (in_array($groupId, $yaTienen, true)) {
+                continue;
+            }
+
+            CalendarEvent::create([
+                'institution_id' => $this->institution_id,
+                'title'          => 'Examen: ' . $this->title,
+                'description'    => $this->subject?->name,
+                'start_at'       => $inicio,
+                'end_at'         => $fin,
+                'event_type'     => \App\Enums\CalendarEventType::Exam,
+                'exam_id'        => $this->id,
+                'group_id'       => $groupId,
+                'created_by'     => $this->created_by_teacher_id,
+            ]);
+            $creados++;
+        }
+
+        return $creados;
     }
 
     public function teacher()

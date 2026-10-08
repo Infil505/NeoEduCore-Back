@@ -83,7 +83,8 @@ class AiTutorController extends Controller
 
             $result['video'] = $formato->videoPara(
                 $student->learning_style,
-                $examId ? Exam::find($examId) : null
+                $examId ? Exam::find($examId) : null,
+                $student
             );
         }
 

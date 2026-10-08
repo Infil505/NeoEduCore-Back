@@ -4,6 +4,10 @@
 #
 # El worker de cola y el scheduler se despliegan como recursos APARTE en Coolify
 # (misma imagen, otros comandos) — ver DEPLOY_COOLIFY.md.
+#
+# El WebSocket (Laravel Reverb, aviso «examen activado») NO es un recurso aparte:
+# `docker/entrypoint.sh` lo arranca dentro de este mismo contenedor cuando el
+# comando es el servidor HTTP, y lo reinicia si cae.
 
 FROM dunglas/frankenphp:1-php8.3
 
@@ -47,7 +51,16 @@ RUN { \
 ENV APP_ENV=production
 ENV APP_DEBUG=false
 
-EXPOSE 8000
+# Entrypoint: levanta Reverb junto al servidor HTTP (ver docker/entrypoint.sh).
+# `sed` quita los retornos de carro por si el archivo llegó con saltos de línea de Windows.
+COPY docker/entrypoint.sh /usr/local/bin/neoeducore-entrypoint
+RUN sed -i 's/\r$//' /usr/local/bin/neoeducore-entrypoint \
+    && chmod +x /usr/local/bin/neoeducore-entrypoint
+
+# 8000 = API (Octane). 8080 = WebSocket (Reverb), solo si BROADCAST_CONNECTION=reverb.
+EXPOSE 8000 8080
+
+ENTRYPOINT ["neoeducore-entrypoint"]
 
 # Servidor HTTP con Octane sobre FrankenPHP.
 # (Las migraciones se corren como paso de despliegue en Coolify, no aquí.)
