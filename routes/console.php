@@ -10,6 +10,18 @@ Artisan::command('inspire', function () {
 
 /*
 |--------------------------------------------------------------------------
+| Apertura y cierre automático de exámenes
+|--------------------------------------------------------------------------
+| Un examen «Listo» se abre solo al llegar su fecha «Disponible desde», y uno
+| abierto se cierra solo al pasar su fecha de cierre. Va ANTES que la cola:
+| el scheduler corre las tareas en orden y `queue:work` puede tardar hasta 55 s.
+*/
+Schedule::command('exams:sincronizar-estados')
+    ->everyMinute()
+    ->withoutOverlapping();
+
+/*
+|--------------------------------------------------------------------------
 | Drenado de la cola (correos en segundo plano) — opción para hosting gratuito
 |--------------------------------------------------------------------------
 | Muchos hosting gratuitos/baratos ofrecen cron pero no procesos daemon, así
@@ -34,3 +46,4 @@ Schedule::command('queue:work --stop-when-empty --max-time=55')
 */
 Schedule::command('sanctum:prune-expired --hours=24')
     ->daily();
+

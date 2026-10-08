@@ -74,14 +74,22 @@ class OverviewController extends Controller
             ->limit(20)
             ->get();
 
+        // Cuántos lo están presentando, lo entregaron o les falta (columna de la
+        // tabla de exámenes). Los borradores no tienen a nadie presentándolos.
+        $resumen = app(\App\Services\Exams\ExamMonitorService::class)
+            ->resumen($exams->reject(fn ($exam) => $exam->status->value === 'draft'));
+        $exams->each(fn ($exam) => $exam->setAttribute('monitor', $resumen[$exam->id] ?? null));
+
         // Misma regla que /calendar-events y /study-resources: el docente ve
         // solo lo suyo; el administrador, todo el centro. Sin `visibleTo()` el
         // overview le daba al docente los recursos y avisos de sus colegas.
+        // Los más recientes primero (antes eran los 30 más ANTIGUOS: con el
+        // tiempo, los avisos nuevos dejaban de aparecer en las listas).
         $calendar = CalendarEvent::query()
             ->visibleTo($user)
             ->with(['creator', 'group', 'exam'])
-            ->orderBy('start_at')
-            ->limit(30)
+            ->orderByDesc('start_at')
+            ->limit(100)
             ->get();
 
         $resources = StudyResource::query()
@@ -91,10 +99,9 @@ class OverviewController extends Controller
             ->limit(20)
             ->get();
 
-        $avgPct = ExamAttempt::whereNotNull('submitted_at')
-            ->where('max_score', '>', 0)
-            ->selectRaw('AVG(score / max_score * 100) as avg_pct')
-            ->value('avg_pct');
+        // Cifras reales del panel, contadas en la BD con el alcance del rol
+        // (las listas de arriba están recortadas y no sirven para contar).
+        $summary = app(\App\Services\Dashboard\StaffSummaryService::class)->resumen($user, $esDocente);
 
         $progressStats = StudentProgress::whereIn('subject_id', $subjectIds)
             ->selectRaw('subject_id, COUNT(*) as student_count, AVG(mastery_percentage) as avg_mastery')
@@ -130,11 +137,14 @@ class OverviewController extends Controller
                 'exams' => $exams,
                 'calendar' => $calendar,
                 'resources' => $resources,
+                'summary' => $summary,
+                // Con el alcance del rol: al docente, sus estudiantes y sus exámenes
+                // (antes recibía las cifras de todo el centro).
                 'analyticsInstitution' => [
-                    'total_students' => Student::count(),
-                    'active_students' => Student::where('status', 'active')->count(),
-                    'exams_completed' => ExamAttempt::whereNotNull('submitted_at')->count(),
-                    'average_score_pct' => $avgPct ? round((float) $avgPct, 2) : 0,
+                    'total_students' => $summary['students']['total'],
+                    'active_students' => $summary['students']['active'],
+                    'exams_completed' => $summary['attempts_submitted'],
+                    'average_score_pct' => $summary['average_pct'] ?? 0,
                 ],
                 'analyticsSubjects' => $analyticsSubjects,
                 'institutions' => $includeInstitutions
@@ -192,8 +202,10 @@ class OverviewController extends Controller
 
         // Solo los avisos de su aula actual, y del autor solo el nombre (igual
         // que /calendar-events). Antes recibía los de todo el centro.
+        // Lo que viene (o está en curso), del más cercano al más lejano.
         $calendar = CalendarEvent::query()
             ->visibleTo($user)
+            ->where('end_at', '>=', now())
             ->with(['creator:id,full_name', 'group', 'exam'])
             ->orderBy('start_at')
             ->limit(30)
