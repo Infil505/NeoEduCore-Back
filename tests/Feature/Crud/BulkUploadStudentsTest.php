@@ -114,7 +114,7 @@ class BulkUploadStudentsTest extends TestCase
 
         $this->uploadCsv($csv)
             ->assertStatus(422)
-            ->assertJsonPath('message', fn ($m) => stripos($m, 'aula') !== false);
+            ->assertJsonPath('message', fn ($m) => stripos($m, 'Sección') !== false);
     }
 
     public function test_a_row_without_aula_is_skipped(): void

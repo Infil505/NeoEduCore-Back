@@ -281,6 +281,6 @@ class StudentsCrudTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.exam_title', 'Parcial 1')
-            ->assertJsonPath('data.0.percentage', 80.0);
+            ->assertJsonPath('data.0.percentage', 80);
     }
 }

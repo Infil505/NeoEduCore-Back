@@ -82,7 +82,7 @@ class BulkUploadValidationTest extends TestCase
         // La plantilla y el importador deben usar las mismas columnas: un
         // archivo con esa cabecera, tal cual se descarga, tiene que importarse.
         $this->subir($lineas[0] . "\n"
-            . "Plantilla Ok;plantilla.ok." . uniqid() . "@ejemplo.com;4A2026;TPL-0001;;;;;\n")
+            . "Plantilla Ok;plantilla.ok." . uniqid() . "@ejemplo.com;A;TPL-0001;;;;;\n")
             ->assertOk()->assertJson(['created' => 1, 'skipped' => 0]);
     }
 

@@ -30,8 +30,21 @@ class NotificarAviso
     {
     }
 
+    /**
+     * `dispatchAfterResponse` cuelga la misma instancia de los callbacks de fin
+     * de petición. En producción hay una petición por proceso y corre una vez;
+     * donde la aplicación se reutiliza entre peticiones (los tests, Octane) se
+     * volvería a ejecutar en cada una y duplicaría las notificaciones.
+     */
+    private bool $enviado = false;
+
     public function handle(): void
     {
+        if ($this->enviado) {
+            return;
+        }
+        $this->enviado = true;
+
         $eventos = CalendarEvent::withoutGlobalScopes()->with('creator:id,full_name')->whereIn('id', $this->eventIds)->get();
 
         foreach ($eventos as $evento) {
