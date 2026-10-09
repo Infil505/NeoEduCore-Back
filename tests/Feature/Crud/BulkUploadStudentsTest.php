@@ -74,7 +74,10 @@ class BulkUploadStudentsTest extends TestCase
             'email'          => 'ana.solis@ejemplo.com',
             'institution_id' => $institution->id,
             'user_type'      => 'student',
-            'status'         => 'inactive',
+            // Activa desde el alta, con contraseña temporal por correo y la
+            // obligación de cambiarla al entrar (09/10/2026).
+            'status'               => 'active',
+            'must_change_password' => true,
         ]);
 
         $ana = User::where('email', 'ana.solis@ejemplo.com')->first();
@@ -99,7 +102,9 @@ class BulkUploadStudentsTest extends TestCase
         $this->assertSame(1, (int) $aulaA->fresh()->student_count);
         $this->assertSame(1, (int) $aulaB->fresh()->student_count);
 
-        Mail::assertQueued(PasswordSetupMail::class, 2);
+        // Cada alumno recibe SU contraseña temporal (el job corre en la cola sync).
+        Mail::assertSent(\App\Mail\ContrasenaTemporalMail::class, 2);
+        Mail::assertNotQueued(PasswordSetupMail::class);
         Mail::assertNotQueued(\App\Mail\PasswordResetMail::class);
     }
 

@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Students;
 use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
 use App\Enums\StudentStatus;
+use App\Enums\UserStatus;
 use App\Enums\UserType;
+use App\Jobs\EnviarEnlaceDeAlta;
 use App\Enums\AdecuacionType;
 use App\Enums\LearningStyle;
 use App\Models\Academic\Group;
@@ -74,7 +76,7 @@ class StudentController extends Controller
         }
 
         return response()->json([
-            'data' => $query->paginate(config('pagination.default')),
+            'data' => $this->paginar($query, $request),
         ]);
     }
 
@@ -318,6 +320,49 @@ class StudentController extends Controller
         ])['format'] ?? 'csv';
 
         return $templates->download(UserType::Student->value, $format);
+    }
+
+    /**
+     * POST /api/students/{student_user_id}/reset-password
+     *
+     * El docente (de SUS alumnos) o el administrador restablece la contraseña de
+     * un estudiante. El sistema genera una temporal aleatoria y la manda al
+     * correo del estudiante; **quien lo pide nunca la ve**. El estudiante entra
+     * con ella y el frontend le exige elegir una propia.
+     *
+     * Aparte de `PATCH /users/{user}/reset-password` (solo admin, que sí fija una
+     * clave escrita a mano): aquí el docente no elige ni conoce nada.
+     */
+    public function resetPassword(Request $request, string $student_user_id)
+    {
+        $student = Student::with('user')->where('user_id', $student_user_id)->firstOrFail();
+
+        if ($this->esDocente($request->user()) && !$this->docenteAlcanzaEstudiante($request->user(), $student_user_id)) {
+            return $this->noAutorizadoPorAsignacion();
+        }
+
+        $cuenta = $student->user;
+
+        if ($cuenta === null || $cuenta->user_type !== UserType::Student) {
+            abort(404);
+        }
+
+        // A una cuenta suspendida no se le entrega acceso: la bloqueó un administrador.
+        if ($cuenta->status === UserStatus::Suspended) {
+            return response()->json([
+                'message' => 'La cuenta del estudiante está suspendida. Un administrador debe reactivarla antes.',
+            ], 422);
+        }
+
+        // La marca primero: `EnviarEnlaceDeAlta` no toca una cuenta activa sin ella.
+        $cuenta->forceFill(['must_change_password' => true])->save();
+        EnviarEnlaceDeAlta::dispatch($cuenta->id);
+
+        return response()->json([
+            'message' => 'Enviamos una contraseña temporal al correo del estudiante. Deberá cambiarla al iniciar sesión.',
+            // Enmascarado: confirma a dónde fue sin repartir el correo completo.
+            'sent_to' => preg_replace('/^(.).*(@.*)$/u', '$1•••$2', $cuenta->email),
+        ]);
     }
 
     public function setStatus(Request $request, string $student_user_id)

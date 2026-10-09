@@ -368,17 +368,19 @@ class StudentBulkImporter
                         'institution_id' => $institutionId,
                         'full_name'      => $fullName,
                         'email'          => $email,
-                        // Contraseña no usable: el usuario la define vía el enlace que recibe por correo.
+                        // Marcador inservible: la contraseña TEMPORAL real la genera
+                        // y manda por correo el job `EnviarEnlaceDeAlta` (en el
+                        // worker, donde el hash bcrypt no bloquea la carga).
                         'password_hash'  => $hashInservible,
                         'user_type'      => UserType::Student->value,
 
-                        // Nace INACTIVA: la activa su dueño al definir la
-                        // contraseña desde el correo de alta. Antes se creaba
-                        // ya activa, así que en el panel no había forma de
-                        // distinguir a quien nunca entró de quien lleva meses
-                        // usando la plataforma — y aun así no podía entrar,
-                        // porque su contraseña es aleatoria.
-                        'status'         => UserStatus::Inactive->value,
+                        // Activa desde el alta y obligada a cambiar la clave en su
+                        // primer acceso (decisión del 09/10/2026). Hasta que el job
+                        // le ponga la temporal no puede entrar: el hash no coincide
+                        // con nada. Antes nacía `inactive` y se activaba al definir
+                        // la contraseña desde un enlace.
+                        'status'         => UserStatus::Active->value,
+                        'must_change_password' => true,
                     ]);
                     $user->id = (string) Str::orderedUuid();
 

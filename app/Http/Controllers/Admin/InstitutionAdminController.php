@@ -7,6 +7,7 @@ use App\Enums\UserType;
 use App\Http\Controllers\Controller;
 use App\Models\Admin\Institution;
 use App\Models\Admin\User;
+use App\Jobs\EnviarEnlaceDeAlta;
 use App\Services\Auth\PasswordSetupService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -89,15 +90,19 @@ class InstitutionAdminController extends Controller
             'email'          => strtolower(trim($data['email'])),
             'full_name'      => trim($data['full_name']),
             'user_type'      => UserType::Admin->value,
-            'status'         => UserStatus::Inactive->value,
-            // Contraseña aleatoria inutilizable: el acceso se abre con el enlace.
+            // Activo desde el alta, con contraseña temporal que le llega por
+            // correo y que debe cambiar en su primer acceso (09/10/2026).
+            'status'         => UserStatus::Active->value,
+            'must_change_password' => true,
+            // Marcador inservible hasta que el job le ponga la temporal.
             'password_hash'  => Hash::make(Str::random(40)),
         ]);
 
-        $correoEnviado = $passwordSetup->sendSetupLink($admin);
+        EnviarEnlaceDeAlta::dispatch($admin->id);
+        $correoEnviado = true; // encolado: el envío real lo hace el worker
 
         return response()->json([
-            'message' => 'Administrador creado. Debe definir su contraseña desde el enlace enviado.',
+            'message' => 'Administrador creado. Recibirá una contraseña temporal por correo y deberá cambiarla al entrar.',
             'data'    => [
                 'admin'           => $admin->fresh()->load('institution:id,code,name'),
                 'correo_enviado'  => $correoEnviado,

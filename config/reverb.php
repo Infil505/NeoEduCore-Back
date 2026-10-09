@@ -83,7 +83,13 @@ return [
                     'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
                 ],
                 // Solo el frontend puede abrir la conexión WebSocket (igual que el CORS de la API).
-                'allowed_origins' => [parse_url((string) env('FRONTEND_URL', 'http://localhost:3000'), PHP_URL_HOST) ?: '*'],
+                // FRONTEND_URL admite varios orígenes separados por comas (ver config/cors.php):
+                // se pasa cada uno a su host. Si alguno no se puede interpretar se cae a '*'
+                // como antes, no se descarta en silencio.
+                'allowed_origins' => array_values(array_unique(array_map(
+                    fn ($origen) => parse_url(trim($origen), PHP_URL_HOST) ?: '*',
+                    explode(',', (string) env('FRONTEND_URL', 'http://localhost:3000'))
+                ))),
                 'ping_interval' => env('REVERB_APP_PING_INTERVAL', 60),
                 'activity_timeout' => env('REVERB_APP_ACTIVITY_TIMEOUT', 30),
                 'max_connections' => env('REVERB_APP_MAX_CONNECTIONS'),

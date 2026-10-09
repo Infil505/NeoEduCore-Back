@@ -254,7 +254,7 @@ class ExamAttemptController extends Controller
 
             // 1) Calificar intento + guardar respuestas. Las preguntas viajan ya
             // cargadas: se acaban de leer arriba para validar (O3).
-            $gradedAttempt = $grading->gradeAttempt($exam, $attempt, $data['answers'], $questions);
+            ['attempt' => $gradedAttempt, 'respuestas' => $respuestas] = $grading->calificar($exam, $attempt, $data['answers'], $questions);
 
             // El examen ya lo resolvió el binding de ruta: las recomendaciones
             // no tienen por qué volver a pedirlo.
@@ -270,7 +270,7 @@ class ExamAttemptController extends Controller
             }
 
             // 3) Generar recomendaciones
-            $recommendations = $aiService->generateFromAttempt($gradedAttempt);
+            $recommendations = $aiService->generateFromAttempt($gradedAttempt, $respuestas, $questions);
 
             return [
                 'attempt' => $gradedAttempt,

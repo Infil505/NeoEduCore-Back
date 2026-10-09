@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Academic;
 
+use App\Support\TenantCache;
 use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
 use App\Models\Academic\Group;
@@ -37,9 +38,21 @@ class GroupController extends Controller
             $query->where('year', (int) $request->input('year'));
         }
 
-        return response()->json([
-            'data' => $query->paginate(config('pagination.default')),
-        ]);
+        // Casi no cambia y lo pide cada pantalla: caché por centro. El docente ve
+        // solo SUS aulas, así que su id va en la clave; el resto comparte entrada.
+        // Se invalida al tocar aulas, asignaciones o el recuento de alumnado.
+        $user = $request->user();
+        $alcance = $this->esDocente($user) ? 'd' . $user->id : 'a';
+
+        $datos = TenantCache::remember(
+            $user->institution_id,
+            TenantCache::CATALOGO,
+            "groups:{$alcance}:" . $this->huellaDeConsulta($request),
+            300,
+            fn () => $this->paginar($query, $request)->toArray()
+        );
+
+        return response()->json(['data' => $datos]);
     }
 
     /**
@@ -244,5 +257,8 @@ class GroupController extends Controller
                     ->count(),
                 'updated_at' => now(),
             ]);
+
+        // `student_count` está en el listado de aulas cacheado y este UPDATE no dispara eventos.
+        TenantCache::invalidar($group->institution_id, TenantCache::CATALOGO, TenantCache::AGENDA);
     }
 }

@@ -228,7 +228,10 @@ class AtaquesDeAsignacionMasivaTest extends TestCase
         if ($creado) {
             $this->assertSame('admin', $creado->user_type->value, 'Se creó una cuenta con un rol impuesto por el cliente.');
             $this->assertSame($this->centro->id, $creado->institution_id, 'Se creó en un centro distinto del de la ruta.');
-            $this->assertSame('inactive', $creado->status->value, 'La cuenta nació activa sin que su titular fijara contraseña.');
+            // Activa, pero con la marca de contraseña temporal y SIN que valga la
+            // clave que el cliente intentó imponer: la temporal la genera el servidor.
+            $this->assertTrue($creado->must_change_password, 'La cuenta nueva no quedó obligada a cambiar la contraseña.');
+            $this->assertFalse(\Illuminate\Support\Facades\Hash::check('Hack12345a', $creado->password_hash), 'Se aceptó una contraseña impuesta por el cliente.');
         }
     }
 

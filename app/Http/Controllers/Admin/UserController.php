@@ -109,7 +109,7 @@ class UserController extends Controller
         }
 
         return response()->json([
-            'data' => $query->paginate(config('pagination.default')),
+            'data' => $this->paginar($query, $request),
         ]);
     }
 
@@ -292,6 +292,9 @@ class UserController extends Controller
         ]);
 
         $user->password_hash = Hash::make($data['password']);
+        // La clave la escribe el administrador y se la entrega a la persona: es
+        // temporal, y quien la recibe tiene que cambiarla al entrar.
+        $user->must_change_password = true;
         $user->save();
 
         // Opcional: revocar tokens activos

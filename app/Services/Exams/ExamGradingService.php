@@ -35,6 +35,27 @@ class ExamGradingService
         array $answersPayload,
         ?Collection $questions = null
     ): ExamAttempt {
+        return $this->calificar($exam, $attempt, $answersPayload, $questions)['attempt'];
+    }
+
+    /**
+     * Lo mismo que `gradeAttempt()`, y además devuelve cómo salió cada pregunta
+     * (acierto y si queda por revisar) tal como acaba de calcularse en memoria.
+     *
+     * Lo necesitan las recomendaciones de la entrega para hablar de ESTE examen
+     * (temas que falló). Leerlas de la BD costaría 2 consultas en la operación de
+     * pico, y dejarlas como relación del intento lo haría peor: el intento se
+     * serializa en la respuesta al alumno y arrastraría las preguntas con su
+     * respuesta correcta. Por eso viajan aparte, como datos planos.
+     *
+     * @return array{attempt: ExamAttempt, respuestas: array<int,array{question_id:string,is_correct:bool,pendiente:bool}>}
+     */
+    public function calificar(
+        Exam $exam,
+        ExamAttempt $attempt,
+        array $answersPayload,
+        ?Collection $questions = null
+    ): array {
 
         // El submit ya las cargó (con opciones) para validar los tipos: se
         // reutilizan en vez de pedirlas otra vez a la BD (O3, 2 queries menos).
@@ -155,7 +176,14 @@ class ExamGradingService
             'grade_status' => $pendientes > 0 ? 'pending' : 'completed',
         ]);
 
-        return $attempt;
+        return [
+            'attempt'    => $attempt,
+            'respuestas' => array_map(fn (array $fila) => [
+                'question_id' => $fila['question_id'],
+                'is_correct'  => (bool) $fila['is_correct'],
+                'pendiente'   => $fila['review_status'] === 'needs_review',
+            ], $filasRespuestas),
+        ];
     }
 
     /**

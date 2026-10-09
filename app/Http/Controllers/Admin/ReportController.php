@@ -13,6 +13,9 @@ use App\Services\Admin\ReportExportService;
 use App\Services\Admin\ReportMetricsService;
 use App\Services\Admin\ReportStrategyService;
 use App\Services\Academic\TopicMasteryService;
+use App\Services\AI\ExamAnalysisNarrative;
+use App\Services\Exams\ExamGroupAnalysisService;
+use App\Support\TenantCache;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -109,6 +112,70 @@ class ReportController extends Controller
         }
 
         return response()->json(['data' => $this->metrics->examSummary($exam)]);
+    }
+
+    /**
+     * GET /api/reports/exams/{exam}/analysis
+     *
+     * Análisis de todas las respuestas del examen entre el alumnado al que se
+     * asignó (ver `ExamGroupAnalysisService`): preguntas y temas más flojos,
+     * errores que se repiten, aulas y a quién atender. El docente solo accede a
+     * SUS exámenes; el administrador, a los del centro.
+     *
+     * Se cachea por la huella de los intentos (cuántos y el último cambio) y por
+     * la versión del catálogo (aulas y matrículas): cada entrega o revisión
+     * genera una clave nueva, así que nunca se sirve un análisis anterior a ellas.
+     */
+    public function examAnalysis(Exam $exam, Request $request, ExamGroupAnalysisService $analisis, ExamAnalysisNarrative $narrador)
+    {
+        if (!$this->assertCanAccessExam($exam, $request)) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
+
+        $datos = $this->analisisCacheado($exam, $analisis);
+
+        // La lectura en palabras, calculada con reglas: no cuesta consultas ni
+        // llama a OpenAI. La redactada por el modelo se pide aparte (`/analysis/ai`).
+        return response()->json(['data' => $datos + ['narrative' => $narrador->heuristica($datos)]]);
+    }
+
+    /**
+     * POST /api/reports/exams/{exam}/analysis/ai
+     *
+     * Mismo análisis, con la lectura redactada por el modelo a partir de datos
+     * agregados y SIN nombres de estudiantes. Es a petición porque cuesta
+     * créditos: lleva el límite de IA y el presupuesto global del centro. Si el
+     * modelo no responde, devuelve la lectura calculada (`narrative.source` lo
+     * dice) y no falla.
+     */
+    public function examAnalysisAi(Exam $exam, Request $request, ExamGroupAnalysisService $analisis, ExamAnalysisNarrative $narrador)
+    {
+        if (!$this->assertCanAccessExam($exam, $request)) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
+
+        $datos = $this->analisisCacheado($exam, $analisis);
+
+        return response()->json(['data' => $datos + ['narrative' => $narrador->conIa($datos)]]);
+    }
+
+    /** @return array<string,mixed> */
+    private function analisisCacheado(Exam $exam, ExamGroupAnalysisService $analisis): array
+    {
+
+        $huella = DB::table('exam_attempts')
+            ->where('institution_id', $exam->institution_id)
+            ->where('exam_id', $exam->id)
+            ->selectRaw('COUNT(*) AS n, MAX(updated_at) AS ultimo')
+            ->first();
+
+        return TenantCache::remember(
+            $exam->institution_id,
+            TenantCache::CATALOGO,
+            "exam-analysis:{$exam->id}:" . md5(json_encode([$huella->n, $huella->ultimo, (string) $exam->updated_at])),
+            600,
+            fn () => $analisis->analizar($exam->loadMissing('subject:id,name'))
+        );
     }
 
     /**

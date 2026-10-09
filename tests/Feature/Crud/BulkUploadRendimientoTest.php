@@ -188,10 +188,14 @@ class BulkUploadRendimientoTest extends TestCase
         $a = Group::factory()->create(['institution_id' => $institution->id, 'group_code' => '4A2026', 'grade' => 4, 'section' => 'A']);
         $b = Group::factory()->create(['institution_id' => $institution->id, 'group_code' => '5B2026', 'grade' => 5, 'section' => 'B']);
 
-        $this->subir(self::HEADER . "\nAna,ana@ejemplo.com,,EST-1,4A2026,active,,,,\n")->assertOk();
-        $ana = User::where('email', 'ana@ejemplo.com')->first();
+        // Correo y código únicos: la base de pruebas acumula filas entre tests.
+        $correo = "ana{$this->sufijo}@ejemplo.com";
+        $codigo = "EST-1{$this->sufijo}";
 
-        $this->subir(self::HEADER . "\nAna,ana@ejemplo.com,,EST-1,5B2026,active,,,,\n")
+        $this->subir(self::HEADER . "\nAna,{$correo},,{$codigo},4A2026,active,,,,\n")->assertOk();
+        $ana = User::where('email', $correo)->first();
+
+        $this->subir(self::HEADER . "\nAna,{$correo},,{$codigo},5B2026,active,,,,\n")
             ->assertOk()
             ->assertJson(['reasignados' => 1, 'matriculados' => 0]);
 

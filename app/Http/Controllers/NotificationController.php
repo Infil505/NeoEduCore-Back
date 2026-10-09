@@ -30,7 +30,7 @@ class NotificationController extends Controller
             $query->whereNull('read_at');
         }
 
-        $pagina = $query->paginate(config('pagination.default'));
+        $pagina = $this->paginar($query, $request);
         $pagina->getCollection()->transform(fn ($n) => [
             'id'         => $n->id,
             'type'       => $n->type,

@@ -2,6 +2,7 @@
 
 namespace App\Services\Students;
 
+use App\Support\TenantCache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -89,5 +90,8 @@ class EnrollmentService
                     ->count(),
                 'updated_at' => now(),
             ]);
+
+        // `student_count` está en el listado de aulas cacheado y este UPDATE no dispara eventos.
+        TenantCache::invalidar($institutionId, TenantCache::CATALOGO, TenantCache::AGENDA);
     }
 }

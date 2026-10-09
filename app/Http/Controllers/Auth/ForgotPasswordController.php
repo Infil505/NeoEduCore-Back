@@ -209,7 +209,9 @@ class ForgotPasswordController extends Controller
             }
 
             // El esquema guarda el hash en `password_hash`, no en `password`.
-            $cambios = ['password_hash' => Hash::make($data['password'])];
+            // Quien define su contraseña desde el enlace ya eligió la suya: deja
+            // de ser temporal.
+            $cambios = ['password_hash' => Hash::make($data['password']), 'must_change_password' => false];
 
             /*
              | **Aquí se activa la cuenta.** Es el único punto del sistema donde
@@ -268,8 +270,16 @@ class ForgotPasswordController extends Controller
             return response()->json(['message' => 'La contraseña actual es incorrecta'], 400);
         }
 
+        // La nueva no puede ser la actual: con una contraseña temporal sería
+        // «cambiarla» por la misma y el cambio obligatorio no serviría de nada.
+        if (Hash::check($data['password'], $user->password_hash)) {
+            return response()->json(['message' => 'La nueva contraseña debe ser distinta de la actual.'], 422);
+        }
+
         $user->update([
             'password_hash' => Hash::make($data['password']),
+            // Ya es una contraseña elegida por su dueño: se levanta el bloqueo.
+            'must_change_password' => false,
         ]);
 
         // Revocar tokens excepto el actual (si existe)

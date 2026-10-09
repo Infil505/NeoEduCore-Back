@@ -112,7 +112,16 @@ TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 DB_STATEMENT_TIMEOUT_MS=15000
 
 QUEUE_CONNECTION=database
-CACHE_STORE=database          # o redis si agregás uno
+# CACHE_STORE: usar `redis` (recurso Redis en Coolify + REDIS_HOST/REDIS_PORT/REDIS_PASSWORD).
+# La API y el worker son contenedores distintos y la caché por centro (`TenantCache`:
+# materias, aulas, docentes, asignaciones, configuración, avisos del alumnado) se
+# invalida desde cualquiera de los dos, así que el almacén tiene que ser COMPARTIDO.
+#  - `file` NO sirve en producción: cada contenedor tendría su propia caché y una
+#    invalidación hecha en el worker no llegaría a la API (datos viejos hasta el TTL).
+#  - `database` NO está preparado: ninguna migración crea la tabla `cache`, y además
+#    cada lectura sería una consulta a la misma base que se quiere aliviar.
+#  - `array` desactiva los límites de peticiones entre workers (ver más abajo).
+CACHE_STORE=redis
 SESSION_DRIVER=database
 
 # Correo (Gmail u otro SMTP)

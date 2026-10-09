@@ -273,7 +273,9 @@ class AtaquesDeSesionTest extends TestCase
         // El inicio de sesión devuelve el token, pero ningún dato de credencial.
         $docente = $this->conClave($this->docente);
         $login = $this->sinToken()->postJson('/api/auth/login', ['email' => $docente->email, 'password' => self::CLAVE])->assertOk();
-        $this->assertStringNotContainsString('password', json_encode($login->json('user')));
+        // (La marca `must_change_password` es un booleano, no una credencial.)
+        $this->assertStringNotContainsString('password_hash', json_encode($login->json('user')));
+        $this->assertStringNotContainsString('$2y$', json_encode($login->json()));
     }
 
     public function test_un_alumno_y_un_docente_tampoco_ven_hashes_en_lo_que_consultan(): void

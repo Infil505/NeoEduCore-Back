@@ -136,7 +136,7 @@ class ExamController extends Controller
             $query->where('created_by_teacher_id', $request->string('teacher_id')->toString());
         }
 
-        $paginator = $query->paginate(config('pagination.default'));
+        $paginator = $this->paginar($query, $request);
 
         $this->acotarExamenes($request->user(), $paginator->getCollection());
 

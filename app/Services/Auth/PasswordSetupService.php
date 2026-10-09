@@ -2,6 +2,9 @@
 
 namespace App\Services\Auth;
 
+use App\Domain\Auth\ContrasenaTemporal;
+use App\Enums\UserStatus;
+use App\Mail\ContrasenaTemporalMail;
 use App\Mail\PasswordSetupMail;
 use App\Models\Admin\User;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +24,36 @@ use Illuminate\Support\Str;
  */
 class PasswordSetupService
 {
+    /**
+     * Pone a la cuenta una contraseña TEMPORAL aleatoria, la deja activa con
+     * `must_change_password` y se la manda por correo (decisión del 09/10/2026).
+     *
+     * Sustituye al enlace de «establece tu contraseña» en las altas: el usuario
+     * entra ya con la temporal y la API le exige cambiarla antes de usar nada
+     * más (`ExigeCambioDeClave`).
+     *
+     * **Lanza** si el correo no sale, a diferencia de `sendSetupLink`: lo llama
+     * un job con reintentos y tiene que fallar para que se reintente. Cada
+     * reintento genera una temporal nueva, así que la última es la válida. El
+     * correo se envía directamente (no encolado) para que la contraseña no
+     * quede en claro en la tabla `jobs`.
+     */
+    public function sendTemporaryPassword(User $user): void
+    {
+        $temporal = ContrasenaTemporal::generar();
+
+        $user->forceFill([
+            'password_hash'        => Hash::make($temporal),
+            'status'               => UserStatus::Active->value,
+            'must_change_password' => true,
+        ])->save();
+
+        // Sesiones previas fuera: la clave cambió.
+        $user->tokens()->delete();
+
+        Mail::to($user->email)->send(new ContrasenaTemporalMail($user, $temporal));
+    }
+
     /**
      * Encola el correo con el enlace de "establece tu contraseña".
      * El envío real lo hace el worker de colas (PasswordResetMail es ShouldQueue),

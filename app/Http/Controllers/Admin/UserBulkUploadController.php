@@ -146,12 +146,14 @@ class UserBulkUploadController extends Controller
                         'institution_id' => $institutionId,
                         'full_name'      => $fullName,
                         'email'          => $email,
-                        // Contraseña no usable: la define el usuario con el enlace del correo.
+                        // Marcador inservible: la contraseña TEMPORAL real la genera y
+                        // manda por correo el job `EnviarEnlaceDeAlta`.
                         'password_hash'  => $hashInservible,
                         'user_type'      => $role,
-                        // Nace inactiva, igual que en la carga de estudiantes: se
-                        // activa al definir la contraseña desde el correo de alta.
-                        'status'         => UserStatus::Inactive->value,
+                        // Activa desde el alta y obligada a cambiar la clave en su
+                        // primer acceso, igual que en la carga de estudiantes.
+                        'status'         => UserStatus::Active->value,
+                        'must_change_password' => true,
                     ]);
                     $acciones[$lineNumber] = 'crear';
                 }

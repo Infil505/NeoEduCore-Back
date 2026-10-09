@@ -24,5 +24,67 @@ use OpenApi\Attributes as OA;
 #[OA\Server(url: L5_SWAGGER_CONST_HOST, description: 'Servidor local')]
 abstract class Controller
 {
-    //
+    /**
+     * Tamaño de página de un listado: `?per_page=` acotado a 1..`pagination.max`,
+     * y `pagination.default` si no viene o no es un número.
+     *
+     * Se acota en vez de rechazar con 422: un valor raro no debería romper una
+     * pantalla. El frontend pide páginas de 100 para recorrer un listado entero
+     * en pocas peticiones —con la base remota cada una cuesta segundos—; antes el
+     * backend ignoraba `per_page` y 243 alumnos eran 13 peticiones seguidas.
+     */
+    /**
+     * `paginate()` sin la consulta `COUNT` cuando no hace falta.
+     *
+     * `paginate()` siempre cuenta primero y luego trae la página: dos consultas.
+     * Pero si la página llega con MENOS filas que `per_page`, el total ya se sabe
+     * (`(página − 1) × per_page + filas`) y el conteo sobra. Es lo normal en los
+     * listados pequeños (materias, aulas, docentes…) y con la base remota cada
+     * consulta cuesta ~0,5 s. Si la página sale llena, o vacía más allá de la
+     * primera, hay que contar igual y se hace como siempre.
+     *
+     * Devuelve el mismo paginador que `paginate()`: mismo JSON, mismos enlaces.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     */
+    protected function paginar($query, \Illuminate\Http\Request $request): \Illuminate\Pagination\LengthAwarePaginator
+    {
+        $porPagina = $this->porPagina($request);
+        $pagina = max(1, (int) \Illuminate\Pagination\Paginator::resolveCurrentPage());
+
+        $filas = (clone $query)->forPage($pagina, $porPagina)->get();
+
+        $sabeElTotal = $filas->count() < $porPagina && ($pagina === 1 || $filas->isNotEmpty());
+        $total = $sabeElTotal
+            ? ($pagina - 1) * $porPagina + $filas->count()
+            : $query->toBase()->getCountForPagination();
+
+        return new \Illuminate\Pagination\LengthAwarePaginator($filas, $total, $porPagina, $pagina, [
+            'path'     => \Illuminate\Pagination\Paginator::resolveCurrentPath(),
+            'pageName' => 'page',
+        ]);
+    }
+
+    /**
+     * Huella estable de los parámetros de la consulta (página, filtros, orden…)
+     * para usarla en la clave de `TenantCache`: dos peticiones con los mismos
+     * parámetros, en cualquier orden, comparten entrada.
+     */
+    protected function huellaDeConsulta(\Illuminate\Http\Request $request): string
+    {
+        $parametros = $request->query();
+        ksort($parametros);
+
+        return md5((string) json_encode($parametros));
+    }
+
+    protected function porPagina(\Illuminate\Http\Request $request): int
+    {
+        $pedido = filter_var($request->query('per_page'), FILTER_VALIDATE_INT);
+        $maximo = max(1, (int) config('pagination.max'));
+
+        return $pedido === false || $pedido < 1
+            ? (int) config('pagination.default')
+            : min($pedido, $maximo);
+    }
 }

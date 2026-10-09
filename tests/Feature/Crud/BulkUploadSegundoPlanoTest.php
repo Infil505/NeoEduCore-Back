@@ -78,7 +78,7 @@ class BulkUploadSegundoPlanoTest extends TestCase
             ->assertOk()
             ->assertJson(['status' => 'done', 'created' => 2, 'skipped' => 0, 'matriculados' => 2]);
 
-        $this->assertDatabaseHas('users', ['email' => "ana{$this->s}@ejemplo.com", 'status' => 'inactive']);
+        $this->assertDatabaseHas('users', ['email' => "ana{$this->s}@ejemplo.com", 'status' => 'active', 'must_change_password' => true]);
         // Al terminar vuelve a quedar sin leer, para que la campana lo muestre.
         $this->assertNull($admin->notifications()->first()->read_at);
     }

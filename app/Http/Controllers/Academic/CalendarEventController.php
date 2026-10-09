@@ -81,7 +81,7 @@ class CalendarEventController extends Controller
             $query->where('start_at', '<=', $data['to']);
         }
 
-        $paginator = $query->paginate(config('pagination.default'));
+        $paginator = $this->paginar($query, $request);
 
         $this->acotarParaEstudiante($request->user(), $paginator->getCollection());
 

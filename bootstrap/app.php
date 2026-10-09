@@ -15,7 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
     // con el mismo token Bearer de la API.
     ->withBroadcasting(
         __DIR__.'/../routes/channels.php',
-        ['prefix' => 'api', 'middleware' => ['api', 'auth:sanctum', 'activa']],
+        ['prefix' => 'api', 'middleware' => ['api', 'auth:sanctum', 'activa', 'clave.temporal']],
     )
     ->withMiddleware(function (Middleware $middleware): void {
         // Los rate limiters con nombre (p. ej. 'ai-global') se registran en
@@ -24,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant' => \App\Http\Middleware\SetTenantFromAuth::class,
             'role'   => \App\Http\Middleware\RequireRole::class,
             'activa' => \App\Http\Middleware\EnsureAccountIsActive::class,
+            'clave.temporal' => \App\Http\Middleware\ExigeCambioDeClave::class,
         ]);
 
         // Global, y lo primero de todo: marca que esto es HTTP para que

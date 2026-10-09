@@ -4,6 +4,7 @@ namespace App\Services\Academic;
 
 use App\Models\Students\StudentAnswer;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Dominio por **tema**, no por materia (decisión D2).
@@ -49,6 +50,21 @@ class TopicMasteryService
     {
         return $this->agregar(
             fn ($q) => $q->where('ea.student_user_id', $studentUserId),
+            $limite
+        );
+    }
+
+    /**
+     * Dominio por tema de un estudiante DENTRO de una materia: lo que sus
+     * exámenes de esa materia dicen de él, sin mezclar lo de otras asignaturas.
+     *
+     * @return Collection<int, array{topic:string, total:int, correctas:int, percentage:float}>
+     */
+    public function porEstudianteYMateria(string $studentUserId, string $subjectId, int $limite = 10): Collection
+    {
+        return $this->agregar(
+            fn ($q) => $q->where('ea.student_user_id', $studentUserId)
+                ->whereIn('q.exam_id', DB::table('exams')->select('id')->where('subject_id', $subjectId)),
             $limite
         );
     }
