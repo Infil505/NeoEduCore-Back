@@ -5,12 +5,14 @@ namespace App\Services\Imports;
 /**
  * Vista previa de una carga masiva (`dry_run`).
  *
- * La carga se ejecuta entera —mismas validaciones, mismas consultas— dentro de
- * su transacción, y al final se lanza `revertir()` para deshacerla. Así la
- * vista previa marca exactamente los errores que daría la carga real (aula que
- * no existe, correo ya usado, correo repetido en el propio archivo…) sin una
- * segunda copia de las reglas que pudiera desincronizarse. No se envía ningún
- * correo: eso ocurre después del commit, que en la simulación no llega.
+ * Se ejecuta el mismo recorrido de validación que la carga real y se omite la
+ * escritura. (La carga de docentes sigue ejecutándose entera y deshaciéndose
+ * con `revertir()`; la de estudiantes ya valida contra mapas en memoria y
+ * escribe en bloque al final, así que la simulación no abre transacción.) Así
+ * la vista previa marca exactamente los errores que daría la carga real (aula
+ * que no existe, correo ya usado, correo repetido en el propio archivo…) sin
+ * una segunda copia de las reglas que pudiera desincronizarse. No se envía
+ * ningún correo: eso ocurre después del commit.
  */
 class BulkPreview
 {

@@ -21,7 +21,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Token que no escribe `last_used_at` en cada petición (ver la clase).
+        Sanctum::usePersonalAccessTokenModel(\App\Models\Admin\AccessToken::class);
     }
 
     /**

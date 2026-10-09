@@ -32,6 +32,49 @@ class EnrollmentService
         );
     }
 
+    /**
+     * Versión en lote de `abrirMatricula()` para la carga masiva: una sentencia
+     * por bloque en vez de una por estudiante (con la base remota cada viaje son
+     * cientos de milisegundos).
+     *
+     * @param array<string,string> $aulaPorEstudiante student_user_id → group_id
+     */
+    public function abrirMatriculas(array $aulaPorEstudiante, string $institutionId): void
+    {
+        $ahora = now();
+        $filas = [];
+
+        foreach ($aulaPorEstudiante as $studentUserId => $groupId) {
+            $filas[] = [
+                'institution_id'  => $institutionId,
+                'group_id'        => $groupId,
+                'student_user_id' => $studentUserId,
+                'joined_at'       => $ahora,
+                'left_at'         => null,
+            ];
+        }
+
+        foreach (array_chunk($filas, max(1, (int) config('bulk.insert_batch_size'))) as $bloque) {
+            DB::table('group_students')->upsert($bloque, ['group_id', 'student_user_id'], ['left_at']);
+        }
+    }
+
+    /**
+     * Cierra la matrícula abierta de estos estudiantes (traslado de aula).
+     *
+     * @param array<int,string> $studentUserIds
+     */
+    public function cerrarMatriculas(array $studentUserIds, string $institutionId): void
+    {
+        foreach (array_chunk($studentUserIds, max(1, (int) config('bulk.insert_batch_size'))) as $bloque) {
+            DB::table('group_students')
+                ->where('institution_id', $institutionId)
+                ->whereIn('student_user_id', $bloque)
+                ->whereNull('left_at')
+                ->update(['left_at' => now()]);
+        }
+    }
+
     /** Recalcula `groups.student_count` con las matrículas abiertas (RN-STU-012). */
     public function recontarAula(string $groupId, string $institutionId): void
     {
