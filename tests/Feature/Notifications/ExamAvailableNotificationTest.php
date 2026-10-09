@@ -163,6 +163,29 @@ class ExamAvailableNotificationTest extends TestCase
         $this->assertSame(0, $res->json('meta.unread_count'));
     }
 
+    public function test_the_unread_count_is_cheap_and_only_counts_your_own(): void
+    {
+        $exam = $this->examenPublicado();
+        $uno  = $this->alumno();
+        $otro = $this->alumno();
+        $this->matricularEnGrupo($uno->id, $this->grupo->id, $this->institution->id);
+
+        $this->patchJson("/api/exams/{$exam->id}/status", ['status' => 'active'])->assertOk();
+
+        Sanctum::actingAs($uno);
+        \DB::flushQueryLog();
+        \DB::enableQueryLog();
+        $res = $this->getJson('/api/notifications/unread-count')->assertOk();
+        $consultasAvisos = collect(\DB::getQueryLog())->filter(fn ($q) => str_contains($q['query'], '"notifications"'))->count();
+        \DB::disableQueryLog();
+
+        $this->assertSame(1, $res->json('data.unread_count'));
+        $this->assertSame(1, $consultasAvisos, 'El contador es UNA consulta, no la lista paginada.');
+
+        Sanctum::actingAs($otro);
+        $this->assertSame(0, $this->getJson('/api/notifications/unread-count')->json('data.unread_count'));
+    }
+
     public function test_marking_as_read_only_works_on_your_own_notification(): void
     {
         $exam = $this->examenPublicado();

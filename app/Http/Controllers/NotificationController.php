@@ -47,6 +47,21 @@ class NotificationController extends Controller
         ]);
     }
 
+    /**
+     * GET /api/notifications/unread-count
+     *
+     * Solo el número de la campanita: UNA consulta. La campana de la cabecera
+     * pregunta cada minuto en todas las pantallas; pedir la lista entera cada vez
+     * (paginar + traer filas) costaba el triple y, con un servidor de un solo
+     * hilo, bloqueaba el resto de peticiones. La lista se pide al abrirla.
+     */
+    public function unreadCount(Request $request): JsonResponse
+    {
+        return response()->json([
+            'data' => ['unread_count' => $request->user()->unreadNotifications()->count()],
+        ]);
+    }
+
     /** PATCH /api/notifications/{id}/read — idempotente. */
     public function markRead(Request $request, string $id): JsonResponse
     {

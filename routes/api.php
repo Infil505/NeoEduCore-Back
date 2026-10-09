@@ -87,6 +87,7 @@ Route::middleware(['auth:sanctum', 'activa', 'clave.temporal'])->group(function 
     | Notificaciones en la app — cualquier rol autenticado, siempre las propias (O1)
     */
     Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
     Route::patch('/notifications/{id}/read', [NotificationController::class, 'markRead'])
         ->whereUuid('id');
