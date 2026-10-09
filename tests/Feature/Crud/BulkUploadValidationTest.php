@@ -47,7 +47,7 @@ class BulkUploadValidationTest extends TestCase
 
     private function subir(string $csv)
     {
-        return $this->post('/api/students/bulk-upload', [
+        return $this->postCargaEstudiantes([
             'file' => UploadedFile::fake()->createWithContent('estudiantes.csv', $csv),
         ]);
     }
@@ -104,7 +104,7 @@ class BulkUploadValidationTest extends TestCase
         $ruta = tempnam(sys_get_temp_dir(), 'xlsx');
         (new Xlsx($libro))->save($ruta);
 
-        $this->post('/api/students/bulk-upload', [
+        $this->postCargaEstudiantes([
             'file' => new UploadedFile($ruta, 'estudiantes.xlsx', null, null, true),
         ])->assertOk()->assertJson(['created' => 1, 'skipped' => 0]);
 
@@ -114,12 +114,12 @@ class BulkUploadValidationTest extends TestCase
 
     public function test_an_unsupported_or_unreadable_file_is_rejected(): void
     {
-        $this->post('/api/students/bulk-upload', [
+        $this->postCargaEstudiantes([
             'file' => UploadedFile::fake()->createWithContent('estudiantes.pdf', '%PDF-1.4'),
         ], ['Accept' => 'application/json'])->assertStatus(422);
 
         // Extensión .xlsx pero contenido que no es un libro de Excel.
-        $this->post('/api/students/bulk-upload', [
+        $this->postCargaEstudiantes([
             'file' => UploadedFile::fake()->createWithContent('estudiantes.xlsx', 'esto no es un xlsx'),
         ], ['Accept' => 'application/json'])->assertStatus(422);
     }

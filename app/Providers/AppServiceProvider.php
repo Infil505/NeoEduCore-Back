@@ -37,7 +37,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $uuid = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
 
-        foreach (['student_user_id', 'teacherUserId', 'sessionId', 'subject'] as $parametro) {
+        foreach (['student_user_id', 'teacherUserId', 'sessionId', 'subject', 'import_id'] as $parametro) {
             Route::pattern($parametro, $uuid);
         }
     }

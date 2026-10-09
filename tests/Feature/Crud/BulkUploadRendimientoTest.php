@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Crud;
 
+use App\Jobs\EnviarEnlaceDeAlta;
 use App\Models\Academic\Group;
 use App\Models\Admin\AccessToken;
 use App\Models\Admin\Institution;
@@ -49,7 +50,7 @@ class BulkUploadRendimientoTest extends TestCase
     {
         $file = UploadedFile::fake()->createWithContent('estudiantes.csv', $csv);
 
-        return $this->post('/api/students/bulk-upload', ['file' => $file] + ($dryRun ? ['dry_run' => true] : []));
+        return $this->postCargaEstudiantes(['file' => $file] + ($dryRun ? ['dry_run' => true] : []));
     }
 
     /** Consultas que ejecuta la subida (sin contar las del login del test). */
@@ -66,7 +67,7 @@ class BulkUploadRendimientoTest extends TestCase
 
     public function test_las_consultas_no_crecen_con_el_numero_de_filas(): void
     {
-        Queue::fake(); // el correo de alta lo manda el worker, no la petición
+        Queue::fake([EnviarEnlaceDeAlta::class]); // el correo de alta lo manda el worker; la carga sí corre (cola sync)
 
         $institution = Institution::factory()->create();
         $this->signInAdmin(['institution_id' => $institution->id]);
@@ -83,7 +84,7 @@ class BulkUploadRendimientoTest extends TestCase
 
     public function test_recargar_el_mismo_archivo_no_escribe_en_las_fichas(): void
     {
-        Queue::fake(); // el correo de alta lo manda el worker, no la petición
+        Queue::fake([EnviarEnlaceDeAlta::class]); // el correo de alta lo manda el worker; la carga sí corre (cola sync)
 
         $institution = Institution::factory()->create();
         $this->signInAdmin(['institution_id' => $institution->id]);
@@ -101,8 +102,9 @@ class BulkUploadRendimientoTest extends TestCase
 
         $this->subir($csv)->assertOk()->assertJson(['created' => 0, 'updated' => 30, 'matriculados' => 0, 'reasignados' => 0]);
 
-        // Solo el recuento de aulas (ninguna tocada: ni una escritura de alumnos).
-        $this->assertLessThanOrEqual(1, $escrituras, "Se hicieron {$escrituras} escrituras al recargar un archivo idéntico.");
+        // Solo el aviso de estado de la carga (crearlo y dos actualizaciones):
+        // ni una escritura sobre usuarios, fichas ni matrículas.
+        $this->assertLessThanOrEqual(3, $escrituras, "Se hicieron {$escrituras} escrituras al recargar un archivo idéntico.");
     }
 
     public function test_la_vista_previa_no_escribe_nada(): void
@@ -130,7 +132,7 @@ class BulkUploadRendimientoTest extends TestCase
 
     public function test_el_codigo_de_otro_estudiante_se_rechaza_contra_el_mapa_en_memoria(): void
     {
-        Queue::fake(); // el correo de alta lo manda el worker, no la petición
+        Queue::fake([EnviarEnlaceDeAlta::class]); // el correo de alta lo manda el worker; la carga sí corre (cola sync)
 
         $institution = Institution::factory()->create();
         $this->signInAdmin(['institution_id' => $institution->id]);
@@ -157,7 +159,7 @@ class BulkUploadRendimientoTest extends TestCase
 
     public function test_el_mismo_codigo_dos_veces_en_el_archivo_no_crea_una_segunda_cuenta(): void
     {
-        Queue::fake();
+        Queue::fake([EnviarEnlaceDeAlta::class]);
 
         $institution = Institution::factory()->create();
         $this->signInAdmin(['institution_id' => $institution->id]);
@@ -179,7 +181,7 @@ class BulkUploadRendimientoTest extends TestCase
 
     public function test_un_traslado_cierra_la_matricula_vieja_y_abre_la_nueva(): void
     {
-        Queue::fake(); // el correo de alta lo manda el worker, no la petición
+        Queue::fake([EnviarEnlaceDeAlta::class]); // el correo de alta lo manda el worker; la carga sí corre (cola sync)
 
         $institution = Institution::factory()->create();
         $this->signInAdmin(['institution_id' => $institution->id]);

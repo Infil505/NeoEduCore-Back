@@ -31,7 +31,7 @@ class BulkUploadStudentsTest extends TestCase
     {
         $file = UploadedFile::fake()->createWithContent('estudiantes.csv', $csv);
 
-        return $this->post('/api/students/bulk-upload', ['file' => $file]);
+        return $this->postCargaEstudiantes(['file' => $file]);
     }
 
     private function aula(Institution $institution, string $code, int $grade = 4, string $section = 'A'): Group
@@ -560,7 +560,7 @@ class BulkUploadStudentsTest extends TestCase
         $book->disconnectWorksheets();
 
         $file = new UploadedFile($path, 'plantilla_estudiantes.xlsx', null, null, true);
-        $upload = $this->post('/api/students/bulk-upload', ['file' => $file]);
+        $upload = $this->postCargaEstudiantes(['file' => $file]);
 
         $upload->assertOk();
         $upload->assertJson(['created' => 1, 'skipped' => 0]);
@@ -590,7 +590,7 @@ class BulkUploadStudentsTest extends TestCase
         $antes = DB::table('group_students')->count();
 
         $file = UploadedFile::fake()->createWithContent('estudiantes.csv', $csv);
-        $res = $this->post('/api/students/bulk-upload', ['file' => $file, 'dry_run' => 1]);
+        $res = $this->postCargaEstudiantes(['file' => $file, 'dry_run' => 1]);
 
         $res->assertOk();
         $res->assertJson(['dry_run' => true, 'total_rows' => 3, 'valid' => 1, 'invalid' => 2]);

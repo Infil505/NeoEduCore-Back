@@ -337,6 +337,8 @@ Route::middleware(['auth:sanctum', 'activa'])->group(function () {
         // Carga masiva: crea cuentas de usuario, por eso es admin-only
         Route::get('/students/bulk-upload/template', [StudentController::class, 'bulkUploadTemplate']);
         Route::post('/students/bulk-upload', [StudentController::class, 'bulkUpload'])->middleware('throttle:bulk-upload');
+        // Estado de una carga en segundo plano (solo quien la subió, ver bulkUploadStatus).
+        Route::get('/students/bulk-upload/{import_id}', [StudentController::class, 'bulkUploadStatus']);
         // Plantilla por rol y carga de docentes/administradores
         Route::get('/users/bulk-upload/template', [UserBulkUploadController::class, 'template']);
         Route::post('/users/bulk-upload', [UserBulkUploadController::class, 'upload'])->middleware('throttle:bulk-upload');

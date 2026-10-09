@@ -14,6 +14,7 @@ use App\Services\Imports\BulkTemplateService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use OpenApi\Attributes as OA;
@@ -168,10 +169,12 @@ class UserBulkUploadController extends Controller
         $emailFailures = [];
         // Cada enlace se prepara en cola (ver EnviarEnlaceDeAlta): hacerlo aquí
         // costaba un hash bcrypt por cuenta y la petición superaba el minuto.
-        foreach ($newUsers as $newUser) {
-            EnviarEnlaceDeAlta::dispatch($newUser->id);
-            $emailsQueued++;
+        // En UN solo INSERT: con la cola en base de datos remota cada `dispatch`
+        // son ~430 ms, y 209 cuentas pasaban de 90 s (el navegador cortaba antes).
+        if ($newUsers !== []) {
+            Queue::bulk(array_map(fn ($u) => new EnviarEnlaceDeAlta($u->id), $newUsers));
         }
+        $emailsQueued = count($newUsers);
 
         // Mismas claves que la carga de estudiantes: el panel muestra un único resumen.
         return response()->json([
