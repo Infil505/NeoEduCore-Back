@@ -6,6 +6,7 @@ use App\Enums\UserType;
 use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
 use App\Models\Academic\Subject;
+use App\Support\TenantCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -52,9 +53,20 @@ class SubjectController extends Controller
             $query->where('name', 'ilike', "%{$term}%");
         }
 
-        return response()->json([
-            'data' => $query->paginate((int) $request->input('per_page', config('pagination.default'))),
-        ]);
+        // Catálogo que casi no cambia (con `exams_count`, que cambia al crear o
+        // borrar exámenes: por eso también los observadores de `Exam` invalidan).
+        // El docente ve solo SUS materias: su id va en la clave.
+        $alcance = $this->esDocente($user) ? 'd' . $user->id : 'a';
+
+        $datos = TenantCache::remember(
+            $user->institution_id,
+            TenantCache::CATALOGO,
+            "subjects:{$alcance}:" . $this->huellaDeConsulta($request),
+            300,
+            fn () => $this->paginar($query, $request)->toArray()
+        );
+
+        return response()->json(['data' => $datos]);
     }
 
     /**

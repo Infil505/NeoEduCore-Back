@@ -73,7 +73,7 @@ Route::prefix('password')->group(function () {
 | PROTEGIDAS: auth + tenant (aplica a todo lo de abajo)
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth:sanctum', 'activa'])->group(function () {
+Route::middleware(['auth:sanctum', 'activa', 'clave.temporal'])->group(function () {
 
     /*
     | Sesión — cualquier rol autenticado
@@ -87,6 +87,7 @@ Route::middleware(['auth:sanctum', 'activa'])->group(function () {
     | Notificaciones en la app — cualquier rol autenticado, siempre las propias (O1)
     */
     Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
     Route::patch('/notifications/{id}/read', [NotificationController::class, 'markRead'])
         ->whereUuid('id');
@@ -178,6 +179,10 @@ Route::middleware(['auth:sanctum', 'activa'])->group(function () {
         // (ver StudentController::update). Curso, sección, código, aula y estado
         // son del administrador: el estado, más abajo en el grupo role:admin.
         Route::put('/students/{student_user_id}', [StudentController::class, 'update']);
+        // Restablecer la contraseña de un alumno: la temporal sale al correo del
+        // alumno y quien lo pide no la ve. El docente, solo de SUS alumnos.
+        Route::post('/students/{student_user_id}/reset-password', [StudentController::class, 'resetPassword'])
+            ->middleware('throttle:student-password-reset');
 
         // Grupos: lectura compartida. Las mutaciones (crear/editar/eliminar)
         // son admin-only, ver más abajo — el docente solo ve lo que el admin
@@ -255,6 +260,12 @@ Route::middleware(['auth:sanctum', 'activa'])->group(function () {
         // Van aparte de los listados paginados: quien solo quiere la tabla no
         // paga los agregados, y quien solo quiere los gráficos no pagina.
         Route::get('/reports/exams/{exam}/summary', [ReportController::class, 'examSummary']);
+        // Análisis de TODAS las respuestas del grupo asignado: qué preguntas y temas
+        // salieron peor, qué error se repite y a quién atender.
+        Route::get('/reports/exams/{exam}/analysis', [ReportController::class, 'examAnalysis']);
+        // La misma lectura, redactada por el modelo (cuesta créditos: límite de IA y presupuesto del centro).
+        Route::post('/reports/exams/{exam}/analysis/ai', [ReportController::class, 'examAnalysisAi'])
+            ->middleware(['throttle:ai-generate', 'throttle:ai-global']);
         Route::get('/reports/students/{student_user_id}/summary', [ReportController::class, 'studentSummary']);
 
         // Temas a reforzar, agregados y sin nombres (D2). El docente los ve de
@@ -340,6 +351,8 @@ Route::middleware(['auth:sanctum', 'activa'])->group(function () {
         // Carga masiva: crea cuentas de usuario, por eso es admin-only
         Route::get('/students/bulk-upload/template', [StudentController::class, 'bulkUploadTemplate']);
         Route::post('/students/bulk-upload', [StudentController::class, 'bulkUpload'])->middleware('throttle:bulk-upload');
+        // Estado de una carga en segundo plano (solo quien la subió, ver bulkUploadStatus).
+        Route::get('/students/bulk-upload/{import_id}', [StudentController::class, 'bulkUploadStatus']);
         // Plantilla por rol y carga de docentes/administradores
         Route::get('/users/bulk-upload/template', [UserBulkUploadController::class, 'template']);
         Route::post('/users/bulk-upload', [UserBulkUploadController::class, 'upload'])->middleware('throttle:bulk-upload');

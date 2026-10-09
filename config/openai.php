@@ -82,18 +82,18 @@ return [
 
     'tutor' => [
         // Tope de tokens de la respuesta.
-        'max_tokens' => (int) env('OPENAI_MAX_TOKENS', 600),
+        'max_tokens' => (int) env('OPENAI_MAX_TOKENS', 450),
 
         /*
          | El modo «práctica» pide ejercicios resueltos paso a paso, así que
          | necesita más espacio y menos creatividad que una conversación normal.
          */
-        'max_tokens_practice' => (int) env('OPENAI_MAX_TOKENS_PRACTICE', 800),
+        'max_tokens_practice' => (int) env('OPENAI_MAX_TOKENS_PRACTICE', 650),
         'temperature'          => (float) env('OPENAI_TEMPERATURE', 0.7),
         'temperature_practice' => (float) env('OPENAI_TEMPERATURE_PRACTICE', 0.5),
 
         // Mensajes previos que se envían como contexto en cada turno.
-        'history_messages' => (int) env('OPENAI_HISTORY_MESSAGES', 20),
+        'history_messages' => (int) env('OPENAI_HISTORY_MESSAGES', 10),
 
         // Mensajes que se conservan en el JSONB de la sesión. Acota el tamaño
         // de la fila, no el coste de la petición.
@@ -167,28 +167,23 @@ return [
             'franjas' => [
                 [
                     'hasta' => 2,
-                    'texto' => 'Escribe para alguien de 6 a 8 años que está aprendiendo a leer: '
-                        . 'frases muy cortas, una idea por frase, vocabulario cotidiano y ningún '
-                        . 'tecnicismo. Apóyate en objetos y situaciones que conozca. No uses más '
-                        . 'de tres frases seguidas sin cortar.',
+                    'texto' => 'Lector de 6 a 8 años que aprende a leer: frases muy cortas, una idea '
+                        . 'por frase, vocabulario cotidiano, sin tecnicismos, con ejemplos de '
+                        . 'objetos que conozca.',
                 ],
                 [
                     'hasta' => 4,
-                    'texto' => 'Escribe para alguien de 8 a 10 años que ya lee para aprender: '
-                        . 'frases cortas y directas. Puedes usar un término propio de la materia '
-                        . 'si lo explicas con palabras suyas la primera vez. Las instrucciones, '
-                        . 'en pasos de dos o tres.',
+                    'texto' => 'Lector de 8 a 10 años: frases cortas y directas. Un término de la '
+                        . 'materia, solo si lo explicas con palabras suyas. Pasos de dos o tres.',
                 ],
                 [
                     'hasta' => 6,
-                    'texto' => 'Escribe para alguien de 10 a 12 años que puede seguir una '
-                        . 'explicación de varios pasos: vocabulario académico básico, y puedes '
-                        . 'pedirle que justifique su razonamiento o que compare dos caminos.',
+                    'texto' => 'Lector de 10 a 12 años: explicaciones de varios pasos, vocabulario '
+                        . 'académico básico; puedes pedirle que justifique su razonamiento.',
                 ],
             ],
 
-            'sin_grado' => 'No sabes en qué grado está: usa lenguaje sencillo de primaria, '
-                . 'evita tecnicismos y no des por supuesta una lectura rápida.',
+            'sin_grado' => 'Grado desconocido: lenguaje sencillo de primaria, sin tecnicismos.',
         ],
 
         /*
@@ -219,19 +214,14 @@ return [
         'video_para_estilos' => ['visual', 'auditivo'],
 
         'formato' => [
-            'visual' => 'Organiza la respuesta para que se entienda de un vistazo: pasos '
-                . 'numerados y cortos, una idea por línea, y si ayuda, un esquema sencillo '
-                . 'hecho con texto (por ejemplo con flechas →). Puedes usar uno o dos emojis '
-                . 'como marcadores, no más. Usa comparaciones con cosas que se pueden ver.',
-            'auditivo' => 'Tu respuesta se va a leer en voz alta, así que escribe como si '
-                . 'hablaras: frases cortas y completas, sin tablas, sin viñetas, sin emojis, '
-                . 'sin símbolos ni abreviaturas. Si hay pasos, nómbralos con palabras '
-                . '(«primero», «después», «por último»). Termina repitiendo la idea clave '
-                . 'en una sola frase.',
-            'lector' => 'Estructura la respuesta como un texto para leer con calma: empieza '
-                . 'con la idea principal en una frase, sigue con los detalles en una lista '
-                . 'ordenada y, si aparece una palabra nueva, da su definición. Termina con '
-                . 'una frase de resumen.',
+            'visual' => 'Formato visual: pasos numerados y cortos, una idea por línea, '
+                . 'esquema de texto con flechas (→) si ayuda, máximo dos emojis, '
+                . 'comparaciones con cosas que se ven.',
+            'auditivo' => 'Se leerá en voz alta: escribe como se habla, frases cortas y completas, '
+                . 'sin tablas, sin viñetas, sin emojis, sin símbolos ni abreviaturas. Pasos con '
+                . '«primero», «después», «por último». Cierra con la idea clave en una frase.',
+            'lector' => 'Formato lector: idea principal en una frase, detalles en lista '
+                . 'ordenada, definición de cada palabra nueva y una frase de resumen.',
         ],
     ],
 

@@ -22,4 +22,6 @@
 return [
     'default' => (int) env('PAGINATION_DEFAULT', 20),
     'reports' => (int) env('PAGINATION_REPORTS', 50),
+    // Tope de `?per_page=` (ver Controller::porPagina).
+    'max'     => (int) env('PAGINATION_MAX', 100),
 ];

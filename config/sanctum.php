@@ -76,6 +76,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Precisión de `last_used_at` (segundos)
+    |--------------------------------------------------------------------------
+    |
+    | Sanctum escribe `last_used_at` en cada petición: un UPDATE más en el
+    | camino caliente de toda la API. Con la precisión en 60 s solo se escribe
+    | si el último registro tiene más de un minuto; la caducidad por
+    | inactividad (60 min) no nota la diferencia. En 0 se escribe siempre.
+    | Ver `App\Models\Admin\AccessToken`.
+    */
+    'last_used_granularity' => (int) env('SANCTUM_LAST_USED_GRANULARITY', 60),
+
+    /*
+    |--------------------------------------------------------------------------
     | Token Prefix
     |--------------------------------------------------------------------------
     |

@@ -85,6 +85,13 @@ return [
     'password_verify' => (int) env('RATE_LIMIT_PASSWORD_VERIFY_PER_MINUTE', 10),
 
     /*
+     | Restablecer la contraseña de un alumno (docente o admin). Cada llamada
+     | genera una clave y manda un correo. Más holgado que `password` porque un
+     | docente puede atender a varios alumnos seguidos al empezar la clase.
+     */
+    'student_password_reset' => (int) env('RATE_LIMIT_STUDENT_PASSWORD_RESET_PER_MINUTE', 20),
+
+    /*
      | Carga masiva de estudiantes. El más restrictivo del sistema: cada
      | petición puede procesar 5.000 filas dentro de una transacción.
      */

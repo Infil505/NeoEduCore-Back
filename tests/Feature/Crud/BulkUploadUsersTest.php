@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Crud;
 
+use App\Mail\ContrasenaTemporalMail;
 use App\Mail\PasswordSetupMail;
 use App\Models\Admin\Institution;
 use App\Models\Admin\User;
@@ -58,7 +59,7 @@ class BulkUploadUsersTest extends TestCase
         $this->assertSame(['Nombre completo *', 'Correo institucional *', null], $sheet->rangeToArray('A4:C4')[0]);
     }
 
-    public function test_teachers_are_created_inactive_and_receive_setup_email(): void
+    public function test_teachers_are_created_active_and_receive_a_temporary_password(): void
     {
         Mail::fake();
 
@@ -76,10 +77,12 @@ class BulkUploadUsersTest extends TestCase
         $this->assertDatabaseHas('users', [
             'email'          => 'mario.rojas@ejemplo.com',
             'user_type'      => 'teacher',
-            'status'         => 'inactive',
+            'status'               => 'active',
+            'must_change_password' => true,
             'institution_id' => $institution->id,
         ]);
-        Mail::assertQueued(PasswordSetupMail::class, 2);
+        // El correo con la contraseña temporal sale del job (cola sync en tests).
+        Mail::assertSent(ContrasenaTemporalMail::class, 2);
     }
 
     public function test_invalid_duplicated_and_taken_emails_are_skipped(): void

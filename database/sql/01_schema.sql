@@ -346,7 +346,8 @@ CREATE TABLE public.exams (
     available_until timestamp(0) without time zone,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
-    video_url character varying(255)
+    video_url character varying(255),
+    support_resources jsonb
 );
 
 
@@ -788,7 +789,8 @@ CREATE TABLE public.users (
     status public.user_status DEFAULT 'inactive'::public.user_status NOT NULL,
     remember_token character varying(100),
     created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    must_change_password boolean DEFAULT false NOT NULL
 );
 
 

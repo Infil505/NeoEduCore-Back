@@ -11,6 +11,7 @@ use App\Jobs\NotificarExamenDisponible;
 use App\Models\Admin\Institution;
 use App\Models\Exams\Exam;
 use App\Rules\FechaRazonable;
+use App\Rules\EnlaceDeApoyo;
 use App\Rules\UrlDeVideo;
 use App\Models\Academic\Group;
 use Illuminate\Http\Request;
@@ -135,7 +136,7 @@ class ExamController extends Controller
             $query->where('created_by_teacher_id', $request->string('teacher_id')->toString());
         }
 
-        $paginator = $query->paginate(config('pagination.default'));
+        $paginator = $this->paginar($query, $request);
 
         $this->acotarExamenes($request->user(), $paginator->getCollection());
 
@@ -156,6 +157,12 @@ class ExamController extends Controller
             'instructions' => ['nullable', 'string', 'max:2000'],
             // Opcional: el tutor se lo da al alumnado visual o auditivo.
             'video_url' => ['nullable', 'string', 'max:255', new UrlDeVideo()],
+            // Enlaces de apoyo (vídeo o texto) que el tutor usa al recomendar.
+            // Los pone el docente; el modelo nunca elige una URL.
+            'support_resources' => ['nullable', 'array', 'max:' . config('ai_resources.max_support_resources')],
+            'support_resources.*.type' => ['required', 'in:video,text'],
+            'support_resources.*.url' => ['required', 'string', 'max:255', new EnlaceDeApoyo()],
+            'support_resources.*.title' => ['nullable', 'string', 'max:120'],
             'duration_minutes' => ['required', 'integer', 'between:1,' . $this->limiteDuracion($request->user())],
 
             // Config avanzada RN-EXAM-034/035
@@ -201,6 +208,7 @@ class ExamController extends Controller
             'grade' => (int) $data['grade'],
             'instructions' => $data['instructions'] ?? null,
             'video_url' => $data['video_url'] ?? null,
+            'support_resources' => $data['support_resources'] ?? null,
             'duration_minutes' => (int) $data['duration_minutes'],
 
             'status' => ExamStatus::Draft->value,
@@ -270,6 +278,12 @@ class ExamController extends Controller
             'instructions' => ['nullable', 'string', 'max:2000'],
             // `null` lo quita; omitirlo lo deja como está.
             'video_url' => ['nullable', 'string', 'max:255', new UrlDeVideo()],
+            // Enlaces de apoyo (vídeo o texto) que el tutor usa al recomendar.
+            // Los pone el docente; el modelo nunca elige una URL.
+            'support_resources' => ['nullable', 'array', 'max:' . config('ai_resources.max_support_resources')],
+            'support_resources.*.type' => ['required', 'in:video,text'],
+            'support_resources.*.url' => ['required', 'string', 'max:255', new EnlaceDeApoyo()],
+            'support_resources.*.title' => ['nullable', 'string', 'max:120'],
             'duration_minutes' => ['sometimes', 'integer', 'between:1,' . $this->limiteDuracion($request->user())],
 
             'max_attempts' => ['sometimes', 'integer', 'between:1,10'],
@@ -428,6 +442,12 @@ class ExamController extends Controller
         // así que no puede llegar duplicado.
         if ($next === ExamStatus::Active->value) {
             NotificarExamenDisponible::dispatch($exam->id);
+
+            // En el calendario de cada aula destino.
+            $exam->publicarEnCalendario();
+
+            // Y en vivo, para quien tiene la página abierta (WebSocket).
+            event(\App\Events\ExamenActivado::de($exam));
         }
 
         return response()->json([

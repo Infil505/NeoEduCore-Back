@@ -30,7 +30,7 @@ class NotificationController extends Controller
             $query->whereNull('read_at');
         }
 
-        $pagina = $query->paginate(config('pagination.default'));
+        $pagina = $this->paginar($query, $request);
         $pagina->getCollection()->transform(fn ($n) => [
             'id'         => $n->id,
             'type'       => $n->type,
@@ -44,6 +44,21 @@ class NotificationController extends Controller
             'meta' => [
                 'unread_count' => $user->unreadNotifications()->count(),
             ],
+        ]);
+    }
+
+    /**
+     * GET /api/notifications/unread-count
+     *
+     * Solo el número de la campanita: UNA consulta. La campana de la cabecera
+     * pregunta cada minuto en todas las pantallas; pedir la lista entera cada vez
+     * (paginar + traer filas) costaba el triple y, con un servidor de un solo
+     * hilo, bloqueaba el resto de peticiones. La lista se pide al abrirla.
+     */
+    public function unreadCount(Request $request): JsonResponse
+    {
+        return response()->json([
+            'data' => ['unread_count' => $request->user()->unreadNotifications()->count()],
         ]);
     }
 

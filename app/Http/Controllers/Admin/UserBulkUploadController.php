@@ -14,6 +14,7 @@ use App\Services\Imports\BulkTemplateService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use OpenApi\Attributes as OA;
@@ -145,12 +146,14 @@ class UserBulkUploadController extends Controller
                         'institution_id' => $institutionId,
                         'full_name'      => $fullName,
                         'email'          => $email,
-                        // Contraseña no usable: la define el usuario con el enlace del correo.
+                        // Marcador inservible: la contraseña TEMPORAL real la genera y
+                        // manda por correo el job `EnviarEnlaceDeAlta`.
                         'password_hash'  => $hashInservible,
                         'user_type'      => $role,
-                        // Nace inactiva, igual que en la carga de estudiantes: se
-                        // activa al definir la contraseña desde el correo de alta.
-                        'status'         => UserStatus::Inactive->value,
+                        // Activa desde el alta y obligada a cambiar la clave en su
+                        // primer acceso, igual que en la carga de estudiantes.
+                        'status'         => UserStatus::Active->value,
+                        'must_change_password' => true,
                     ]);
                     $acciones[$lineNumber] = 'crear';
                 }
@@ -168,10 +171,12 @@ class UserBulkUploadController extends Controller
         $emailFailures = [];
         // Cada enlace se prepara en cola (ver EnviarEnlaceDeAlta): hacerlo aquí
         // costaba un hash bcrypt por cuenta y la petición superaba el minuto.
-        foreach ($newUsers as $newUser) {
-            EnviarEnlaceDeAlta::dispatch($newUser->id);
-            $emailsQueued++;
+        // En UN solo INSERT: con la cola en base de datos remota cada `dispatch`
+        // son ~430 ms, y 209 cuentas pasaban de 90 s (el navegador cortaba antes).
+        if ($newUsers !== []) {
+            Queue::bulk(array_map(fn ($u) => new EnviarEnlaceDeAlta($u->id), $newUsers));
         }
+        $emailsQueued = count($newUsers);
 
         // Mismas claves que la carga de estudiantes: el panel muestra un único resumen.
         return response()->json([

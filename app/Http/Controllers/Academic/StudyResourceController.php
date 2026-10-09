@@ -77,7 +77,7 @@ class StudyResourceController extends Controller
             });
         }
 
-        $paginator = $query->paginate(config('pagination.default'));
+        $paginator = $this->paginar($query, $request);
 
         $this->acotarParaEstudiante($request->user(), $paginator->getCollection());
 

@@ -6,6 +6,7 @@ use App\Enums\AdecuacionType;
 use App\Enums\StudentStatus;
 use App\Enums\UserStatus;
 use App\Enums\UserType;
+use App\Jobs\EnviarEnlaceDeAlta;
 use App\Models\Academic\Group;
 use App\Models\Admin\Institution;
 use App\Models\Students\Student;
@@ -14,6 +15,7 @@ use App\Models\Admin\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
@@ -59,9 +61,13 @@ class AuthController extends Controller
             'full_name' => ['required', 'string', 'min:2', 'max:120'],
             'email' => ['required', 'email', 'max:120', 'unique:users,email'],
 
+            // OPCIONAL (09/10/2026). Sin ella, el sistema genera una contraseña
+            // temporal aleatoria y se la manda al usuario por correo. Con ella,
+            // es la temporal que el administrador entrega en mano. En ambos
+            // casos la cuenta nace obligada a cambiarla en su primer acceso.
             // 8+ chars, 1 mayúscula, 1 minúscula, 1 número + confirmación
             'password' => [
-                'required',
+                'nullable',
                 Password::min(8)->mixedCase()->numbers(),
                 'confirmed',
             ],
@@ -117,8 +123,9 @@ class AuthController extends Controller
                 'institution_id' => $institutionId,
                 'full_name' => trim($data['full_name']),
                 'email' => $email,
-                'password_hash' => Hash::make($data['password']),
+                'password_hash' => Hash::make($data['password'] ?? Str::random(40)),
                 'user_type' => $userType,
+                'must_change_password' => true,
 
                 // Activa desde el alta, a diferencia de la carga masiva.
                 //
@@ -168,6 +175,13 @@ class AuthController extends Controller
             return $user;
         });
 
+        // Sin clave del administrador: la temporal se genera y se manda en cola
+        // (fuera de la transacción, ya con la cuenta guardada).
+        $temporalPorCorreo = empty($data['password']);
+        if ($temporalPorCorreo) {
+            EnviarEnlaceDeAlta::dispatch($user->id);
+        }
+
         return response()->json([
             'user' => [
                 'id' => $user->id,
@@ -176,7 +190,9 @@ class AuthController extends Controller
                 'user_type' => $user->user_type->value,
                 'status' => $user->status->value,
                 'institution_id' => $user->institution_id,
+                'must_change_password' => true,
             ],
+            'temporary_password_emailed' => $temporalPorCorreo,
         ], 201);
     }
 
@@ -234,6 +250,7 @@ class AuthController extends Controller
                 'user_type' => $user->user_type->value,
                 'status' => $user->status->value,
                 'institution_id' => $user->institution_id,
+                'must_change_password' => (bool) $user->must_change_password,
             ],
             'token' => $token,
         ]);
@@ -261,6 +278,7 @@ class AuthController extends Controller
                 'user_type' => $user->user_type->value,
                 'status' => $user->status->value,
                 'institution_id' => $user->institution_id,
+                'must_change_password' => (bool) $user->must_change_password,
             ],
         ]);
     }

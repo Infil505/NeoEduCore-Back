@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Academic;
 
+use App\Support\TenantCache;
 use App\Enums\UserType;
 use App\Http\Controllers\Controller;
 use App\Models\Academic\Group;
@@ -49,9 +50,16 @@ class TeacherAssignmentController extends Controller
             }
         }
 
-        return response()->json([
-            'data' => $query->paginate(config('pagination.default')),
-        ]);
+        // Solo administrador (comprobado arriba): una entrada por centro y filtros.
+        $datos = TenantCache::remember(
+            $request->user()->institution_id,
+            TenantCache::CATALOGO,
+            'assignments:' . $this->huellaDeConsulta($request),
+            300,
+            fn () => $this->paginar($query, $request)->toArray()
+        );
+
+        return response()->json(['data' => $datos]);
     }
 
     /**
@@ -126,6 +134,7 @@ class TeacherAssignmentController extends Controller
         // DO NOTHING en conflicto: conserva el assigned_at de la asignación
         // original en lugar de reiniciarlo en cada llamada.
         DB::table('teacher_assignments')->insertOrIgnore($filas);
+        TenantCache::invalidar($request->user()->institution_id, TenantCache::CATALOGO); // sin eventos de Eloquent
 
         return response()->json([
             'message' => 'Asignaciones aplicadas.',
@@ -184,6 +193,7 @@ class TeacherAssignmentController extends Controller
         }
 
         $retiradas = $query->delete();
+        TenantCache::invalidar($request->user()->institution_id, TenantCache::CATALOGO); // el delete del builder no dispara eventos
 
         return response()->json([
             'message' => 'Asignaciones retiradas.',

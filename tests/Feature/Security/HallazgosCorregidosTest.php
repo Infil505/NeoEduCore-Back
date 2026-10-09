@@ -344,8 +344,11 @@ class HallazgosCorregidosTest extends TestCase
         $guion = collect($this->getJson('/api/users?q=' . urlencode('_'))->assertOk()->json('data.data'))->pluck('full_name')->all();
         $this->assertSame(['Beto Guion_Bajo'], $guion);
 
-        // Una búsqueda normal sigue funcionando, sin distinguir mayúsculas.
-        $this->assertCount(1, $this->getJson('/api/users?q=ANA')->assertOk()->json('data.data'));
+        // Una búsqueda normal sigue funcionando, sin distinguir mayúsculas. El término
+        // es único («ANA 100»): con «ANA» a secas coincidían también los nombres que
+        // Faker inventa para el resto del escenario (Susana, Mariana…) y el test fallaba
+        // una de cada varias veces.
+        $this->assertCount(1, $this->getJson('/api/users?q=' . urlencode('ANA 100'))->assertOk()->json('data.data'));
     }
 
     public function test_el_login_con_un_correo_que_no_es_texto_responde_422_no_500(): void

@@ -81,6 +81,7 @@ final class ApiSpec
         'analytics' => '13 · Analíticas',
         'system' => '14 · Configuración del sistema',
         'notifications' => '15 · Notificaciones',
+        'broadcasting' => '16 · Tiempo real (WebSocket)',
         ];
     }
 
@@ -122,6 +123,14 @@ final class ApiSpec
         'PUT api/subjects/{subject}' => ['name' => 'Ciencias Naturales (editado)'],
         'PATCH api/subjects/{subject}' => ['name' => 'Ciencias Naturales (editado)'],
 
+        // Tiempo real: autenticación del canal privado del alumno (Laravel Reverb).
+        // El frontend (Laravel Echo) la llama solo; se documenta aquí para saber qué espera.
+        'POST api/broadcasting/auth' => [
+            'socket_id' => '1234.5678',
+            'channel_name' => 'private-alumno.{{student_id}}',
+            '_comment' => 'Solo el propio alumno (cuenta y centro activos) puede suscribirse a su canal. Evento: examen.activado.',
+        ],
+
         // Grupos
         'POST api/groups' => ['name' => '10-B', 'grade' => 10, 'section' => 'B', 'year' => 2026, 'group_code' => '10B2026'],
         'PUT api/groups/{group}' => ['name' => '10-B (editado)', 'grade' => 10, 'section' => 'B', 'year' => 2026],
@@ -134,6 +143,12 @@ final class ApiSpec
             'instructions' => 'Responder todas las preguntas.',
             // Opcional: el tutor lo entrega al alumnado visual o auditivo. Solo YouTube.
             'video_url' => 'https://www.youtube.com/watch?v=VIDEO_ID',
+            // Opcional: hasta 5 enlaces de apoyo que el tutor usa al recomendar.
+            // type = video (solo YouTube) | text (dominios de la lista blanca).
+            'support_resources' => [
+                ['type' => 'video', 'url' => 'https://www.youtube.com/watch?v=VIDEO_ID', 'title' => 'Repaso en 5 minutos'],
+                ['type' => 'text', 'url' => 'https://es.wikipedia.org/wiki/Fracci%C3%B3n', 'title' => 'Lectura de apoyo'],
+            ],
             'duration_minutes' => 60,
             'max_attempts' => 2,
             'show_results_immediately' => true,

@@ -10,6 +10,7 @@ use App\Models\Academic\StudyResource;
 use App\Services\AI\AiInputSanitizer;
 use App\Services\AI\AiOutputValidator;
 use App\Services\AI\RegistroPorGrado;
+use App\Services\Academic\TopicMasteryService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use OpenAI\Laravel\Facades\OpenAI;
@@ -117,7 +118,12 @@ class AiRecommendationService
      * - No asume subject_id en StudyResource (porque tu modelo actual no lo tiene)
      * - Si hay recursos del tenant, sugiere uno de forma genérica
      */
-    public function generateFromAttempt(ExamAttempt $attempt): array
+    /**
+     * @param  array<int,array{question_id:string,is_correct:bool,pendiente?:bool}>|null  $respuestas
+     *         cómo salió cada pregunta, si quien llama ya lo tiene (la entrega); evita releerlo de la BD
+     * @param  \Illuminate\Support\Collection|null  $preguntas  preguntas del examen por id, junto con `$respuestas`
+     */
+    public function generateFromAttempt(ExamAttempt $attempt, ?array $respuestas = null, ?\Illuminate\Support\Collection $preguntas = null): array
     {
         // `loadMissing` y no `load`: desde el submit el examen ya viene cargado,
         // y `load` lo pedía otra vez a la BD (O3).
@@ -147,6 +153,12 @@ class AiRecommendationService
             ? (float) $attempt->percentage
             : (($attempt->max_score > 0) ? round(((float)$attempt->score / (float)$attempt->max_score) * 100, 2) : 0.0);
 
+        // Lo que de verdad pasó en ESTE examen: cuántas acertó y en qué temas
+        // falló. Con eso las plantillas dejan de decir «repasa los temas donde
+        // fallaste» sin decir cuáles. Sin respuestas cargadas (o preguntas sin
+        // tema) caen al texto de siempre.
+        $detalle = $this->detalleDelIntento($attempt, $pct, $respuestas, $preguntas);
+
         $created = [];
 
         if ($pct >= 85) {
@@ -155,7 +167,7 @@ class AiRecommendationService
                 $subjectId,
                 $examId,
                 'strength',
-                'Excelente desempeño. Continúa reforzando con ejercicios de mayor dificultad y retos adicionales.',
+                $this->textoFortaleza($detalle),
                 null,
                 $attempt->id
             );
@@ -165,7 +177,7 @@ class AiRecommendationService
                 $subjectId,
                 $examId,
                 'action',
-                "Acciones sugeridas:\n- Resuelve 5 ejercicios extra del mismo tema.\n- Explica con tus palabras los conceptos clave.\n- Practica con preguntas de mayor complejidad.",
+                $this->textoAccion($detalle, 'alto'),
                 null,
                 $attempt->id
             );
@@ -175,7 +187,7 @@ class AiRecommendationService
                 $subjectId,
                 $examId,
                 'action',
-                "Buen desempeño.\nAcciones sugeridas:\n- Repasa los temas donde fallaste.\n- Realiza un ejercicio corto por cada tema.\n- Vuelve a intentar preguntas similares.",
+                $this->textoAccion($detalle, 'medio'),
                 null,
                 $attempt->id
             );
@@ -185,14 +197,26 @@ class AiRecommendationService
                 $subjectId,
                 $examId,
                 'weakness',
-                "Se detectan áreas por reforzar.\nAcciones sugeridas:\n- Repasa conceptos base.\n- Practica con ejemplos guiados.\n- Pide apoyo en los temas con más errores.",
+                $this->textoDebilidad($detalle),
                 null,
                 $attempt->id
             );
 
-            $resource = $this->recursoSugerido($attempt);
+            // Primero lo que el docente dejó en el examen; si no hay nada, el catálogo.
+            $delDocente = $this->recursoDelDocente($attempt);
+            $resource   = $delDocente ? null : $this->recursoSugeridoDisponible($attempt, array_column($detalle['temas_fallados'], 'tema'));
 
-            if ($resource) {
+            if ($delDocente) {
+                $created[] = $this->nueva(
+                    $studentUserId,
+                    $subjectId,
+                    $examId,
+                    'resource',
+                    'Tu docente dejó este material para reforzar.',
+                    $delDocente,
+                    $attempt->id
+                );
+            } elseif ($resource) {
                 $created[] = $this->nueva(
                     $studentUserId,
                     $subjectId,
@@ -323,6 +347,17 @@ class AiRecommendationService
             ->map(fn (int $veces, string $tema) => $sanitizer->paraPrompt($tema, 120) . " ({$veces})")
             ->implode(', ');
 
+        // Lo que ya se sabe de este alumno en esta materia: cómo le fue en los
+        // exámenes anteriores y qué temas le cuestan de forma RECURRENTE (no solo
+        // en este intento). Es lo que separa «repasa esto» de «llevas tres pruebas
+        // fallando comparación de fracciones».
+        $historial = $this->historialEnLaMateria($attempt, $sanitizer);
+        $temasRecurrentes = app(TopicMasteryService::class)
+            ->porEstudianteYMateria($studentUserId, $subjectId, 4)
+            ->filter(fn (array $t) => $t['percentage'] < TopicMasteryService::UMBRAL_REFUERZO)
+            ->map(fn (array $t) => $sanitizer->paraPrompt($t['topic'], 120) . " ({$t['correctas']} de {$t['total']})")
+            ->implode(', ');
+
         $prompt = "Genera recomendaciones educativas para un estudiante de " . config('academic.etapa') . " según su intento de examen.\n\n"
             . "Contexto:\n"
             . "- Materia: " . ($sanitizer->paraPrompt($attempt->exam?->subject?->name, 80) ?: 'N/D') . "\n"
@@ -330,6 +365,8 @@ class AiRecommendationService
             . "- Correctas: " . $right->count() . "\n"
             . "- Incorrectas: " . $wrong->count() . "\n"
             . ($temasFallados !== '' ? "- Temas con más fallos: {$temasFallados}\n" : '')
+            . ($historial !== '' ? "- Exámenes anteriores de la materia: {$historial}\n" : '')
+            . ($temasRecurrentes !== '' ? "- Temas que le cuestan de forma recurrente en la materia: {$temasRecurrentes}\n" : '')
             . "- Errores (muestra): " . json_encode($wrongItems, JSON_UNESCAPED_UNICODE) . "\n\n"
             . "Devuelve EXACTAMENTE 4 secciones con este formato:\n"
             . "strength: ...\n"
@@ -355,6 +392,9 @@ class AiRecommendationService
             . "de la pregunta.\n"
             . "- Cuando haya tema o indicador, nómbralo: al estudiante le dice qué repasar y "
             . "al docente con qué parte del programa se corresponde.\n"
+            . "- Si hay exámenes anteriores o temas recurrentes, úsalos: reconoce una mejora real, "
+            . "y si un tema se repite di que ya viene costando y propón algo distinto a lo anterior. "
+            . "No inventes comparaciones que los datos no den.\n"
             . "- No te dirijas al estudiante por su nombre ni se lo preguntes: no lo conoces.\n"
             // El registro llega explícito: este prompt no sabía siquiera el
             // grado, así que un alumno de 1.º recibía el mismo texto que uno
@@ -407,9 +447,24 @@ class AiRecommendationService
         $created[] = $this->create($studentUserId, $subjectId, $examId, 'weakness', $weaknessText, null, $attempt->id, $ia);
         $created[] = $this->create($studentUserId, $subjectId, $examId, 'action', $actionText, null, $attempt->id, $ia);
 
+        // El material que el docente dejó en el examen manda sobre lo que proponga
+        // el modelo y sobre el catálogo: lo eligió una persona, no la IA.
+        $delDocente = $this->recursoDelDocente($attempt);
+
+        if ($delDocente !== null) {
+            $resourceJson = $delDocente;
+        }
+
+        // La URL que traiga el modelo pasó la lista blanca, pero puede estar
+        // inventada o borrada: si no responde, se descarta.
+        // Sin URL viva el recurso no sirve: se pasa al catálogo comprobado.
+        if (isset($resourceJson['url']) && !app(EnlaceDisponible::class)->disponible($resourceJson['url'])) {
+            $resourceJson = null;
+        }
+
         // Si OpenAI no dio JSON útil, intentamos sugerir un recurso del catálogo
         if ($resourceJson === null) {
-            $r = $this->recursoSugerido($attempt);
+            $r = $this->recursoSugeridoDisponible($attempt);
             if ($r) {
                 $resourceJson = [
                     'title' => $r->title,
@@ -425,6 +480,177 @@ class AiRecommendationService
         $created[] = $this->create($studentUserId, $subjectId, $examId, 'resource', $resourceText, $resourceJson, $attempt->id, $ia);
 
         return $created;
+    }
+
+    /**
+     * Los últimos exámenes de la MISMA materia que el alumno entregó antes de
+     * este intento, con su %, en una línea para el prompt. Vacío si es el primero.
+     */
+    private function historialEnLaMateria(ExamAttempt $attempt, AiInputSanitizer $sanitizer): string
+    {
+        $subjectId = $attempt->exam?->subject_id;
+
+        if (!$subjectId) {
+            return '';
+        }
+
+        return DB::table('exam_attempts as ea')
+            ->join('exams as e', 'e.id', '=', 'ea.exam_id')
+            ->where('ea.institution_id', $attempt->institution_id)
+            ->where('ea.student_user_id', $attempt->student_user_id)
+            ->where('e.subject_id', $subjectId)
+            ->where('ea.id', '!=', $attempt->id)
+            ->where('ea.max_score', '>', 0)
+            ->whereNotNull('ea.submitted_at')
+            ->orderByDesc('ea.submitted_at')
+            ->limit(3)
+            ->get(['e.title', 'ea.score', 'ea.max_score'])
+            ->map(fn ($f) => '«' . ($sanitizer->paraPrompt($f->title, 70) ?: 'Examen') . '» ' . round((float) $f->score / (float) $f->max_score * 100) . ' %')
+            ->implode('; ');
+    }
+
+    /**
+     * Qué pasó en un intento: cuántas acertó y en qué temas falló, para que las
+     * recomendaciones hablen de ESTE examen. Cadenas ya recortadas, listas para
+     * mostrar (las ve el estudiante, no el modelo).
+     *
+     * @return array{titulo:string,total:int,correctas:int,incorrectas:int,pct:float,
+     *               temas_fallados:array<int,array{tema:string,fallos:int,total:int,indicador:?string}>,
+     *               temas_logrados:array<int,string>}
+     */
+    private function detalleDelIntento(ExamAttempt $attempt, float $pct, ?array $filas = null, ?\Illuminate\Support\Collection $preguntas = null): array
+    {
+        // Misma forma venga de memoria (la entrega) o de la BD: acierto, pregunta
+        // y si la respuesta espera revisión del docente.
+        if ($filas !== null && $preguntas !== null) {
+            $attempt->loadMissing('exam');
+            $respuestas = collect($filas)->map(fn (array $f) => (object) [
+                'is_correct' => $f['is_correct'],
+                'pendiente'  => (bool) ($f['pendiente'] ?? false),
+                'question'   => $preguntas->get($f['question_id']),
+            ]);
+        } else {
+            $attempt->loadMissing(['exam', 'answers.question']);
+            $respuestas = collect($attempt->answers)->map(fn ($a) => (object) [
+                'is_correct' => $a->is_correct,
+                'pendiente'  => ($a->review_status?->value ?? $a->review_status) === 'needs_review',
+                'question'   => $a->question,
+            ]);
+        }
+
+        // Una respuesta abierta que espera revisión no es un fallo todavía: no se
+        // cuenta ni como acierto ni como error (la nota es provisional).
+        $respuestas = $respuestas->reject(fn ($a) => $a->pendiente)->values();
+
+        $porTema = $respuestas
+            ->filter(fn ($a) => $a->question && trim((string) $a->question->topic) !== '')
+            ->groupBy(fn ($a) => mb_strtolower(trim((string) $a->question->topic)));
+
+        $fallados = $porTema->map(function ($grupo) {
+            $fallos = $grupo->filter(fn ($a) => $a->is_correct === false);
+            $indicador = trim((string) $fallos->map(fn ($a) => $a->question->indicator)->filter()->first());
+
+            return [
+                'tema'      => mb_substr(trim((string) $grupo->first()->question->topic), 0, 80),
+                'fallos'    => $fallos->count(),
+                'total'     => $grupo->count(),
+                'indicador' => $indicador !== '' ? mb_substr($indicador, 0, 120) : null,
+            ];
+        })->filter(fn (array $t) => $t['fallos'] > 0)->sortByDesc('fallos')->values()->all();
+
+        $logrados = $porTema
+            ->filter(fn ($grupo) => $grupo->every(fn ($a) => $a->is_correct === true))
+            ->map(fn ($grupo) => mb_substr(trim((string) $grupo->first()->question->topic), 0, 80))
+            ->values()->all();
+
+        return [
+            'titulo'         => mb_substr((string) ($attempt->exam?->title ?? 'el examen'), 0, 120),
+            'total'          => $respuestas->count(),
+            'correctas'      => $respuestas->filter(fn ($a) => $a->is_correct === true)->count(),
+            'incorrectas'    => $respuestas->filter(fn ($a) => $a->is_correct === false)->count(),
+            'pct'            => $pct,
+            'temas_fallados' => $fallados,
+            'temas_logrados' => $logrados,
+        ];
+    }
+
+    /** @param array<string,mixed> $d */
+    private function textoFortaleza(array $d): string
+    {
+        $base = $d['total'] > 0
+            ? "Excelente en «{$d['titulo']}»: acertaste {$d['correctas']} de {$d['total']} preguntas ({$d['pct']} %)."
+            : 'Excelente desempeño.';
+
+        $logrados = array_slice($d['temas_logrados'], 0, 3);
+
+        return $base . ($logrados !== [] ? ' Dominas bien: ' . implode(', ', $logrados) . '.' : '')
+            . ' Continúa reforzando con ejercicios de mayor dificultad y retos adicionales.';
+    }
+
+    /** @param array<string,mixed> $d  $nivel: 'alto' (≥ 85 %) o 'medio' (70–84 %) */
+    private function textoAccion(array $d, string $nivel): string
+    {
+        $fallados = array_slice($d['temas_fallados'], 0, 2);
+
+        if ($nivel === 'alto') {
+            $primera = $fallados !== []
+                ? '- Repasa solo lo que falló: ' . implode(', ', array_map(fn ($t) => $t['tema'], $fallados)) . '.'
+                : '- Resuelve 5 ejercicios extra del mismo tema.';
+
+            return "Acciones sugeridas:\n{$primera}\n- Explica con tus palabras los conceptos clave.\n- Practica con preguntas de mayor complejidad.";
+        }
+
+        if ($fallados === []) {
+            return "Buen desempeño.\nAcciones sugeridas:\n- Repasa los temas donde fallaste.\n- Realiza un ejercicio corto por cada tema.\n- Vuelve a intentar preguntas similares.";
+        }
+
+        $lineas = array_map(function (array $t) {
+            $ind = $t['indicador'] ? " ({$t['indicador']})" : '';
+
+            return "- Repasa «{$t['tema']}»{$ind}: fallaste {$t['fallos']} de {$t['total']}. Haz un ejercicio corto de ese tema.";
+        }, $fallados);
+
+        return "Buen desempeño en «{$d['titulo']}» ({$d['pct']} %).\nAcciones sugeridas:\n" . implode("\n", $lineas)
+            . "\n- Vuelve a intentar preguntas parecidas a las que fallaste.";
+    }
+
+    /** @param array<string,mixed> $d */
+    private function textoDebilidad(array $d): string
+    {
+        $fallados = array_slice($d['temas_fallados'], 0, 3);
+
+        if ($fallados === []) {
+            $cabecera = $d['total'] > 0
+                ? "En «{$d['titulo']}» acertaste {$d['correctas']} de {$d['total']} ({$d['pct']} %). Se detectan áreas por reforzar."
+                : 'Se detectan áreas por reforzar.';
+
+            return "{$cabecera}\nAcciones sugeridas:\n- Repasa conceptos base.\n- Practica con ejemplos guiados.\n- Pide apoyo en los temas con más errores.";
+        }
+
+        $costo = implode(', ', array_map(fn ($t) => "{$t['tema']} ({$t['fallos']} de {$t['total']})", $fallados));
+        $lineas = array_map(function (array $t) {
+            $ind = $t['indicador'] ? " — {$t['indicador']}" : '';
+
+            return "- Repasa «{$t['tema']}»{$ind}: empieza con ejemplos resueltos y luego haz 3 ejercicios.";
+        }, $fallados);
+
+        return "En «{$d['titulo']}» acertaste {$d['correctas']} de {$d['total']} ({$d['pct']} %). Lo que más te costó: {$costo}.\n"
+            . "Acciones sugeridas:\n" . implode("\n", $lineas) . "\n- Pide apoyo en los temas con más errores.";
+    }
+
+    /**
+     * El enlace de apoyo que el docente puso en el examen, según el estilo del
+     * alumno (ver `FormatoPorEstilo::recursoDeApoyo()`), o null.
+     */
+    private function recursoDelDocente(ExamAttempt $attempt): ?array
+    {
+        $attempt->loadMissing(['student', 'exam']);
+
+        return app(FormatoPorEstilo::class)->recursoDeApoyo(
+            $attempt->student?->learning_style,
+            $attempt->exam,
+            $attempt->student
+        );
     }
 
     /**
@@ -453,7 +679,37 @@ class AiRecommendationService
      * ninguno: el texto de la recomendación ya es útil sin él, pero el alumno
      * agradece un punto de partida.
      */
-    private function recursoSugerido(ExamAttempt $attempt): ?StudyResource
+    /**
+     * El recurso del catálogo que `recursoSugerido()` elegiría, pero que además
+     * responda: si el primero está roto se descarta y se prueba el siguiente,
+     * hasta 3 veces. Null si ninguno está vivo (la recomendación sale entonces
+     * sin enlace, que es mejor que con uno roto).
+     */
+    /** @param array<int,string> $temas temas que falló, para preferir un recurso que hable de ellos */
+    private function recursoSugeridoDisponible(ExamAttempt $attempt, array $temas = []): ?StudyResource
+    {
+        $enlaces = app(EnlaceDisponible::class);
+        $rotos   = [];
+
+        for ($i = 0; $i < 3; $i++) {
+            $r = $this->recursoSugerido($attempt, $rotos, $temas);
+
+            if ($r === null) {
+                return null;
+            }
+
+            if ($enlaces->disponible($r->url)) {
+                return $r;
+            }
+
+            $rotos[] = $r->id;
+        }
+
+        return null;
+    }
+
+    /** @param array<int,string> $excluir ids de recursos ya descartados por rotos */
+    private function recursoSugerido(ExamAttempt $attempt, array $excluir = [], array $temas = []): ?StudyResource
     {
         $attempt->loadMissing(['student', 'exam']);
         $grade     = $attempt->student?->grade;
@@ -463,7 +719,7 @@ class AiRecommendationService
         // está matriculado ahora (misma regla que StudyResource::scopeVisibleTo).
         // Antes valía cualquier recurso del centro —de otros docentes o sin aula—
         // y el enlace sugerido le daba 404 al abrirlo.
-        $visibles = fn () => StudyResource::query()->whereHas('groups', fn ($g) => $g->whereIn(
+        $visibles = fn () => StudyResource::query()->whereNotIn('id', $excluir)->whereHas('groups', fn ($g) => $g->whereIn(
             'groups.id',
             DB::table('group_students')
                 ->select('group_id')
@@ -485,6 +741,24 @@ class AiRecommendationService
                 ->where(fn ($w) => $w->whereNull('grade_min')->orWhere('grade_min', '<=', $grade))
                 ->where(fn ($w) => $w->whereNull('grade_max')->orWhere('grade_max', '>=', $grade));
         };
+
+        if ($subjectId && $temas !== []) {
+            // Aún mejor: un recurso de la materia cuyo título o descripción habla
+            // del tema que falló (`study_resources` no tiene columna de tema; el
+            // nombre es lo único que lo une). Los comodines de LIKE van escapados.
+            $delTema = $porDificultad($delGrado(
+                $visibles()->where('subject_id', $subjectId)->where(function ($w) use ($temas) {
+                    foreach (array_slice($temas, 0, 3) as $tema) {
+                        $t = addcslashes($tema, '%_\\');
+                        $w->orWhere('title', 'ilike', "%{$t}%")->orWhere('description', 'ilike', "%{$t}%");
+                    }
+                })
+            ))->first();
+
+            if ($delTema) {
+                return $delTema;
+            }
+        }
 
         if ($subjectId) {
             // Lo mejor: materia y grado.

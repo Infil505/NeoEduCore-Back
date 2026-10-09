@@ -7,22 +7,21 @@ use App\Http\Controllers\Controller;
 use App\Enums\StudentStatus;
 use App\Enums\UserStatus;
 use App\Enums\UserType;
+use App\Jobs\EnviarEnlaceDeAlta;
 use App\Enums\AdecuacionType;
 use App\Enums\LearningStyle;
 use App\Models\Academic\Group;
-use App\Models\Admin\User;
 use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
-use App\Jobs\EnviarEnlaceDeAlta;
 use App\Services\Imports\BulkFileReader;
 use App\Services\Imports\BulkPreview;
-use App\Services\Imports\SimulacionRevertida;
 use App\Services\Imports\BulkTemplateService;
-use App\Services\Students\EnrollmentService;
+use App\Services\Students\StudentBulkImporter;
+use App\Jobs\ProcesarCargaMasivaEstudiantes;
+use App\Notifications\CargaMasivaEstudiantes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
@@ -44,18 +43,6 @@ class StudentController extends Controller
      | educativo de un pais concreto y la capacidad de un servidor concreto,
      | no reglas del programa.
      */
-
-    // Columnas de PERFIL (tabla students) que se vuelcan al modelo Student.
-    // institution_id se ignora por seguridad (lo asigna TenantScoped desde el tenant).
-    //
-    // `grade`, `section` y `group_code` NO están: desde el 08/08/2026 se derivan
-    // del aula. Si vinieran del archivo podrían contradecirla —«aula=11B2026,
-    // section=A»— y la ficha volvería a desviarse de la matrícula real, que es
-    // justo el problema que la columna `aula` viene a cerrar.
-    private const ALLOWED_COLUMNS = [
-        'user_id', 'student_code', 'status',
-        'birth_date', 'parent_name', 'parent_email', 'adecuacion_type',
-    ];
 
     // Columnas que muestra la plantilla. full_name/email son del USUARIO (tabla users)
     // y solo se usan para crear la cuenta; no se vuelcan al modelo Student.
@@ -89,7 +76,7 @@ class StudentController extends Controller
         }
 
         return response()->json([
-            'data' => $query->paginate(config('pagination.default')),
+            'data' => $this->paginar($query, $request),
         ]);
     }
 
@@ -202,13 +189,13 @@ class StudentController extends Controller
             new OA\Response(response: 422, description: 'Archivo inválido o supera límites'),
         ]
     )]
-    public function bulkUpload(Request $request, BulkFileReader $reader, EnrollmentService $enrollment)
+    public function bulkUpload(Request $request, BulkFileReader $reader, StudentBulkImporter $importer)
     {
         $maxKb = config('bulk.students.max_mb') * 1024;
 
         $request->validate([
             'file'    => ['required', 'file', "mimes:csv,txt,xlsx", "max:{$maxKb}"],
-            // Vista previa: se procesa todo y se deshace (ver BulkPreview).
+            // Vista previa: valida todo y no escribe nada (ver BulkPreview).
             'dry_run' => ['sometimes', 'boolean'],
         ]);
         $simular = $request->boolean('dry_run');
@@ -258,373 +245,59 @@ class StudentController extends Controller
             ], 422);
         }
 
-        // Aulas de la institución indexadas por código en mayúsculas: una sola
-        // consulta en lugar de una por fila.
-        $grupos = Group::query()->get();
-        $aulasPorCodigo = $grupos
-            ->filter(fn ($g) => trim((string) $g->group_code) !== '')
-            ->keyBy(fn ($g) => Str::upper(trim($g->group_code)));
-
-        // Por sección puede haber más de un grupo (la misma «6-1» en dos años):
-        // se prefiere el del año en curso; si aun así hay varios, la fila es
-        // ambigua y se rechaza en vez de adivinar.
-        $anioActual = (string) now()->year;
-        $aulasPorSeccion = $grupos
-            ->filter(fn ($g) => trim((string) $g->section) !== '')
-            ->groupBy(fn ($g) => Str::upper(trim((string) $g->section)))
-            ->map(function ($candidatos) use ($anioActual) {
-                $delAnio = $candidatos->filter(fn ($g) => (string) $g->year === $anioActual);
-
-                return $delAnio->isNotEmpty() ? $delAnio->values() : $candidatos->values();
-            });
-
-        if ($grupos->isEmpty()) {
+        // Sin aulas no hay dónde matricular a nadie: se avisa ya, no al terminar.
+        if (!Group::query()->exists()) {
             return response()->json([
                 'message' => 'Tu institución todavía no tiene aulas. '
                     . 'Créalas primero en Académico → Estructura antes de cargar estudiantes.',
             ], 422);
         }
 
-        $created         = 0;
-        $updated         = 0;
-        $usersCreated    = 0;
-        $matriculados    = 0; // altas de matrícula (estudiante nuevo en su aula)
-        $reasignados     = 0; // cambios de aula sobre estudiantes que ya existían
-        $aulasTocadas    = []; // group_id → recuento de student_count al final
-        $newUsers        = []; // usuarios creados → reciben enlace de contraseña tras el commit
-        $errors          = [];
-        $acciones        = []; // fila → 'crear' | 'actualizar' (para la vista previa)
-        $correosVistos   = []; // correo → primera fila donde aparece
-        $validAdeValues  = array_map(fn($c) => $c->value, AdecuacionType::cases());
-        $validStatValues = array_map(fn($c) => $c->value, StudentStatus::cases());
-
-        // Todo lo creado pertenece a la institución del usuario autenticado.
         $institutionId = $request->user()->institution_id;
 
-        // Hash de una contraseña aleatoria que nadie conoce: deja las cuentas nuevas
-        // inservibles hasta que su dueño fije la suya con el enlace del correo.
-        // Se calcula UNA vez por carga y no por fila: con BCRYPT_ROUNDS=12 cada hash
-        // cuesta ~180 ms, y 300 filas tardaban casi un minuto —el navegador cortaba
-        // la petición antes de terminar—. Compartirlo no debilita nada: el secreto
-        // se descarta aquí mismo y no hay forma de entrar con él.
-        $hashInservible = Hash::make(Str::random(40));
-
-        try {
-            DB::transaction(function () use (
-                $rows, $validAdeValues, $validStatValues, $institutionId, $aulasPorCodigo, $aulasPorSeccion,
-                &$created, &$updated, &$errors, &$usersCreated, &$newUsers,
-                &$matriculados, &$reasignados, &$aulasTocadas, $enrollment, &$acciones, $simular, &$correosVistos, $hashInservible
-            ) {
-                foreach ($rows as $idx => $row) {
-                    $lineNumber = $idx; // los parsers indexan por fila del archivo
-
-                    $row = Arr::map($row, fn($v) => is_string($v) ? trim($v) : $v);
-
-                    // --- adecuacion_type ---
-                    if (!empty($row['adecuacion_type'])) {
-                        $val = Str::lower(Str::ascii($row['adecuacion_type'])); // «evaluación» = «evaluacion»
-                        if (!in_array($val, $validAdeValues, true)) {
-                            $errors[] = "Fila {$lineNumber}: «Tipo de adecuación» inválido «{$row['adecuacion_type']}». Valores aceptados: " . implode(', ', $validAdeValues) . '.';
-                            continue;
-                        }
-                        $row['adecuacion_type'] = $val;
-                    } else {
-                        $row['adecuacion_type'] = null;
-                    }
-
-                    // --- status (activo/inactivo/suspendido, o en inglés) ---
-                    if (!empty($row['status'])) {
-                        $estado = BulkTemplateService::statusValue((string) $row['status']);
-                        if (!in_array($estado, $validStatValues, true)) {
-                            $errors[] = "Fila {$lineNumber}: «Estado» inválido «{$row['status']}». Valores aceptados: " . implode(', ', array_keys(BulkTemplateService::STATUS_LABELS)) . '.';
-                            continue;
-                        }
-                        $row['status'] = $estado;
-                    }
-
-                    // --- aula (obligatoria) ---
-                    //
-                    // El grupo tiene que existir ya: la carga masiva no crea aulas.
-                    // Un typo en el código crearía un grupo fantasma con un alumno
-                    // dentro, invisible para el docente que sí tiene asignada la
-                    // buena. Las aulas las crea el admin con POST /api/groups.
-                    if (array_key_exists('seccion', $row)) {
-                        $seccion = Str::upper(trim((string) ($row['seccion'] ?? '')));
-
-                        if ($seccion === '') {
-                            $errors[] = "Fila {$lineNumber}: «Sección» es obligatoria (por ejemplo 6-1).";
-                            continue;
-                        }
-
-                        $candidatos = $aulasPorSeccion->get($seccion);
-
-                        if (!$candidatos) {
-                            $disponibles = $aulasPorSeccion->keys()->take(10)->implode(', ');
-                            $errors[] = "Fila {$lineNumber}: la sección «{$row['seccion']}» no existe en tu institución. Secciones disponibles: {$disponibles}.";
-                            continue;
-                        }
-
-                        if ($candidatos->count() > 1) {
-                            $errors[] = "Fila {$lineNumber}: la sección «{$row['seccion']}» corresponde a varias aulas ("
-                                . $candidatos->pluck('name')->implode(', ') . '). Revisa las secciones en Académico.';
-                            continue;
-                        }
-
-                        $aula = $candidatos->first();
-                    } else {
-                        $codigoAula = Str::upper(trim((string) ($row['aula'] ?? '')));
-
-                        if ($codigoAula === '') {
-                            $errors[] = "Fila {$lineNumber}: «Aula» es obligatoria. Indica el código del grupo (por ejemplo 61).";
-                            continue;
-                        }
-
-                        $aula = $aulasPorCodigo->get($codigoAula);
-
-                        if (!$aula) {
-                            $disponibles = $aulasPorCodigo->keys()->take(8)->implode(', ');
-                            $errors[] = "Fila {$lineNumber}: el aula «{$row['aula']}» no existe en tu institución. Aulas disponibles: {$disponibles}.";
-                            continue;
-                        }
-                    }
-
-                    // --- parent_email ---
-                    if (!empty($row['parent_email']) && !filter_var($row['parent_email'], FILTER_VALIDATE_EMAIL)) {
-                        $errors[] = "Fila {$lineNumber}: «Correo del tutor» inválido «{$row['parent_email']}».";
-                        continue;
-                    }
-
-                    // --- birth_date ---
-                    if (!empty($row['birth_date'])) {
-                        $d = \DateTime::createFromFormat('Y-m-d', $row['birth_date']);
-                        if (!$d || $d->format('Y-m-d') !== $row['birth_date']) {
-                            $errors[] = "Fila {$lineNumber}: «Fecha de nacimiento» inválida «{$row['birth_date']}». Formato esperado: AAAA-MM-DD.";
-                            continue;
-                        }
-                    }
-
-                    // --- email (si viene) ---
-                    $email = !empty($row['email']) ? Str::lower($row['email']) : null;
-                    if ($email !== null && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                        $errors[] = "Fila {$lineNumber}: «Correo institucional» inválido «{$row['email']}».";
-                        continue;
-                    }
-
-                    // El mismo correo dos veces en el archivo es un error de quien
-                    // lo armó: la segunda fila encontraba la cuenta recién creada
-                    // por la primera y la «actualizaba», cambiándola de aula sin aviso.
-                    if ($email !== null && isset($correosVistos[$email])) {
-                        $errors[] = "Fila {$lineNumber}: el correo «{$email}» está repetido en el archivo (fila {$correosVistos[$email]}).";
-                        continue;
-                    }
-                    if ($email !== null) {
-                        $correosVistos[$email] = $lineNumber;
-                    }
-
-                    // --- Resolver el USUARIO dueño del perfil (siempre dentro del tenant) ---
-                    $user = null;
-                    if (!empty($row['user_id'])) {
-                        $user = User::where('institution_id', $institutionId)
-                            ->where('id', $row['user_id'])
-                            ->first();
-                        if (!$user) {
-                            $errors[] = "Fila {$lineNumber}: el «ID de usuario» «{$row['user_id']}» no existe en tu institución.";
-                            continue;
-                        }
-                    } elseif ($email) {
-                        $user = User::where('institution_id', $institutionId)
-                            ->where('email', $email)
-                            ->first();
-                    }
-
-                    // --- Buscar estudiante existente (Student ya está scoped por tenant) ---
-                    $student = null;
-                    if ($user) {
-                        $student = Student::where('user_id', $user->id)->first();
-                    }
-                    if (!$student && !empty($row['student_code'])) {
-                        $student = Student::where('student_code', $row['student_code'])->first();
-                        if ($student && !$user) {
-                            $user = User::where('institution_id', $institutionId)
-                                ->where('id', $student->user_id)
-                                ->first();
-                        }
-                    }
-
-                    // --- student_code único ---
-                    //
-                    // Se comprueba ANTES de crear la cuenta: si se hiciera después,
-                    // una fila rechazada por código duplicado dejaría un usuario
-                    // huérfano —sin perfil de estudiante, capaz de autenticarse y
-                    // con el email ya consumido—.
-                    //
-                    // Acotado al tenant, que es lo que exige la constraint
-                    // `students_institucion_codigo_unique (institution_id,
-                    // student_code)`. Hasta el 08/08/2026 la constraint era global y
-                    // esta comprobación no: un código ya usado por otro centro
-                    // pasaba el filtro y reventaba contra la base, y como en
-                    // PostgreSQL una violación aborta la transacción entera se
-                    // perdía el archivo completo. Si se vuelven a separar, el
-                    // síntoma es ese — comprobación y constraint tienen que hablar
-                    // del mismo alcance.
-                    if (!empty($row['student_code'])) {
-                        $duplicateQuery = Student::where('student_code', $row['student_code']);
-                        if ($student) {
-                            $duplicateQuery->where('user_id', '!=', $student->user_id);
-                        }
-                        if ($duplicateQuery->exists()) {
-                            $errors[] = "Fila {$lineNumber}: el «Código de estudiante» «{$row['student_code']}» ya está en uso.";
-                            continue;
-                        }
-                    }
-
-                    // --- Si no hay usuario ni estudiante: crear cuenta nueva (requiere email + full_name) ---
-                    if (!$user && !$student) {
-                        if (!$email) {
-                            $errors[] = "Fila {$lineNumber}: para crear un estudiante nuevo se requiere el «Correo institucional» (o un «ID de usuario» existente).";
-                            continue;
-                        }
-                        $fullName = trim((string) ($row['full_name'] ?? ''));
-                        if ($fullName === '') {
-                            $errors[] = "Fila {$lineNumber}: «Nombre completo» es obligatorio para crear el usuario.";
-                            continue;
-                        }
-                        if (User::where('email', $email)->exists()) {
-                            $errors[] = "Fila {$lineNumber}: el correo «{$email}» ya está en uso.";
-                            continue;
-                        }
-
-                        $user = User::create([
-                            'institution_id' => $institutionId,
-                            'full_name'      => $fullName,
-                            'email'          => $email,
-                            // Contraseña no usable: el usuario la define vía el enlace que recibe por correo.
-                            'password_hash'  => $hashInservible,
-                            'user_type'      => UserType::Student->value,
-
-                            // Nace INACTIVA: la activa su dueño al definir la
-                            // contraseña desde el correo de alta. Antes se creaba
-                            // ya activa, así que en el panel no había forma de
-                            // distinguir a quien nunca entró de quien lleva meses
-                            // usando la plataforma — y aun así no podía entrar,
-                            // porque su contraseña es aleatoria.
-                            'status'         => UserStatus::Inactive->value,
-                        ]);
-
-                        $usersCreated++;
-                        $newUsers[] = $user;
-                    }
-
-                    // institution_id nunca se toma del archivo — lo asigna TenantScoped.
-                    // El user_id del perfil siempre proviene del usuario resuelto/creado.
-                    $data = Arr::only($row, self::ALLOWED_COLUMNS);
-                    // Quitar celdas vacías: las columnas nullable quedan en NULL (no en '')
-                    // y las que tienen default (status, exams_completed_count) lo aplican.
-                    $data = array_filter($data, fn($v) => $v !== '' && $v !== null);
-                    $data['user_id'] = $user?->id ?? $student->user_id;
-
-                    // Los campos desnormalizados de la ficha salen del aula, nunca
-                    // del archivo: así no pueden contradecir la matrícula.
-                    $data['grade']      = $aula->grade;
-                    $data['section']    = $aula->section;
-                    $data['group_code'] = $aula->group_code;
-
-                    try {
-                        if ($student) {
-                            // No reasignar la PK (user_id) al actualizar
-                            $student->fill(Arr::except($data, ['user_id']));
-                            $student->save();
-                            $updated++;
-                            $acciones[$lineNumber] = 'actualizar';
-                        } else {
-                            $student = Student::create($data);
-                            $created++;
-                            $acciones[$lineNumber] = 'crear';
-                        }
-
-                        // --- Matrícula en el aula ---
-                        $studentUserId = $student->user_id;
-
-                        // Acotado al centro: sin esto, una matrícula de otra
-                        // institución —que el modelo de datos no debería permitir,
-                        // pero la consulta no comprobaba— haría que el recuento de
-                        // más abajo escribiera en un grupo ajeno.
-                        $aulaActual = DB::table('group_students')
-                            ->where('institution_id', $institutionId)
-                            ->where('student_user_id', $studentUserId)
-                            ->whereNull('left_at')
-                            ->value('group_id');
-
-                        if ($aulaActual === $aula->id) {
-                            // Ya está donde debe: nada que hacer.
-                        } elseif ($aulaActual === null) {
-                            $enrollment->abrirMatricula($studentUserId, $aula->id, $institutionId);
-                            $aulasTocadas[$aula->id] = true;
-                            $matriculados++;
-                        } else {
-                            // Cambio de aula. Solo puede ocurrir aquí, sobre un
-                            // estudiante que ya existía: la creación abre matrícula,
-                            // el traslado se hace actualizando su fila.
-                            DB::table('group_students')
-                                ->where('institution_id', $institutionId)
-                                ->where('student_user_id', $studentUserId)
-                                ->whereNull('left_at')
-                                ->update(['left_at' => now()]);
-
-                            $enrollment->abrirMatricula($studentUserId, $aula->id, $institutionId);
-
-                            $aulasTocadas[$aula->id]   = true;
-                            $aulasTocadas[$aulaActual] = true;
-                            $reasignados++;
-                        }
-                    } catch (\Exception $e) {
-                        $errors[] = "Fila {$lineNumber}: error al guardar — " . $e->getMessage();
-                    }
-
-                    unset($row, $data);
-                }
-
-                if ($simular) {
-                    BulkPreview::revertir();
-                }
-            });
-        } catch (SimulacionRevertida) {
-            return response()->json(BulkPreview::respuesta($rows, $errors, $acciones, ['full_name', 'email', 'seccion', 'aula']));
+        // La vista previa es solo lectura y rápida (sin escrituras): se responde
+        // en la misma petición.
+        if ($simular) {
+            return response()->json($importer->importar($rows, $institutionId, true));
         }
 
-        // Recuento de las aulas afectadas (RN-STU-012). Una sola pasada al
-        // final: durante el bucle el contador cambiaría en cada fila.
-        foreach (array_keys($aulasTocadas) as $groupId) {
-            $enrollment->recontarAula($groupId, $institutionId);
-        }
+        // La carga real se hace en segundo plano. Procesar cientos de filas
+        // contra una base remota supera cualquier timeout de navegador o proxy,
+        // así que aquí solo se recibe y se acepta; el resultado llega como aviso
+        // en la app (campana) y se puede consultar con
+        // GET /api/students/bulk-upload/{import_id}.
+        $aviso = new CargaMasivaEstudiantes(totalRows: $totalRows);
+        $aviso->id = (string) Str::uuid();
+        $request->user()->notify($aviso);
 
-        // Encolar el enlace de "establece tu contraseña" a los usuarios creados.
-        // FUERA de la transacción: el envío real lo hace el worker; la request no se bloquea.
-        $emailsQueued  = 0;
-        $emailFailures = [];
-        // Cada enlace se prepara en cola (ver EnviarEnlaceDeAlta): hacerlo aquí
-        // costaba un hash bcrypt por cuenta y la petición superaba el minuto.
-        foreach ($newUsers as $newUser) {
-            EnviarEnlaceDeAlta::dispatch($newUser->id);
-            $emailsQueued++;
-        }
+        ProcesarCargaMasivaEstudiantes::dispatch(
+            $request->user()->id,
+            $institutionId,
+            $aviso->id,
+            $rows,
+        );
 
         return response()->json([
-            'total_rows'     => $totalRows,
-            'created'        => $created,
-            'updated'        => $updated,
-            'users_created'  => $usersCreated,
-            // Matrícula: altas nuevas y traslados. Se informan por separado
-            // porque un traslado no anunciado es un cambio silencioso de a qué
-            // docente pasa a ver el expediente del estudiante.
-            'matriculados'   => $matriculados,
-            'reasignados'    => $reasignados,
-            'aulas_afectadas' => count($aulasTocadas),
-            'emails_queued'  => $emailsQueued,
-            'email_failures' => $emailFailures,
-            'skipped'        => count($errors),
-            'errors'         => $errors,
+            'status'      => CargaMasivaEstudiantes::EN_COLA,
+            'import_id'   => $aviso->id,
+            'total_rows'  => $totalRows,
+            'message'     => 'Archivo recibido. La carga se está procesando; te avisaremos cuando esté lista.',
         ]);
+    }
+
+    /**
+     * GET /api/students/bulk-upload/{import_id} — estado y resultado de una
+     * carga en segundo plano. Solo la ve quien la subió: se busca entre SUS
+     * avisos, igual que el resto de notificaciones.
+     */
+    public function bulkUploadStatus(Request $request, string $import_id)
+    {
+        $aviso = $request->user()->notifications()
+            ->where('id', $import_id)
+            ->where('type', CargaMasivaEstudiantes::TIPO)
+            ->firstOrFail();
+
+        return response()->json(['id' => $aviso->id] + $aviso->data);
     }
 
     #[OA\Get(
@@ -647,6 +320,49 @@ class StudentController extends Controller
         ])['format'] ?? 'csv';
 
         return $templates->download(UserType::Student->value, $format);
+    }
+
+    /**
+     * POST /api/students/{student_user_id}/reset-password
+     *
+     * El docente (de SUS alumnos) o el administrador restablece la contraseña de
+     * un estudiante. El sistema genera una temporal aleatoria y la manda al
+     * correo del estudiante; **quien lo pide nunca la ve**. El estudiante entra
+     * con ella y el frontend le exige elegir una propia.
+     *
+     * Aparte de `PATCH /users/{user}/reset-password` (solo admin, que sí fija una
+     * clave escrita a mano): aquí el docente no elige ni conoce nada.
+     */
+    public function resetPassword(Request $request, string $student_user_id)
+    {
+        $student = Student::with('user')->where('user_id', $student_user_id)->firstOrFail();
+
+        if ($this->esDocente($request->user()) && !$this->docenteAlcanzaEstudiante($request->user(), $student_user_id)) {
+            return $this->noAutorizadoPorAsignacion();
+        }
+
+        $cuenta = $student->user;
+
+        if ($cuenta === null || $cuenta->user_type !== UserType::Student) {
+            abort(404);
+        }
+
+        // A una cuenta suspendida no se le entrega acceso: la bloqueó un administrador.
+        if ($cuenta->status === UserStatus::Suspended) {
+            return response()->json([
+                'message' => 'La cuenta del estudiante está suspendida. Un administrador debe reactivarla antes.',
+            ], 422);
+        }
+
+        // La marca primero: `EnviarEnlaceDeAlta` no toca una cuenta activa sin ella.
+        $cuenta->forceFill(['must_change_password' => true])->save();
+        EnviarEnlaceDeAlta::dispatch($cuenta->id);
+
+        return response()->json([
+            'message' => 'Enviamos una contraseña temporal al correo del estudiante. Deberá cambiarla al iniciar sesión.',
+            // Enmascarado: confirma a dónde fue sin repartir el correo completo.
+            'sent_to' => preg_replace('/^(.).*(@.*)$/u', '$1•••$2', $cuenta->email),
+        ]);
     }
 
     public function setStatus(Request $request, string $student_user_id)

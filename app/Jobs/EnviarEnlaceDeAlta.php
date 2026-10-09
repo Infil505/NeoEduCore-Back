@@ -2,18 +2,24 @@
 
 namespace App\Jobs;
 
+use App\Enums\UserStatus;
 use App\Models\Admin\User;
 use App\Services\Auth\PasswordSetupService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
 /**
- * Enlace de «crea tu contraseña» para una cuenta dada de alta por carga masiva.
+ * Contraseña temporal por correo para una cuenta dada de alta (carga masiva,
+ * alta individual sin clave, administrador de centro).
  *
- * Va en cola y no dentro de la petición: generar el token cuesta un hash bcrypt
- * (~180 ms con BCRYPT_ROUNDS=12), y una carga de 300 cuentas tardaba casi un
- * minuto solo en eso —el navegador cortaba la petición antes de terminar—.
- * Encolar es una inserción por cuenta; el hash lo paga el worker.
+ * El nombre se conserva por los trabajos ya encolados con él: antes mandaba un
+ * enlace de «crea tu contraseña»; desde el 09/10/2026 manda una contraseña
+ * temporal y la cuenta queda activa, obligada a cambiarla en su primer acceso.
+ *
+ * Va en cola y no dentro de la petición: generar la clave cuesta un hash bcrypt
+ * (~180 ms con BCRYPT_ROUNDS=12) más el envío SMTP, y una carga de 300 cuentas
+ * tardaba casi un minuto solo en eso. Encolar es una inserción en bloque; el
+ * trabajo lo paga el worker.
  */
 class EnviarEnlaceDeAlta implements ShouldQueue
 {
@@ -29,18 +35,24 @@ class EnviarEnlaceDeAlta implements ShouldQueue
     {
         $user = User::withoutGlobalScopes()->find($this->userId);
 
-        // Si la cuenta se borró, o ya está activa (fijó su contraseña por otra
-        // vía) entre el encolado y la ejecución, no hay enlace que mandar.
-        if ($user === null || $user->status->value !== 'inactive') {
+        // Cuenta borrada entre el encolado y la ejecución.
+        if ($user === null) {
             return;
         }
 
-        // `sendSetupLink` es best-effort: se traga el error y devuelve false.
-        // Aquí eso dejaría la cuenta inactiva para siempre sin que el job
-        // fallara, así que no se reintentaría ni quedaría en `failed_jobs`.
-        if (! $passwordSetup->sendSetupLink($user)) {
-            throw new \RuntimeException("No se pudo preparar el enlace de alta de la cuenta {$this->userId}.");
+        // A una cuenta suspendida no se le manda acceso: la bloqueó un administrador.
+        if ($user->status === UserStatus::Suspended) {
+            return;
         }
+
+        // Activa y sin marca: su dueño ya eligió su propia contraseña (p. ej. por
+        // el enlace de recuperación) y no hay nada que entregarle.
+        if ($user->status === UserStatus::Active && ! $user->must_change_password) {
+            return;
+        }
+
+        // Lanza si el correo no sale: el job falla y se reintenta.
+        $passwordSetup->sendTemporaryPassword($user);
     }
 
     /** Segundos entre reintentos: da tiempo a que el SMTP o la base se recuperen. */

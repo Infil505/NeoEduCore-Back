@@ -128,11 +128,14 @@ php artisan schema:dump-sql        # regenera 01_schema.sql (necesita PG_DUMP_PA
 php artisan serve
 composer run dev                    # servidor + worker de cola + logs
 
-# Cola (correos de reset y alta masiva)
+# Cola (correos de reset, alta masiva, respuestas del tutor)
 php artisan queue:work
 
+# WebSocket: aviso en vivo de «examen activado» (opcional; sin él, el alumno lo ve al recargar)
+php artisan reverb:start
+
 # Documentación
-php artisan openapi:generate        # OpenAPI (122 endpoints) → /api/documentation
+php artisan openapi:generate        # OpenAPI (136 endpoints) → /api/documentation
 
 # Crear el operador de la plataforma (no hay ruta de API que lo cree)
 php artisan superadmin:create --email=ops@ejemplo.com --name="Operaciones"

@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\TenantCache;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Events\ConnectionEstablished;
 use Illuminate\Support\Facades\Event;
@@ -21,7 +22,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Token que no escribe `last_used_at` en cada petición (ver la clase).
+        Sanctum::usePersonalAccessTokenModel(\App\Models\Admin\AccessToken::class);
     }
 
     /**
@@ -36,7 +38,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $uuid = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
 
-        foreach (['student_user_id', 'teacherUserId', 'sessionId', 'subject'] as $parametro) {
+        foreach (['student_user_id', 'teacherUserId', 'sessionId', 'subject', 'import_id'] as $parametro) {
             Route::pattern($parametro, $uuid);
         }
     }
@@ -52,6 +54,52 @@ class AppServiceProvider extends ServiceProvider
         $this->avisarSiLaCacheAnulaLosLimites();
         $this->limitarDuracionDeConsultas();
         $this->caducarSesionesInactivas();
+        $this->invalidarCachesDelCatalogo();
+    }
+
+    /**
+     * Invalida la caché de catálogo (`TenantCache`) cuando cambia lo que la
+     * alimenta, para que lo cacheado nunca sirva datos viejos más allá del
+     * instante de la escritura.
+     *
+     * Solo cubre lo que pasa por Eloquent. Las escrituras con `DB::table()` o con
+     * el query builder (recuentos de alumnado, asignaciones en bloque) no
+     * disparan eventos y invalidan a mano con `TenantCache::invalidar()`.
+     */
+    private function invalidarCachesDelCatalogo(): void
+    {
+        $catalogo = fn (object $modelo) => TenantCache::invalidar($modelo->institution_id ?? null, TenantCache::CATALOGO);
+
+        // Las materias llevan `exams_count`, así que también cuentan los exámenes.
+        foreach ([\App\Models\Academic\Subject::class, \App\Models\Academic\Group::class, \App\Models\Academic\TeacherAssignment::class, \App\Models\Exams\Exam::class] as $modelo) {
+            $modelo::saved($catalogo);
+            $modelo::deleted($catalogo);
+        }
+
+        // Los avisos del alumnado (`TenantCache::AGENDA`) muestran el aviso, su
+        // examen y su aula: cambia cualquiera de los tres.
+        $agenda = fn (object $modelo) => TenantCache::invalidar($modelo->institution_id ?? null, TenantCache::AGENDA);
+        foreach ([\App\Models\Academic\CalendarEvent::class, \App\Models\Exams\Exam::class, \App\Models\Academic\Group::class] as $modelo) {
+            $modelo::saved($agenda);
+            $modelo::deleted($agenda);
+        }
+
+        // El listado de docentes: solo importan las cuentas de docente (alta,
+        // cambio de nombre/estado, borrado, o dejar de serlo).
+        $docente = \App\Enums\UserType::Teacher->value;
+        $esDocente = fn ($valor) => ($valor instanceof \BackedEnum ? $valor->value : $valor) === $docente;
+        $cuentaDocente = function (\App\Models\Admin\User $usuario) use ($esDocente) {
+            if ($esDocente($usuario->user_type) || $esDocente($usuario->getOriginal('user_type'))) {
+                TenantCache::invalidar($usuario->institution_id, TenantCache::CATALOGO);
+            }
+        };
+        \App\Models\Admin\User::saved($cuentaDocente);
+        \App\Models\Admin\User::deleted($cuentaDocente);
+
+        // Ajustes del centro. La institución no tiene `institution_id`: su id es el centro.
+        $config = fn (\App\Models\Admin\Institution $centro) => TenantCache::invalidar($centro->id, TenantCache::CONFIG);
+        \App\Models\Admin\Institution::saved($config);
+        \App\Models\Admin\Institution::deleted($config);
     }
 
     /**
@@ -306,6 +354,7 @@ class AppServiceProvider extends ServiceProvider
         $simples = [
             'password'       => 'Demasiadas peticiones de contraseña. Espera un minuto.',
             'password-verify' => 'Demasiadas verificaciones. Espera un minuto.',
+            'student-password-reset' => 'Demasiados restablecimientos seguidos. Espera un minuto.',
             'bulk-upload'    => 'Demasiadas cargas masivas seguidas. Espera un minuto.',
             'bulk-ops'       => 'Demasiadas operaciones masivas seguidas. Espera un minuto.',
             'ai-chat'        => 'Vas muy rápido con el tutor. Espera un momento.',

@@ -95,7 +95,7 @@ class SuperAdminScopeTest extends TestCase
     // Administradores de institución
     // -------------------------------------------------------------------------
 
-    public function test_superadmin_creates_an_institution_admin_as_inactive(): void
+    public function test_superadmin_creates_an_institution_admin_with_a_temporary_password(): void
     {
         Notification::fake();
         $this->signInSuperAdmin();
@@ -107,11 +107,13 @@ class SuperAdminScopeTest extends TestCase
             'email'     => 'directora@centro.com',
         ])->assertCreated();
 
-        // Nace inactiva: el acceso lo abre el enlace, nadie conoce la contraseña.
+        // Activa desde el alta con una contraseña temporal que solo conoce su
+        // titular (le llega por correo) y que debe cambiar al entrar.
         $this->assertDatabaseHas('users', [
             'email'          => 'directora@centro.com',
             'user_type'      => 'admin',
-            'status'         => 'inactive',
+            'status'         => 'active',
+            'must_change_password' => true,
             'institution_id' => $institution->id,
         ]);
 

@@ -5,6 +5,7 @@ namespace App\Services\Students;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
 use App\Models\Students\StudentProgress;
+use App\Services\AI\AiTutorService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -43,6 +44,10 @@ class StudentProgressService
         if (!$fila) {
             throw new \RuntimeException("No existe el estudiante {$studentUserId} en esta institución.");
         }
+
+        // El tutor arma su contexto con el progreso y los resultados de exámenes:
+        // si esto cambió (entrega, revisión, reseteo), que lo vea ya y no al caducar.
+        AiTutorService::olvidarContexto($studentUserId);
 
         return StudentProgress::hydrate([(array) $fila])->first();
     }

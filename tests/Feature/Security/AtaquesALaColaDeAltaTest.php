@@ -3,6 +3,7 @@
 namespace Tests\Feature\Security;
 
 use App\Jobs\EnviarEnlaceDeAlta;
+use App\Mail\ContrasenaTemporalMail;
 use App\Mail\PasswordSetupMail;
 use App\Models\Admin\Institution;
 use App\Models\Admin\User;
@@ -57,8 +58,8 @@ class AtaquesALaColaDeAltaTest extends TestCase
         $this->assertTrue($lanzo, 'El job terminó sin error aunque el correo no se encoló: no se reintenta ni queda en failed_jobs.');
     }
 
-    /** J1: el token no puede quedar huérfano si el correo no salió y el job reintenta: el reintento lo reemplaza. */
-    public function test_el_reintento_deja_un_unico_token_por_correo(): void
+    /** J1: si el job reintenta, solo vale la ÚLTIMA contraseña temporal enviada; la anterior queda inservible. */
+    public function test_el_reintento_deja_una_unica_contrasena_vigente(): void
     {
         Mail::fake();
         $docente = $this->docenteInactivo();
@@ -67,8 +68,13 @@ class AtaquesALaColaDeAltaTest extends TestCase
         $job->handle(app(\App\Services\Auth\PasswordSetupService::class));
         $job->handle(app(\App\Services\Auth\PasswordSetupService::class));
 
-        $this->assertSame(1, \DB::table('password_reset_tokens')->where('email', $docente->email)->count());
-        Mail::assertQueued(PasswordSetupMail::class, 2);
+        Mail::assertSent(ContrasenaTemporalMail::class, 2);
+
+        $enviadas = Mail::sent(ContrasenaTemporalMail::class)->map(fn ($m) => $m->temporal)->values();
+        $hash = $docente->fresh()->password_hash;
+
+        $this->assertTrue(\Hash::check($enviadas[1], $hash), 'La última temporal enviada no es la vigente.');
+        $this->assertFalse(\Hash::check($enviadas[0], $hash), 'La temporal anterior sigue valiendo tras el reintento.');
     }
 
     /** J1: un docente cuyo enlace nunca llegó puede pedir uno nuevo él mismo. */

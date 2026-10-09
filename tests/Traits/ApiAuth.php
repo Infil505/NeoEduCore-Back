@@ -141,4 +141,25 @@ trait ApiAuth
 
         return $user;
     }
+
+    /**
+     * POST /api/students/bulk-upload y, si la carga quedó en segundo plano,
+     * devuelve el ESTADO de esa carga en lugar del acuse.
+     *
+     * La carga real responde enseguida con `import_id` y trabaja en el worker.
+     * En los tests la cola es `sync`, así que cuando vuelve la petición el job
+     * ya terminó: se consulta `GET /bulk-upload/{id}` y se devuelve su
+     * respuesta, que trae el resumen (`created`, `skipped`, `errors`…) al
+     * mismo nivel que antes. Los 422 y la vista previa no se tocan.
+     */
+    protected function postCargaEstudiantes(array $data, array $headers = [])
+    {
+        $respuesta = $this->post('/api/students/bulk-upload', $data, $headers);
+
+        if ($respuesta->getStatusCode() === 200 && ($id = $respuesta->json('import_id'))) {
+            return $this->getJson("/api/students/bulk-upload/{$id}");
+        }
+
+        return $respuesta;
+    }
 }

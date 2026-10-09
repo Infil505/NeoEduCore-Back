@@ -2,6 +2,7 @@
 
 namespace App\Services\Academic;
 
+use App\Support\TenantCache;
 use App\Models\Academic\Group;
 use App\Models\Academic\Subject;
 use App\Models\Students\Student;
@@ -318,6 +319,9 @@ class BulkReassignmentService
                 )'),
                 'updated_at' => now(),
             ]);
+
+        // `student_count` está en el listado de aulas cacheado y este UPDATE no dispara eventos.
+        TenantCache::invalidar(app()->bound('tenant_id') ? app('tenant_id') : null, TenantCache::CATALOGO, TenantCache::AGENDA);
     }
 
     private function resumenGrupo(

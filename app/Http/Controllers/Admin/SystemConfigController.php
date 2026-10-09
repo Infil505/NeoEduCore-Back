@@ -6,6 +6,7 @@ use App\Enums\ExamStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Admin\Institution;
 use App\Models\Exams\Exam;
+use App\Support\TenantCache;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -17,9 +18,19 @@ class SystemConfigController extends Controller
      */
     public function show(Request $request)
     {
-        $institution = Institution::findOrFail($request->user()->institution_id);
+        $centro = $request->user()->institution_id;
 
-        return response()->json(['data' => $this->datos($institution)]);
+        // Lo piden varias pantallas y cambia muy rara vez: caché por centro,
+        // invalidada al guardar la institución (observador en AppServiceProvider).
+        $datos = TenantCache::remember(
+            $centro,
+            TenantCache::CONFIG,
+            'system',
+            600,
+            fn () => $this->datos(Institution::findOrFail($centro))
+        );
+
+        return response()->json(['data' => $datos]);
     }
 
     /**

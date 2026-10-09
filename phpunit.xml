@@ -33,6 +33,8 @@
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_STORE" value="array"/>
+        <!-- Sin red en los tests: los que prueban la comprobación la activan y simulan Http. -->
+        <env name="AI_LINK_CHECK" value="false"/>
         <!-- La suite lanza cientos de peticiones desde la misma IP: el limite
              general se sube para que no se bloquee a si misma. Los limites
              especificos (login, ai-global) se dejan reales, que son los que

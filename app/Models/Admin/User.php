@@ -28,6 +28,7 @@ class User extends Authenticatable
         'full_name',
         'user_type',
         'status',
+        'must_change_password',
     ];
 
     protected $hidden = [
@@ -38,6 +39,7 @@ class User extends Authenticatable
     protected $casts = [
         'user_type' => UserType::class,
         'status'    => UserStatus::class,
+        'must_change_password' => 'boolean',
     ];
 
     /* =========================

@@ -105,8 +105,9 @@ class QueryBudgetTest extends TestCase
         Subject::factory()->count(30)->create(['institution_id' => $this->institution->id]);
         $muchas = $this->contarQueries(fn () => $this->getJson('/api/subjects')->assertOk());
 
-        // withCount('exams') es una subquery, no una query por materia
-        $this->assertSame($pocas, $muchas, "N+1 en /subjects: {$pocas} → {$muchas} queries");
+        // withCount('exams') es una subquery, no una query por materia. Con página
+        // llena (30 > 20) hace falta el COUNT del paginador: hasta 1 más, nunca una por fila.
+        $this->assertLessThanOrEqual($pocas + 1, $muchas, "N+1 en /subjects: {$pocas} → {$muchas} queries");
         $this->assertLessThanOrEqual(6, $muchas, "Presupuesto excedido: {$muchas} queries");
     }
 
@@ -120,7 +121,8 @@ class QueryBudgetTest extends TestCase
         $this->estudiantes(25);
         $muchos = $this->contarQueries(fn () => $this->getJson('/api/students')->assertOk());
 
-        $this->assertSame($pocos, $muchos, "N+1 en /students: {$pocos} → {$muchos} queries");
+        // La página llena (27 > 20) añade el COUNT del paginador: hasta 1 más, nunca una por fila.
+        $this->assertLessThanOrEqual($pocos + 1, $muchos, "N+1 en /students: {$pocos} → {$muchos} queries");
         $this->assertLessThanOrEqual(8, $muchos, "Presupuesto excedido: {$muchos} queries");
     }
 

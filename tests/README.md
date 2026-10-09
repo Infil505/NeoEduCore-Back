@@ -202,6 +202,27 @@ php artisan test --verbose
 - ✅ El chat sobre el examen lo entrega a `visual` y `auditivo` (también en turnos siguientes de la sesión); `lector` y sin estilo reciben `video: null`
 - ✅ `GET /exam-attempts/{id}/recommendations` lo trae según el estilo
 
+### Enlaces de apoyo del examen — `AI/EnlacesDeApoyoEnRecomendacionesTest` (10 tests)
+- ✅ El docente guarda enlaces de vídeo y texto; son opcionales; omitirlos al editar no los toca y `[]` los vacía
+- ✅ Rechaza otro dominio, sufijo engañoso, `javascript:`, no-URL, «vídeo» que no es de vídeo, tipo desconocido, sin URL; y respeta el tope
+- ✅ `visual` recibe el vídeo y `lector` el texto; si no hay del tipo preferido se da el que haya; el `video_url` clásico también cuenta
+- ✅ Lo del docente manda sobre la URL que proponga el modelo, y también en la rama de reserva sin IA
+
+### Enlaces vivos y vídeo por edad — `AI/EnlacesVivosYVideoPorEdadTest` (15 tests)
+- ✅ `EnlaceDisponible`: YouTube vivo / borrado / privado, páginas 200 / 404 / 410, sin veredicto = vivo, dominios fuera de la lista blanca (y direcciones internas) sin consultar la red, veredicto cacheado
+- ✅ Vídeo del docente roto → catálogo; el del catálogo tiene que ser del grado del alumno (nunca uno de otra edad); rango declarado antes que genérico; se salta el roto y se da el siguiente vivo; si todos están rotos, ninguno; solo los que el alumno puede abrir; `lector` no recibe vídeo del catálogo
+- ✅ La URL inventada por el modelo se descarta si está rota y se sustituye por un recurso vivo
+- ℹ️ En la suite `AI_LINK_CHECK=false` (`phpunit.xml`): estos tests la activan y simulan `Http`
+
+### Aviso en vivo del examen — `Notifications/ExamenActivadoEnVivoTest` (9 tests)
+- ✅ Se emite exactamente a quienes pueden ver el examen (no a quien salió del grupo, ni al suspendido, ni a otra aula); con la ventana aún cerrada se avisa igual, con las fechas
+- ✅ Payload mínimo (`exam_id`, `title`, `available_from`, `available_until`); otras transiciones no emiten
+- ✅ Canal `private-alumno.{id}`: el alumno entra al suyo; no al de otro, ni un docente, ni una cuenta suspendida, ni sin token
+
+### Examen en el calendario — `Exams/ExamenEnElCalendarioTest` (6 tests)
+- ✅ Un evento por aula destino, con las fechas de la ventana (o la duración del examen), a nombre del docente
+- ✅ Lo ve quien está matriculado en el aula y nadie más; no duplica el que el docente ya puso; otras transiciones no crean eventos
+
 ### Chat asíncrono del tutor — `AI/TutorAsincronoTest` (7 tests)
 - ✅ `async: true` responde 202 y la respuesta llega a la sesión (`GET /ai/tutor/sessions/{id}`)
 - ✅ Con la respuesta en cola, `awaiting_reply: true` y un segundo mensaje da 409; una marca vieja no bloquea
