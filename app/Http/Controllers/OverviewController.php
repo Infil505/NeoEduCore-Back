@@ -334,11 +334,8 @@ class OverviewController extends Controller
 
         $calendar = collect(TenantCache::remember(
             $student->institution_id, TenantCache::AGENDA, 'student-calendar:' . md5($aulasAbiertas->implode(',')), 120,
-            // Lo que viene (o está en curso), del más cercano al más lejano. La
-            // caché dura 2 min: un aviso recién terminado puede seguir ese rato.
             fn () => CalendarEvent::query()
                 ->visibleTo($user)
-                ->where('end_at', '>=', now())
                 ->with(['creator:id,full_name', 'group', 'exam'])
                 ->orderBy('start_at')
                 ->limit(30)
