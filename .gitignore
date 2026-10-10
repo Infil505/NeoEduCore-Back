@@ -24,3 +24,9 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx
+
+# Herramientas del asistente (no son parte del código)
+.claude/
+
+# Caché en archivos de Laravel: se regenera sola y cambia a cada petición
+/storage/framework/cache/data/

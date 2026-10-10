@@ -1496,9 +1496,10 @@ y el worker, o la variable, o una conexión aparte.
 | PATCH | `/api/notifications/{id}/read` | Marcar una como leída (ajena o inexistente → 404) |
 | POST | `/api/notifications/read-all` | Marcar todas como leídas (`data.marked`) |
 
-> También existe `GET /api/documentation` (interfaz Swagger servida por L5-Swagger
-> sobre el `api-docs.json` que genera `php artisan openapi:generate`). No es un
-> endpoint de la API.
+> La documentación **no se sirve por HTTP** (decisión del usuario, 10/10/2026): no hay
+> Swagger UI, `/docs` ni `public/docs/`. El OpenAPI se genera con
+> `php artisan openapi:generate` en `storage/api-docs/` y se lee como fichero.
+> L5-Swagger está en `dont-discover`; lo vigila `DocumentacionNoExpuestaTest`.
 
 ### Autenticados — Solo estudiante
 | Método | Ruta | Descripción |
