@@ -49,7 +49,7 @@ class InstitutionController extends Controller
         }
 
         return response()->json([
-            'data' => $query->paginate(config('pagination.default')),
+            'data' => $this->paginar($query, $request),
         ]);
     }
 

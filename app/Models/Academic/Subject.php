@@ -19,6 +19,13 @@ class Subject extends Model
     public $incrementing = false;
     protected $keyType = 'string';
 
+    /**
+     * Las fechas de creación y edición no salen en el JSON: ninguna pantalla las usa
+     * y este catálogo se repite en cada respuesta (resumen, directorio, avisos…).
+     * Siguen siendo atributos del modelo.
+     */
+    protected $hidden = ['created_at', 'updated_at'];
+
     protected $fillable = [
         'institution_id',
         'name',

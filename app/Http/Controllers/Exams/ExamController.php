@@ -14,6 +14,7 @@ use App\Rules\FechaRazonable;
 use App\Rules\EnlaceDeApoyo;
 use App\Rules\UrlDeVideo;
 use App\Models\Academic\Group;
+use App\Support\RelacionesEnLinea;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -112,20 +113,25 @@ class ExamController extends Controller
             // Al estudiante solo los suyos: activos, vigentes y asignados a sus
             // grupos. Antes devolvía el catálogo entero con sus ids, que era el
             // primer paso para leer enunciados ajenos vía `show()`.
-            ->visibleTo($request->user())
-            ->with(['subject', 'teacher'])
-            ->orderByDesc('created_at');
+            ->visibleTo($request->user());
+
+        // Materia y docente en la MISMA consulta (LEFT JOIN, ver `RelacionesEnLinea`): con
+        // `with()` eran dos viajes más. El JSON no cambia.
+        $query = RelacionesEnLinea::unir($query, [
+            'subject' => ['subjects', 'subject_id', ['id', 'name']],
+            'teacher' => ['users', 'created_by_teacher_id', ['id', 'full_name']],
+        ])->orderByDesc('exams.created_at');
 
         if ($request->filled('status')) {
-            $query->where('status', $request->string('status')->toString());
+            $query->where('exams.status', $request->string('status')->toString());
         }
 
         if ($request->filled('subject_id')) {
-            $query->where('subject_id', $request->string('subject_id')->toString());
+            $query->where('exams.subject_id', $request->string('subject_id')->toString());
         }
 
         if ($request->filled('grade')) {
-            $query->where('grade', (int) $request->input('grade'));
+            $query->where('exams.grade', (int) $request->input('grade'));
         }
 
         // Solo el admin puede mirar los exámenes de un docente puntual. Un
@@ -133,10 +139,14 @@ class ExamController extends Controller
         // alcance -ya se lo limita `visibleTo()`-, pero se gatea explícito en
         // vez de confiar en que la intersección siempre dé una lista vacía.
         if ($request->filled('teacher_id') && $request->user()->user_type->value === 'admin') {
-            $query->where('created_by_teacher_id', $request->string('teacher_id')->toString());
+            $query->where('exams.created_by_teacher_id', $request->string('teacher_id')->toString());
         }
 
         $paginator = $this->paginar($query, $request);
+        RelacionesEnLinea::hidratar($paginator->getCollection(), [
+            'subject' => \App\Models\Academic\Subject::class,
+            'teacher' => \App\Models\Admin\User::class,
+        ]);
 
         $this->acotarExamenes($request->user(), $paginator->getCollection());
 
@@ -221,7 +231,7 @@ class ExamController extends Controller
         }
 
         return response()->json([
-            'data' => $exam->load(['subject', 'teacher', 'groups']),
+            'data' => $exam->load(['subject:id,name', 'teacher:id,full_name', 'groups']),
         ], 201);
     }
 
@@ -233,11 +243,24 @@ class ExamController extends Controller
         // El binding de ruta resuelve el examen sin mirar quién pregunta, así
         // que la visibilidad se comprueba aquí. 404 y no 403: confirmar que el
         // examen existe ya le diría al alumno que hay una prueba preparada.
-        if (!Exam::query()->whereKey($exam->getKey())->visibleTo($request->user())->exists()) {
+        //
+        // Para el docente y el administrador la regla de `scopeVisibleTo()` se
+        // decide con el propio examen ya cargado (autor / institución): sin la
+        // consulta `exists`. Solo el alumno la necesita (aulas y ventana horaria).
+        $usuario = $request->user();
+        $visible = match ($usuario?->user_type) {
+            \App\Enums\UserType::Teacher => $exam->created_by_teacher_id === $usuario->id,
+            \App\Enums\UserType::Student => Exam::query()->whereKey($exam->getKey())->visibleTo($usuario)->exists(),
+            default => $usuario !== null,
+        };
+
+        if (!$visible) {
             return response()->json(['message' => 'No encontrado'], 404);
         }
 
-        $exam->load(['subject', 'teacher', 'groups', 'questions.options']);
+        $exam->load(['teacher:id,full_name', 'groups', 'questions.options']);
+        // La materia sale del catálogo en caché del centro, no de otra consulta.
+        $exam->setRelation('subject', $exam->subject_id ? $this->materiasDelCentro($exam->institution_id)->get($exam->subject_id) : null);
 
         // Esta ruta es de lectura compartida (admin, teacher y student): sin
         // esto, un alumno vería `is_correct` de cada opción antes de entregar.
@@ -315,7 +338,7 @@ class ExamController extends Controller
         }
 
         return response()->json([
-            'data' => $exam->load(['subject', 'teacher', 'groups']),
+            'data' => $exam->load(['subject:id,name', 'teacher:id,full_name', 'groups']),
         ]);
     }
 

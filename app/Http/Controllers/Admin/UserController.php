@@ -74,6 +74,9 @@ class UserController extends Controller
                 UserStatus::Suspended->value,
             ])],
             'q'         => ['nullable', 'string', 'max:120'],
+            // Solo el personal (administradores y docentes): el alumnado es mucho
+            // más numeroso y tiene su propio listado, `GET /api/students`.
+            'staff'     => ['nullable', 'boolean'],
         ]);
 
         $query = User::query()
@@ -89,6 +92,10 @@ class UserController extends Controller
                 $w->where('user_type', '!=', UserType::Student->value)
                   ->orWhereIn('id', $alcanzados);
             });
+        }
+
+        if ($request->boolean('staff')) {
+            $query->where('user_type', '!=', UserType::Student->value);
         }
 
         if (!empty($data['user_type'])) {
@@ -110,6 +117,127 @@ class UserController extends Controller
 
         return response()->json([
             'data' => $this->paginar($query, $request),
+        ]);
+    }
+
+    /**
+     * GET /api/users/directory — todo lo que necesita la pantalla «Usuarios y
+     * roles» en UNA petición (solo administrador).
+     *
+     * Antes la pantalla hacía cuatro: el resumen (aulas), `/users` (todos),
+     * `/students` y otra vez `/students`, cada una con su autenticación y sus
+     * consultas. Con la base remota (~0,4 s por consulta) pasaba de los 8 s;
+     * ahora son: autenticación (1, junto al token) + personal (1) + una página de
+     * estudiantes con su total (1) + aulas (de la caché del centro: 0 en caliente).
+     *
+     * - `staff`: administradores y docentes del centro (pocos; el front los filtra
+     *   en el navegador).
+     * - `students`: UNA página, con búsqueda en el servidor (`q`, `page`,
+     *   `per_page`). Las filas y el total salen de la misma consulta
+     *   (`count(*) over()`), sin una consulta de conteo aparte.
+     * - `students_only=1`: al paginar o buscar solo se piden los estudiantes.
+     */
+    public function directory(Request $request)
+    {
+        $data = $request->validate([
+            'q'             => ['nullable', 'string', 'max:120'],
+            'students_only' => ['nullable', 'boolean'],
+        ]);
+
+        $centro = $request->user()->institution_id;
+        $porPagina = $this->porPagina($request);
+        $pagina = max(1, (int) $request->query('page', 1));
+        $soloAlumnos = $request->boolean('students_only');
+
+        $personal = [];
+        $aulas = [];
+        if (!$soloAlumnos) {
+            // Mismo catálogo (y misma clave de caché) que el resumen del personal.
+            $aulas = \App\Support\TenantCache::remember(
+                $centro, \App\Support\TenantCache::CATALOGO, 'overview:groups:a', 300,
+                fn () => \App\Models\Academic\Group::query()
+                    ->orderByDesc('year')->orderBy('grade')->orderBy('section')
+                    ->get()->toArray()
+            );
+        }
+
+        $base = DB::table('students as s')
+            ->join('users as u', 'u.id', '=', 's.user_id')
+            ->where('s.institution_id', $centro)
+            ->where('u.institution_id', $centro);
+
+        if (!empty($data['q'])) {
+            // Los comodines de LIKE (% y _) se buscan como texto, no como patrón.
+            $q = addcslashes(trim($data['q']), '%_\\');
+            $base->where(function ($w) use ($q) {
+                $w->where('s.student_code', 'ilike', "%{$q}%")
+                  ->orWhere('u.full_name', 'ilike', "%{$q}%")
+                  ->orWhere('u.email', 'ilike', "%{$q}%");
+            });
+        }
+
+        $alumnos = (clone $base)
+            ->select(['s.user_id', 's.student_code', 's.section', 's.status', 'u.full_name', 'u.email', 'u.status as account_status'])
+            ->selectRaw('count(*) over() as total')
+            ->selectRaw('(select count(*) from students where institution_id = ?) as center_total', [$centro])
+            ->orderBy('s.student_code')
+            ->forPage($pagina, $porPagina);
+
+        if ($soloAlumnos) {
+            $filas = $alumnos->get();
+        } else {
+            // Personal y estudiantes en UN solo viaje a la base: cada consulta cuesta
+            // ~0,4 s en la base remota, y son lo único que hace esta petición.
+            $docentes = DB::table('users')
+                ->where('institution_id', $centro)
+                ->where('user_type', '!=', UserType::Student->value)
+                ->orderByDesc('created_at')
+                ->limit(300)
+                ->select(['id', 'full_name', 'email', 'user_type', 'status', 'created_at']);
+
+            $junto = DB::selectOne(
+                "select (select coalesce(json_agg(t order by t.created_at desc), cast('[]' as json)) from ({$docentes->toSql()}) t) as personal, "
+                . "(select coalesce(json_agg(r order by r.student_code), cast('[]' as json)) from ({$alumnos->toSql()}) r) as alumnos",
+                array_merge($docentes->getBindings(), $alumnos->getBindings())
+            );
+
+            $personal = array_map(
+                fn ($u) => \Illuminate\Support\Arr::only($u, ['id', 'full_name', 'email', 'user_type', 'status']),
+                json_decode($junto->personal, true)
+            );
+            $filas = collect(json_decode($junto->alumnos));
+        }
+
+        $total = $filas->isNotEmpty() ? (int) $filas->first()->total : 0;
+        $totalCentro = $filas->isNotEmpty() ? (int) $filas->first()->center_total : null;
+
+        // Una página más allá del final no trae filas (y por tanto tampoco el
+        // total): solo en ese caso se cuenta aparte.
+        if ($filas->isEmpty() && $pagina > 1) {
+            $total = (clone $base)->count();
+        }
+
+        return response()->json([
+            'data' => [
+                'staff'  => $personal,
+                'groups' => $aulas,
+                'students' => [
+                    'data' => $filas->map(fn ($f) => [
+                        'user_id'        => $f->user_id,
+                        'student_code'   => $f->student_code,
+                        'section'        => $f->section,
+                        'status'         => $f->status,
+                        'full_name'      => $f->full_name,
+                        'email'          => $f->email,
+                        'account_status' => $f->account_status,
+                    ])->all(),
+                    'total'        => $total,
+                    'center_total' => $totalCentro,
+                    'current_page' => $pagina,
+                    'last_page'    => max(1, (int) ceil($total / $porPagina)),
+                    'per_page'     => $porPagina,
+                ],
+            ],
         ]);
     }
 

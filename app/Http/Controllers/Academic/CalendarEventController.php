@@ -10,6 +10,8 @@ use App\Models\Academic\CalendarEvent;
 use App\Jobs\NotificarAviso;
 use App\Models\Exams\Exam;
 use App\Rules\FechaRazonable;
+use App\Support\RelacionesEnLinea;
+use App\Support\TenantCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -58,10 +60,18 @@ class CalendarEventController extends Controller
             'to'         => ['bail', 'nullable', new FechaRazonable(), ...FechaRazonable::posteriorA($request, 'from')],
         ]);
 
-        $query = CalendarEvent::query()
-            ->visibleTo($request->user())
-            ->with(['creator', 'group', 'exam'])
-            ->orderBy('start_at');
+        // Creador, aula y examen en la MISMA consulta (LEFT JOIN): con `with()` eran
+        // tres viajes más a la base. El JSON es idéntico (ver `RelacionesEnLinea`).
+        $query = RelacionesEnLinea::unir(CalendarEvent::query()->visibleTo($request->user()), [
+            'creator' => ['users', 'created_by', ['id', 'full_name']],
+            'group'   => ['groups', 'group_id', ['id', 'name', 'grade', 'section']],
+            'exam'    => ['exams', 'exam_id', ['id', 'title']],
+        ])->orderBy('calendar_events.start_at');
+        $enLinea = [
+            'creator' => \App\Models\Admin\User::class,
+            'group'   => \App\Models\Academic\Group::class,
+            'exam'    => \App\Models\Exams\Exam::class,
+        ];
 
         if (!empty($data['event_type'])) {
             $query->where('event_type', $data['event_type']);
@@ -81,9 +91,34 @@ class CalendarEventController extends Controller
             $query->where('start_at', '<=', $data['to']);
         }
 
-        $paginator = $this->paginar($query, $request);
+        $user = $request->user();
 
-        $this->acotarParaEstudiante($request->user(), $paginator->getCollection());
+        // Lo que ve un alumno depende solo de sus aulas abiertas (más los avisos
+        // generales) y de los filtros, así que la respuesta se comparte entre el
+        // alumnado del mismo conjunto de aulas, igual que en `student-overview`
+        // (misma área `AGENDA`, que se invalida al tocar avisos, exámenes o aulas).
+        if ($user?->user_type === UserType::Student) {
+            $aulas = DB::table('group_students')
+                ->where('institution_id', $user->institution_id)
+                ->where('student_user_id', $user->id)
+                ->whereNull('left_at')
+                ->pluck('group_id')->sort()->values();
+
+            return response()->json(TenantCache::remember(
+                $user->institution_id, TenantCache::AGENDA,
+                'student-events:' . md5($aulas->implode(',')) . ':' . $this->huellaDeConsulta($request), 120,
+                function () use ($query, $request, $user, $enLinea) {
+                    $paginator = $this->paginar($query, $request);
+                    RelacionesEnLinea::hidratar($paginator->getCollection(), $enLinea);
+                    $this->acotarParaEstudiante($user, $paginator->getCollection());
+
+                    return ['data' => $paginator->toArray()];
+                }
+            ));
+        }
+
+        $paginator = $this->paginar($query, $request);
+        RelacionesEnLinea::hidratar($paginator->getCollection(), $enLinea);
 
         return response()->json([
             'data' => $paginator,
@@ -147,8 +182,8 @@ class CalendarEventController extends Controller
 
         // Aviso del centro: un solo evento, sin sección, para el público elegido.
         if (!empty($data['audience'])) {
-            $evento = CalendarEvent::create($campos(null, $data['audience']))->load(['creator', 'group', 'exam']);
-            NotificarAviso::dispatchAfterResponse([$evento->id]);
+            $evento = CalendarEvent::create($campos(null, $data['audience']))->load(['creator:id,full_name', 'group:id,name,grade,section', 'exam:id,title']);
+            NotificarAviso::dispatch([$evento->id]);
 
             return response()->json(['data' => [$evento]], 201);
         }
@@ -169,12 +204,13 @@ class CalendarEventController extends Controller
         }
 
         $eventos = DB::transaction(fn () => array_map(
-            fn (string $grupoId) => CalendarEvent::create($campos($grupoId, null))->load(['creator', 'group', 'exam']),
+            fn (string $grupoId) => CalendarEvent::create($campos($grupoId, null))->load(['creator:id,full_name', 'group:id,name,grade,section', 'exam:id,title']),
             $grupos
         ));
 
-        // Los estudiantes de esas secciones reciben el aviso en su campana.
-        NotificarAviso::dispatchAfterResponse(array_map(fn ($e) => $e->id, $eventos));
+        // Los estudiantes de esas secciones reciben el aviso en su campana, repartido
+        // en segundo plano por el worker de la cola (la respuesta no espera).
+        NotificarAviso::dispatch(array_map(fn ($e) => $e->id, $eventos));
 
         return response()->json([
             'data' => $eventos,
@@ -190,7 +226,7 @@ class CalendarEventController extends Controller
             return response()->json(['message' => 'No encontrado'], 404);
         }
 
-        $calendarEvent->load(['creator', 'group', 'exam']);
+        $calendarEvent->load(['creator:id,full_name', 'group:id,name,grade,section', 'exam:id,title']);
         $this->acotarParaEstudiante($request->user(), [$calendarEvent]);
 
         return response()->json([
@@ -261,7 +297,7 @@ class CalendarEventController extends Controller
         $calendarEvent->save();
 
         return response()->json([
-            'data' => $calendarEvent->fresh()->load(['creator', 'group', 'exam']),
+            'data' => $calendarEvent->fresh()->load(['creator:id,full_name', 'group:id,name,grade,section', 'exam:id,title']),
         ]);
     }
 

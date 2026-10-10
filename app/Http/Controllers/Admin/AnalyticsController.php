@@ -140,7 +140,7 @@ class AnalyticsController extends Controller
      */
     public function student(Request $request, string $student_user_id)
     {
-        $student = Student::with(['user', 'progress.subject'])
+        $student = Student::with(['user', 'progress'])
             ->where('user_id', $student_user_id)
             ->firstOrFail();
 
@@ -161,10 +161,16 @@ class AnalyticsController extends Controller
         // Solo los 10 más recientes para el listado
         $recentAttempts = ExamAttempt::where('student_user_id', $student_user_id)
             ->whereNotNull('submitted_at')
-            ->with('exam.subject')
+            ->with('exam')
             ->orderBy('submitted_at', 'desc')
             ->limit(10)
             ->get();
+
+        // Las materias salen del catálogo en caché del centro (`materiasDelCentro`),
+        // no de dos consultas más (progreso y exámenes recientes).
+        $materias = $this->materiasDelCentro($student->institution_id);
+        $student->progress->each(fn ($p) => $p->setRelation('subject', $materias->get($p->subject_id)));
+        $recentAttempts->each(fn ($a) => $a->exam?->setRelation('subject', $materias->get($a->exam->subject_id)));
 
         return response()->json([
             'data' => [

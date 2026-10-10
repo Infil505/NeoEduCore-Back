@@ -68,6 +68,12 @@ return [
     'timezone' => 'UTC',
 
     /*
+    | Umbral (ms) a partir del cual una petición se anota en el log como «lenta», con el
+    | reparto entre base de datos y PHP (ver `RegistraPeticionesLentas`). 0 = desactivado.
+    */
+    'slow_request_ms' => (int) env('SLOW_REQUEST_MS', 0),
+
+    /*
     |--------------------------------------------------------------------------
     | Application Locale Configuration
     |--------------------------------------------------------------------------

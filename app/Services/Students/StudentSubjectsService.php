@@ -27,6 +27,8 @@ class StudentSubjectsService
      */
     public function materias(string $studentUserId, string $institutionId): Collection
     {
+        // Las dos vías en UNA consulta (UNION ALL): con la base remota cada viaje
+        // cuesta ~0,5 s y este servicio corre en cada carga del panel del alumno.
         $deSeccion = DB::table('group_students as gs')
             ->join('teacher_assignments as ta', function ($join) {
                 $join->on('ta.group_id', '=', 'gs.group_id')->on('ta.institution_id', '=', 'gs.institution_id');
@@ -37,22 +39,28 @@ class StudentSubjectsService
             ->where('gs.institution_id', $institutionId)
             ->where('gs.student_user_id', $studentUserId)
             ->whereNull('gs.left_at')
-            ->get(['s.id as subject_id', 's.name', 'g.section', 'gs.joined_at', 'u.full_name as teacher'])
-            ->groupBy('subject_id')
-            ->map(fn (Collection $filas) => [
-                'subject_id'  => $filas->first()->subject_id,
-                'name'        => $filas->first()->name,
-                'origin'      => 'seccion',
-                'section'     => $filas->first()->section,
-                'teachers'    => $filas->pluck('teacher')->filter()->unique()->values()->all(),
-                'enrolled_at' => $filas->first()->joined_at,
-            ]);
+            ->select(['s.id as subject_id', 's.name', 'g.section', 'gs.joined_at as enrolled_at', 'u.full_name as teacher', DB::raw("'seccion' as origin")]);
 
         $individuales = DB::table('student_subjects as ss')
             ->join('subjects as s', 's.id', '=', 'ss.subject_id')
             ->where('ss.institution_id', $institutionId)
             ->where('ss.student_user_id', $studentUserId)
-            ->get(['s.id as subject_id', 's.name', 'ss.enrolled_at'])
+            ->select(['s.id as subject_id', 's.name', DB::raw('null::varchar as section'), 'ss.enrolled_at', DB::raw('null::varchar as teacher'), DB::raw("'individual' as origin")]);
+
+        $filas = $deSeccion->unionAll($individuales)->get()->groupBy('origin');
+
+        $deSeccion = ($filas->get('seccion') ?? collect())
+            ->groupBy('subject_id')
+            ->map(fn (Collection $f) => [
+                'subject_id'  => $f->first()->subject_id,
+                'name'        => $f->first()->name,
+                'origin'      => 'seccion',
+                'section'     => $f->first()->section,
+                'teachers'    => $f->pluck('teacher')->filter()->unique()->values()->all(),
+                'enrolled_at' => $f->first()->enrolled_at,
+            ]);
+
+        $individuales = ($filas->get('individual') ?? collect())
             ->keyBy('subject_id')
             ->map(fn ($fila) => [
                 'subject_id'  => $fila->subject_id,

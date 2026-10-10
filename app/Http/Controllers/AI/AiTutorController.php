@@ -188,8 +188,9 @@ class AiTutorController extends Controller
         // Excluye 'messages' (JSONB potencialmente grande) del listado de sesiones.
         $sessions = AiChatSession::select('id', 'student_user_id', 'subject_id', 'exam_id', 'ended_at', 'created_at', 'updated_at')
             ->where('student_user_id', $user->id)
-            ->orderBy('updated_at', 'desc')
-            ->paginate(config('pagination.default'));
+            ->orderBy('updated_at', 'desc');
+
+        $sessions = $this->paginar($sessions, $request);
 
         return response()->json(['data' => $sessions]);
     }

@@ -27,8 +27,18 @@ class EnviarEnlaceDeAlta implements ShouldQueue
 
     public int $tries = 3;
 
+    /**
+     * Cola donde van los correos de alta. El worker la atiende **después** de
+     * `default` (`queue:work --queue=default,correos`): una carga masiva de 200
+     * correos (~4 s cada uno) no hace esperar a `ProcesarCargaMasivaEstudiantes`,
+     * a los avisos ni al resto de trabajos. **El worker debe listarla** o los
+     * correos no salen nunca.
+     */
+    public const COLA = 'correos';
+
     public function __construct(public readonly string $userId)
     {
+        $this->onQueue(self::COLA);
     }
 
     public function handle(PasswordSetupService $passwordSetup): void

@@ -28,7 +28,7 @@ class StudentProgressController extends Controller
         ]);
 
         $query = StudentProgress::query()
-            ->with(['student.user', 'subject'])
+            ->with(['student:user_id,student_code,grade,section', 'student.user:id,full_name', 'subject:id,name'])
             ->orderByDesc('updated_at');
 
         // Estudiante: solo lo propio
@@ -50,7 +50,7 @@ class StudentProgressController extends Controller
         }
 
         return response()->json([
-            'data' => $query->paginate(config('pagination.default')),
+            'data' => $this->paginar($query, $request),
         ]);
     }
 

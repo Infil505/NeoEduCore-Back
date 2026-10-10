@@ -103,10 +103,12 @@ class GroupController extends Controller
             ], 403);
         }
 
+        // De cada estudiante solo lo que muestra la lista del aula: antes cada fila
+        // llevaba la ficha entera (fecha de nacimiento, acudiente…) y el usuario completo.
         $students = $group->students()
-            ->with('user')
+            ->with('user:id,full_name,email,status')
             ->wherePivotNull('left_at')
-            ->get();
+            ->get(['students.user_id', 'students.student_code', 'students.section', 'students.status']);
 
         return response()->json([
             'data' => [

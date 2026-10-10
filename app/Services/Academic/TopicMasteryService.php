@@ -3,6 +3,7 @@
 namespace App\Services\Academic;
 
 use App\Models\Students\StudentAnswer;
+use App\Support\TenantCache;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -118,18 +119,23 @@ class TopicMasteryService
 
         $acotar($query);
 
-        return $query->get()
-            ->map(function ($fila) {
-                $total     = (int) $fila->total;
-                $correctas = (int) $fila->correctas;
+        // El agregado recorre TODAS las respuestas del alcance pedido (con 86.000 respuestas
+        // eran ~95 ms, y crece cada año). Solo cambia cuando se entrega un examen o se
+        // revisa una respuesta, y ahí se invalida el área `REPORTES`. La clave sale del
+        // propio SQL y sus parámetros, que ya llevan el alcance (centro, docente, alumno).
+        $centro = app()->bound('tenant_id') ? app('tenant_id') : null;
+        $clave = 'temas:' . md5($query->toSql() . '|' . json_encode($query->getBindings()));
 
-                return [
-                    'topic'      => (string) $fila->topic,
-                    'total'      => $total,
-                    'correctas'  => $correctas,
-                    'percentage' => $total > 0 ? round($correctas / $total * 100, 2) : 0.0,
-                ];
-            })
+        $filas = TenantCache::remember($centro, TenantCache::REPORTES, $clave, 600, fn () => $query->get()
+            ->map(fn ($fila) => [
+                'topic'      => (string) $fila->topic,
+                'total'      => (int) $fila->total,
+                'correctas'  => (int) $fila->correctas,
+                'percentage' => (int) $fila->total > 0 ? round((int) $fila->correctas / (int) $fila->total * 100, 2) : 0.0,
+            ])
+            ->all());
+
+        return collect($filas)
             // El orden se hace en PHP y no en SQL porque `percentage` es un
             // cálculo derivado: repetirlo en un ORDER BY lo dejaría en dos
             // sitios que pueden divergir.

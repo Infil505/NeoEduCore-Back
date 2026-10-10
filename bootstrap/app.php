@@ -31,6 +31,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // `TenantScoped` no tenga que deducirlo de `PHP_SAPI` —que bajo Octane
         // depende del servidor elegido—. Ver `MarcaContextoHttp`.
         $middleware->prepend(\App\Http\Middleware\MarcaContextoHttp::class);
+        $middleware->prepend(\App\Http\Middleware\RegistraPeticionesLentas::class);
 
         // SetTenantFromAuth must run before SubstituteBindings so TenantScoped
         // global scopes are active during route model binding.

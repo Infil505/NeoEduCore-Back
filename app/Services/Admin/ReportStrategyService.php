@@ -60,14 +60,31 @@ class ReportStrategyService
         $sections = [];
         $totals   = [];
 
-        // Una consulta por categoría en vez de una sola con todas: así el tope
-        // de `limit` se aplica *por sección* y una categoría muy poblada no
-        // desplaza a las demás fuera del documento.
+        // UNA consulta para las cuatro categorías (antes una por categoría, con la
+        // base remota ~0,5 s cada una). El tope de `limit` sigue siendo *por
+        // sección*: `ROW_NUMBER() ... PARTITION BY` numera cada categoría por
+        // separado y se queda con las `limit` más recientes de cada una, así que
+        // una categoría muy poblada no desplaza a las demás fuera del documento.
+        $numeradas = $this->baseQuery($student, $viewer, $filters)
+            ->reorder()
+            ->select('ai_recommendations.*')
+            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY recommendation_type ORDER BY generated_at DESC) AS rn_seccion');
+
+        // La subconsulta ya lleva el alcance de institución; el exterior solo
+        // recorta y ordena, y no lo repite (la columna vive dentro de la subconsulta).
+        $todas = AiRecommendation::query()
+            ->withoutGlobalScopes()
+            ->fromSub($numeradas, 'ai_recommendations')
+            ->where('rn_seccion', '<=', $limit)
+            ->orderByDesc('generated_at')
+            ->with(['subject:id,name', 'exam:id,title'])
+            ->get()
+            ->groupBy(fn (AiRecommendation $r) => $r->recommendation_type instanceof \BackedEnum
+                ? $r->recommendation_type->value
+                : (string) $r->recommendation_type);
+
         foreach (self::SECTIONS as $key => $label) {
-            $items = $this->baseQuery($student, $viewer, $filters)
-                ->where('recommendation_type', $key)
-                ->limit($limit)
-                ->get();
+            $items = $todas->get($key, collect());
 
             $sections[] = [
                 'key'   => $key,
@@ -83,7 +100,7 @@ class ReportStrategyService
                     // pestaña nueva y con aviso de salida, como pide [175].
                     'resource'     => $r->resource,
                     'generated_at' => $r->generated_at,
-                ])->all(),
+                ])->values()->all(),
             ];
 
             $totals[$key] = $items->count();

@@ -135,14 +135,21 @@ class StudentBulkImporter
         $codigos = array_values(array_unique($codigos));
 
         // Usuarios del centro que el archivo menciona (por id o por correo).
-        $usuariosPorId = User::where('institution_id', $institutionId)
-            ->where(fn ($q) => $q->whereIn('id', $ids)->orWhereIn('email', $correos))
-            ->get()
+        //
+        // Una sola consulta para dos cosas: los usuarios del centro y los correos
+        // ya registrados en CUALQUIER centro (el correo es único global). Antes
+        // eran dos viajes a la base; se separan aquí en memoria.
+        $candidatos = User::withoutGlobalScopes()
+            ->where(fn ($q) => $q->whereIn('email', $correos)
+                ->orWhere(fn ($q) => $q->where('institution_id', $institutionId)->whereIn('id', $ids)))
+            ->get();
+
+        $usuariosPorId = $candidatos
+            ->filter(fn ($u) => $u->institution_id === $institutionId)
             ->keyBy('id');
 
-        // Correos ya registrados en CUALQUIER centro: el correo es único global.
         $correosEnUso = array_flip(
-            User::whereIn('email', $correos)->pluck('email')->map(fn ($e) => Str::lower($e))->all()
+            $candidatos->pluck('email')->map(fn ($e) => Str::lower($e))->all()
         );
 
         // Perfiles existentes: por usuario o por código (el código es único por centro).
@@ -536,9 +543,7 @@ class StudentBulkImporter
 
         // Recuento de las aulas afectadas (RN-STU-012). Una sola pasada al
         // final: durante el bucle el contador cambiaría en cada fila.
-        foreach (array_keys($aulasTocadas) as $groupId) {
-            $enrollment->recontarAula($groupId, $institutionId);
-        }
+        $enrollment->recontarAulas(array_keys($aulasTocadas), $institutionId);
 
         // Encolar el enlace de "establece tu contraseña" a los usuarios creados.
         // FUERA de la transacción: el envío real lo hace el worker; la request no se bloquea.

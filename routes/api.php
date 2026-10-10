@@ -170,6 +170,8 @@ Route::middleware(['auth:sanctum', 'activa', 'clave.temporal'])->group(function 
         // Gestión de usuarios — solo LECTURA para teacher.
         // Las mutaciones (alta, update, status, reset-password, delete) son admin-only.
         Route::get('/users', [UserController::class, 'index']);
+        // Todo lo de «Usuarios y roles» en una petición (ver UserController::directory).
+        Route::get('/users/directory', [UserController::class, 'directory'])->middleware('role:admin');
         Route::get('/users/{user}', [UserController::class, 'show']);
 
         // Gestión de estudiantes

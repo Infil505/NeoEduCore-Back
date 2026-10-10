@@ -76,6 +76,33 @@ class EnrollmentService
         }
     }
 
+    /**
+     * `recontarAula` para varias aulas en UNA sola sentencia (y una sola
+     * invalidación de caché). Con la base remota a ~0,4 s por viaje, recontar
+     * 8 aulas de una carga masiva eran 16 consultas (~6 s de los 11 s totales).
+     *
+     * @param array<int,string> $groupIds
+     */
+    public function recontarAulas(array $groupIds, string $institutionId): void
+    {
+        if ($groupIds === []) {
+            return;
+        }
+
+        DB::table('groups')
+            ->where('institution_id', $institutionId)
+            ->whereIn('id', $groupIds)
+            ->update([
+                'student_count' => DB::raw(
+                    '(select count(*) from group_students gs where gs.group_id = groups.id'
+                    . ' and gs.institution_id = groups.institution_id and gs.left_at is null)'
+                ),
+                'updated_at' => now(),
+            ]);
+
+        TenantCache::invalidar($institutionId, TenantCache::CATALOGO, TenantCache::AGENDA);
+    }
+
     /** Recalcula `groups.student_count` con las matrículas abiertas (RN-STU-012). */
     public function recontarAula(string $groupId, string $institutionId): void
     {

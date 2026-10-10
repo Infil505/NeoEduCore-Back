@@ -160,7 +160,8 @@ class ExamVisibilityTest extends TestCase
 
         $res = $this->getJson('/api/exams')->assertOk();
         $res->assertSee('BORRADOR');
-        $res->assertSee($this->teacher->email);
+        // El listado trae al autor con su nombre (lo que muestra la pantalla), no con su correo.
+        $res->assertSee($this->teacher->full_name, false);
 
         $data = $this->getJson("/api/exams/{$borrador->id}")->assertOk()->json('data');
         $this->assertArrayHasKey('max_attempts', $data);

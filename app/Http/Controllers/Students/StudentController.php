@@ -23,6 +23,7 @@ use App\Notifications\CargaMasivaEstudiantes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use App\Support\RelacionesEnLinea;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use OpenApi\Attributes as OA;
@@ -53,30 +54,75 @@ class StudentController extends Controller
             'grade'   => ['nullable', 'integer'],
             'section' => ['nullable', 'string', 'max:20'],
             'status'  => ['nullable', Rule::in(array_map(fn ($e) => $e->value, StudentStatus::cases()))],
+            'q'       => ['nullable', 'string', 'max:120'],
+            // Por aula: los matriculados ahora en ella (`group_id`), los que NO lo
+            // están (`exclude_group_id`, para elegir a quién matricular) o los que
+            // no están en ninguna (`unassigned`).
+            'group_id'         => ['nullable', 'uuid'],
+            'exclude_group_id' => ['nullable', 'uuid'],
+            'unassigned'       => ['nullable', 'boolean'],
         ]);
 
-        $query = Student::query()
-            ->with('user')
-            ->orderBy('student_code');
+        // Del usuario solo lo que muestra un listado (nombre, correo, estado): sin
+        // la fila entera (hash de contraseña, fechas…) por cada alumno.
+        // El usuario en la MISMA consulta (LEFT JOIN, ver `RelacionesEnLinea`): con `with()` era
+        // un viaje más a la base.
+        $query = RelacionesEnLinea::unir(Student::query(), [
+            'user' => ['users', 'user_id', ['id', 'full_name', 'email', 'status']],
+        ])->orderBy('students.student_code');
 
         // Docente: solo el alumnado de los grupos que tiene asignados. Sin esto
         // devolvía el padrón completo de la institución a cualquier docente.
         $this->acotarAEstudiantesDelDocente($query, $request->user(), 'user_id');
 
         if ($request->filled('grade')) {
-            $query->where('grade', (int) $request->input('grade'));
+            $query->where('students.grade', (int) $request->input('grade'));
         }
 
         if ($request->filled('section')) {
-            $query->where('section', strtoupper($request->string('section')->toString()));
+            $query->where('students.section', strtoupper($request->string('section')->toString()));
         }
 
         if ($request->filled('status')) {
-            $query->where('status', $request->string('status')->toString());
+            $query->where('students.status', $request->string('status')->toString());
         }
 
+        // Matrícula abierta (`left_at` nulo) en `group_students`, acotada al centro.
+        $matriculados = fn () => \Illuminate\Support\Facades\DB::table('group_students')
+            ->select('student_user_id')
+            ->where('institution_id', $request->user()->institution_id)
+            ->whereNull('left_at');
+
+        if ($request->filled('group_id')) {
+            $query->whereIn('user_id', $matriculados()->where('group_id', $request->input('group_id')));
+        }
+
+        if ($request->filled('exclude_group_id')) {
+            $query->whereNotIn('user_id', $matriculados()->where('group_id', $request->input('exclude_group_id')));
+        }
+
+        if ($request->boolean('unassigned')) {
+            $query->whereNotIn('user_id', $matriculados());
+        }
+
+        // Búsqueda por nombre, correo o código de estudiante. Los comodines de
+        // LIKE (% y _) se buscan como texto, no como patrón.
+        if ($request->filled('q')) {
+            $q = addcslashes(trim($request->string('q')->toString()), '%_\\');
+            $query->where(function ($w) use ($q) {
+                $w->where('student_code', 'ilike', "%{$q}%")
+                  ->orWhereIn('user_id', \App\Models\Admin\User::query()
+                      ->select('id')
+                      ->where('user_type', 'student')
+                      ->where(fn ($u) => $u->where('full_name', 'ilike', "%{$q}%")->orWhere('email', 'ilike', "%{$q}%")));
+            });
+        }
+
+        $pagina = $this->paginar($query, $request);
+        RelacionesEnLinea::hidratar($pagina->getCollection(), ['user' => \App\Models\Admin\User::class]);
+
         return response()->json([
-            'data' => $this->paginar($query, $request),
+            'data' => $pagina,
         ]);
     }
 

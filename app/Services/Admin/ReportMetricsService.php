@@ -3,6 +3,8 @@
 namespace App\Services\Admin;
 
 use App\Models\Admin\Institution;
+use App\Support\CatalogoMaterias;
+use App\Support\TenantCache;
 use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
@@ -94,6 +96,11 @@ class ReportMetricsService
         $row   = $this->studentAggregates($student, $passing);
         $total = (int) ($row->total ?? 0);
 
+        // Los últimos intentos ya se piden para la serie: el más reciente es el
+        // «último», sin otra consulta solo para él.
+        $recientes = $this->recentAttempts($student, $points);
+        $ultimo    = $recientes->first();
+
         return [
             'student' => [
                 'user_id'      => $student->user_id,
@@ -107,11 +114,11 @@ class ReportMetricsService
                 'attempts'  => $total,
                 'average'   => $this->round($row->average ?? 0),
                 'best'      => $this->round($row->best ?? 0),
-                'last'      => $this->round($this->lastPercentage($student) ?? 0),
+                'last'      => $this->round($ultimo !== null && (float) $ultimo->max_score > 0 ? (float) $ultimo->score / (float) $ultimo->max_score * 100 : 0),
                 'passed'    => (int) ($row->passed ?? 0),
                 'pass_rate' => $this->share((int) ($row->passed ?? 0), $total),
             ],
-            'score_trend'     => $this->scoreTrend($student, $points),
+            'score_trend'     => $this->scoreTrend($recientes),
             'subject_mastery' => $this->subjectMastery($student),
         ];
     }
@@ -132,10 +139,21 @@ class ReportMetricsService
             return self::DEFAULT_PASSING_PERCENTAGE;
         }
 
-        $settings = array_merge(
-            Institution::$defaultSettings,
-            Institution::find($institutionId)?->settings ?? []
+        // Fila cruda del centro, de la caché por centro (`TenantCache::CONFIG`, la
+        // misma que usa el panel del alumno): se invalida al guardar la
+        // institución, así que un cambio de la nota mínima se ve enseguida. No es
+        // una `static`: va por centro y la limpia el observador, que es lo que el
+        // aviso de Octane de más arriba exigía.
+        $fila = TenantCache::remember(
+            $institutionId, TenantCache::CONFIG, 'institution-row', 600,
+            fn () => Institution::query()->whereKey($institutionId)->toBase()->first()
         );
+        $guardados = $fila?->settings ?? [];
+        if (is_string($guardados)) {
+            $guardados = json_decode($guardados, true) ?: [];
+        }
+
+        $settings = array_merge(Institution::$defaultSettings, (array) $guardados);
 
         return (float) ($settings['passing_percentage'] ?? self::DEFAULT_PASSING_PERCENTAGE);
     }
@@ -211,32 +229,38 @@ class ReportMetricsService
             ->first();
     }
 
-    private function lastPercentage(Student $student): ?float
+    /**
+     * Los N intentos calificados más recientes, del más nuevo al más antiguo.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int,ExamAttempt>
+     */
+    private function recentAttempts(Student $student, int $points)
     {
-        $row = $this->gradedAttempts()
+        $intentos = $this->gradedAttempts()
             ->where('student_user_id', $student->user_id)
-            ->selectRaw('(score / max_score * 100) AS pct')
+            ->with('exam:id,title,subject_id')
             ->orderByDesc('submitted_at')
-            ->first();
+            ->limit($points)
+            ->get();
 
-        return $row?->pct === null ? null : (float) $row->pct;
+        // Materias del catálogo en caché, no una consulta más.
+        $materias = CatalogoMaterias::delCentro($student->institution_id);
+        $intentos->each(fn (ExamAttempt $a) => $a->exam?->setRelation('subject', $materias->get($a->exam->subject_id)));
+
+        return $intentos;
     }
 
     /**
      * Serie de evolución, del intento más antiguo al más reciente: es el orden
-     * en que se lee un gráfico de líneas. Se piden los N últimos y se invierten,
-     * en vez de traer el historial completo.
+     * en que se lee un gráfico de líneas. Recibe los N últimos (del más nuevo al
+     * más antiguo) y los invierte, en vez de traer el historial completo.
      *
+     * @param  \Illuminate\Support\Collection<int,ExamAttempt>  $recientes
      * @return array<int,array<string,mixed>>
      */
-    private function scoreTrend(Student $student, int $points): array
+    private function scoreTrend($recientes): array
     {
-        return $this->gradedAttempts()
-            ->where('student_user_id', $student->user_id)
-            ->with(['exam:id,title,subject_id', 'exam.subject:id,name'])
-            ->orderByDesc('submitted_at')
-            ->limit($points)
-            ->get()
+        return $recientes
             ->reverse()
             ->values()
             ->map(fn (ExamAttempt $a) => [
@@ -255,10 +279,12 @@ class ReportMetricsService
     /** @return array<int,array<string,mixed>> */
     private function subjectMastery(Student $student): array
     {
+        $materias = CatalogoMaterias::delCentro($student->institution_id);
+
         return StudentProgress::query()
             ->where('student_user_id', $student->user_id)
-            ->with('subject:id,name')
             ->get()
+            ->each(fn (StudentProgress $p) => $p->setRelation('subject', $materias->get($p->subject_id)))
             ->sortByDesc('mastery_percentage')
             ->values()
             ->map(fn (StudentProgress $p) => [

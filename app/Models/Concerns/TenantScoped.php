@@ -6,6 +6,18 @@ use Illuminate\Database\Eloquent\Builder;
 
 trait TenantScoped
 {
+    /**
+     * `institution_id` no sale en el JSON de la API: quien consulta ya está dentro de
+     * su centro (el token lo fija) y el valor era el mismo en TODAS las filas y en
+     * cada modelo anidado —36 caracteres más la clave, repetidos cientos de veces por
+     * listado—. Sigue disponible como atributo (`$modelo->institution_id`) para el
+     * código; solo se oculta al serializar. El front nunca lo ha usado.
+     */
+    public function initializeTenantScoped(): void
+    {
+        $this->makeHidden('institution_id');
+    }
+
     protected static function bootTenantScoped(): void
     {
         static::addGlobalScope('tenant', function (Builder $builder) {

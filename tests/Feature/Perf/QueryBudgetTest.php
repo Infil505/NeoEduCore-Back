@@ -393,6 +393,9 @@ class QueryBudgetTest extends TestCase
         };
 
         $crearIntentos(3);
+        // La primera lectura llena la caché por centro (nota mínima de aprobación):
+        // se calienta para comparar solo lo que depende del número de intentos.
+        $consultar();
         $pocos = $this->contarQueries($consultar);
 
         $crearIntentos(40);

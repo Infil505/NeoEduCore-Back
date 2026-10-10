@@ -16,7 +16,7 @@ Guía para desplegar NeoEduCore (Laravel + Octane + FrankenPHP) y aguantar picos
 ## 3. Recurso "Worker" (cola de correos)
 - Otro recurso en Coolify con **la misma imagen**, pero comando:
   ```
-  php artisan queue:work --tries=3 --max-time=3600
+  php artisan queue:work --queue=default,correos --tries=3 --max-time=3600
   ```
 - Mantiene el envío de correos (reset, alta masiva) en segundo plano. Coolify lo reinicia si cae.
 

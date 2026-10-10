@@ -30,7 +30,7 @@ class AiRecommendationController extends Controller
         ]);
 
         $query = AiRecommendation::query()
-            ->with(['student.user', 'subject', 'exam'])
+            ->with(['student:user_id,student_code,grade,section', 'student.user:id,full_name', 'subject:id,name', 'exam:id,title'])
             ->orderByDesc('created_at');
 
         // 👩‍🎓 Estudiante: solo sus recomendaciones
@@ -71,7 +71,7 @@ class AiRecommendationController extends Controller
         }
 
         return response()->json([
-            'data' => $query->paginate(config('pagination.default')),
+            'data' => $this->paginar($query, $request),
         ]);
     }
 
@@ -139,7 +139,7 @@ class AiRecommendationController extends Controller
         }
 
         return response()->json([
-            'data' => $query->paginate(config('pagination.default')),
+            'data' => $this->paginar($query, $request),
         ]);
     }
 }

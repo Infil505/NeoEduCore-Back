@@ -43,13 +43,15 @@ abstract class Controller
      * consulta cuesta ~0,5 s. Si la página sale llena, o vacía más allá de la
      * primera, hay que contar igual y se hace como siempre.
      *
-     * Devuelve el mismo paginador que `paginate()`: mismo JSON, mismos enlaces.
+     * Devuelve un paginador con el mismo JSON que `paginate()` salvo los enlaces
+     * (`links`, `*_page_url`, `path`, `from`, `to`), que ningún cliente usa y que
+     * pesan en cada listado: ver `PaginadorLigero`.
      *
      * @param \Illuminate\Database\Eloquent\Builder $query
      */
-    protected function paginar($query, \Illuminate\Http\Request $request): \Illuminate\Pagination\LengthAwarePaginator
+    protected function paginar($query, \Illuminate\Http\Request $request, ?int $tamano = null): \Illuminate\Pagination\LengthAwarePaginator
     {
-        $porPagina = $this->porPagina($request);
+        $porPagina = $tamano ?? $this->porPagina($request);
         $pagina = max(1, (int) \Illuminate\Pagination\Paginator::resolveCurrentPage());
 
         $filas = (clone $query)->forPage($pagina, $porPagina)->get();
@@ -59,7 +61,7 @@ abstract class Controller
             ? ($pagina - 1) * $porPagina + $filas->count()
             : $query->toBase()->getCountForPagination();
 
-        return new \Illuminate\Pagination\LengthAwarePaginator($filas, $total, $porPagina, $pagina, [
+        return new \App\Support\PaginadorLigero($filas, $total, $porPagina, $pagina, [
             'path'     => \Illuminate\Pagination\Paginator::resolveCurrentPath(),
             'pageName' => 'page',
         ]);
@@ -86,5 +88,15 @@ abstract class Controller
         return $pedido === false || $pedido < 1
             ? (int) config('pagination.default')
             : min($pedido, $maximo);
+    }
+
+    /**
+     * Materias del centro por id, del catálogo en caché (ver `CatalogoMaterias`).
+     *
+     * @return \Illuminate\Support\Collection<string,\App\Models\Academic\Subject>
+     */
+    protected function materiasDelCentro(string $centro): \Illuminate\Support\Collection
+    {
+        return \App\Support\CatalogoMaterias::delCentro($centro);
     }
 }

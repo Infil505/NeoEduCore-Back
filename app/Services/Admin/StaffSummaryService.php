@@ -56,7 +56,7 @@ class StaffSummaryService
                 a.entregadas AS at_submitted, a.promedio AS at_avg,
                 p.pendientes AS pending_reviews,
                 s.total AS st_total, s.activos AS st_active,
-                m.total AS subjects,
+                m.total AS subjects, r.total AS resources,
                 u.total AS us_total, u.activos AS us_active,
                 u.alumnos AS us_students, u.alumnos_activos AS us_students_active,
                 u.docentes AS us_teachers, u.docentes_activos AS us_teachers_active,
@@ -89,6 +89,7 @@ class StaffSummaryService
                 (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status = 'active') AS activos
                    FROM students WHERE institution_id = ?) s,
                 (SELECT COUNT(*) AS total FROM subjects WHERE institution_id = ?) m,
+                (SELECT COUNT(*) AS total FROM study_resources WHERE institution_id = ?) r,
                 (SELECT COUNT(*) AS total,
                         COUNT(*) FILTER (WHERE status = 'active') AS activos,
                         COUNT(*) FILTER (WHERE user_type = 'student') AS alumnos,
@@ -98,7 +99,7 @@ class StaffSummaryService
                         COUNT(*) FILTER (WHERE user_type = 'admin') AS admins,
                         COUNT(*) FILTER (WHERE status = 'inactive' OR must_change_password) AS pendientes
                    FROM users WHERE institution_id = ?) u
-        SQL, array_fill(0, 12, $centro));
+        SQL, array_fill(0, 13, $centro));
 
         $grupos = $this->listaDeAulas(Group::query());
         [$proximos, $siguiente] = $this->avisosProximos($user);
@@ -119,7 +120,7 @@ class StaffSummaryService
             'pending_reviews'    => (int) $c->pending_reviews,
             'upcoming_events'    => $proximos,
             'next_event'         => $siguiente,
-            'resources'          => StudyResource::query()->visibleTo($user)->count(),
+            'resources'          => (int) $c->resources,
             'users'              => [
                 'total'            => (int) $c->us_total,
                 'active'           => (int) $c->us_active,
@@ -144,57 +145,82 @@ class StaffSummaryService
 
     private function paraDocente(User $user): array
     {
+        $centro = $user->institution_id;
+        $docente = $user->id;
+
         $grupos = $this->listaDeAulas(
             Group::query()->whereIn('id', $this->gruposDelDocente($user->id))
         );
 
-        $alumnos = Student::query()
-            ->tap(fn ($q) => $this->acotarAEstudiantesDelDocente($q, $user, 'user_id'))
-            ->selectRaw("COUNT(*) AS total, COUNT(*) FILTER (WHERE status = 'active') AS activos")
-            ->first();
-
-        $materias = Subject::query()
-            ->whereIn('id', $this->materiasDelDocente($user->id))
-            ->count();
-
-        $examenes = Exam::query()
-            ->where('created_by_teacher_id', $user->id)
-            ->selectRaw('status, COUNT(*) AS n')
-            ->groupBy('status')
-            ->pluck('n', 'status');
-
-        $idsDeExamenes = fn () => Exam::query()->where('created_by_teacher_id', $user->id)->select('id');
-
-        $entregas = ExamAttempt::query()
-            ->whereNotNull('submitted_at')
-            ->whereIn('exam_id', $idsDeExamenes())
-            ->selectRaw('COUNT(*) AS entregadas, AVG(CASE WHEN max_score > 0 THEN score / max_score * 100 END) AS promedio')
-            ->first();
-
-        $pendientes = StudentAnswer::query()
-            ->where('review_status', 'needs_review')
-            ->whereIn('attempt_id', ExamAttempt::query()->whereIn('exam_id', $idsDeExamenes())->select('id'))
-            ->count();
+        // Todas las cifras en UNA sentencia (antes eran seis consultas aparte: alumnado,
+        // materias, exámenes, entregas, revisiones y recursos). El alcance es el mismo:
+        // sus aulas asignadas, los exámenes que creó y los recursos que subió.
+        $c = DB::selectOne(<<<'SQL'
+            SELECT
+                s.total AS st_total, s.activos AS st_active,
+                m.total AS subjects,
+                e.total AS ex_total, e.borrador AS ex_draft, e.publicado AS ex_published,
+                e.activo AS ex_active, e.completado AS ex_completed,
+                a.entregadas AS at_submitted, a.promedio AS at_avg,
+                p.pendientes AS pending_reviews,
+                r.total AS resources
+            FROM
+                (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE st.status = 'active') AS activos
+                   FROM students st
+                  WHERE st.institution_id = ?
+                    AND st.user_id IN (SELECT gs.student_user_id
+                                         FROM group_students gs
+                                         JOIN teacher_assignments ta ON ta.group_id = gs.group_id
+                                        WHERE gs.left_at IS NULL AND ta.teacher_user_id = ? AND ta.institution_id = ?)) s,
+                (SELECT COUNT(DISTINCT subject_id) AS total
+                   FROM teacher_assignments WHERE teacher_user_id = ? AND institution_id = ?) m,
+                (SELECT COUNT(*) AS total,
+                        COUNT(*) FILTER (WHERE status = 'draft') AS borrador,
+                        COUNT(*) FILTER (WHERE status = 'published') AS publicado,
+                        COUNT(*) FILTER (WHERE status = 'active') AS activo,
+                        COUNT(*) FILTER (WHERE status = 'completed') AS completado
+                   FROM exams WHERE created_by_teacher_id = ? AND institution_id = ?) e,
+                (SELECT COUNT(*) AS entregadas,
+                        AVG(CASE WHEN max_score > 0 THEN score / max_score * 100 END) AS promedio
+                   FROM exam_attempts
+                  WHERE institution_id = ? AND submitted_at IS NOT NULL
+                    AND exam_id IN (SELECT id FROM exams WHERE created_by_teacher_id = ? AND institution_id = ?)) a,
+                (SELECT COUNT(*) AS pendientes
+                   FROM student_answers
+                  WHERE institution_id = ? AND review_status = 'needs_review'
+                    AND attempt_id IN (SELECT at.id FROM exam_attempts at
+                                        WHERE at.institution_id = ?
+                                          AND at.exam_id IN (SELECT id FROM exams
+                                                              WHERE created_by_teacher_id = ? AND institution_id = ?))) p,
+                (SELECT COUNT(*) AS total FROM study_resources WHERE institution_id = ? AND created_by = ?) r
+        SQL, [
+            $centro, $docente, $centro,          // s
+            $docente, $centro,                    // m
+            $docente, $centro,                    // e
+            $centro, $docente, $centro,           // a
+            $centro, $centro, $docente, $centro,  // p
+            $centro, $docente,                    // r
+        ]);
 
         [$proximos, $siguiente] = $this->avisosProximos($user);
 
         return [
             'groups'            => $grupos,
-            'students'          => ['total' => (int) $alumnos->total, 'active' => (int) $alumnos->activos],
-            'subjects'          => $materias,
+            'students'          => ['total' => (int) $c->st_total, 'active' => (int) $c->st_active],
+            'subjects'          => (int) $c->subjects,
             'exams'             => [
-                'total'     => (int) $examenes->sum(),
-                'draft'     => (int) ($examenes['draft'] ?? 0),
-                'published' => (int) ($examenes['published'] ?? 0),
-                'active'    => (int) ($examenes['active'] ?? 0),
-                'completed' => (int) ($examenes['completed'] ?? 0),
+                'total'     => (int) $c->ex_total,
+                'draft'     => (int) $c->ex_draft,
+                'published' => (int) $c->ex_published,
+                'active'    => (int) $c->ex_active,
+                'completed' => (int) $c->ex_completed,
             ],
-            'attempts_submitted' => (int) $entregas->entregadas,
-            'average_pct'        => $entregas->promedio === null ? null : round((float) $entregas->promedio, 2),
-            'pending_reviews'    => $pendientes,
+            'attempts_submitted' => (int) $c->at_submitted,
+            'average_pct'        => $c->at_avg === null ? null : round((float) $c->at_avg, 2),
+            'pending_reviews'    => (int) $c->pending_reviews,
             'upcoming_events'    => $proximos,
             'next_event'         => $siguiente,
-            'resources'          => StudyResource::query()->visibleTo($user)->count(),
+            'resources'          => (int) $c->resources,
             'users'              => null,
             'attention'          => null,
         ];

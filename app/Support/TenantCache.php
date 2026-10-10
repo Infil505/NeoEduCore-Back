@@ -50,6 +50,14 @@ final class TenantCache
      */
     public const AGENDA = 'agenda';
 
+    /**
+     * Agregados de reportes sobre intentos y respuestas (dominio por tema…). Cuestan
+     * una pasada por TODAS las respuestas del centro, que crecen cada año, y solo
+     * cambian cuando alguien entrega un examen o se revisa una respuesta: ahí se
+     * invalidan (observadores en `AppServiceProvider`), así que no se sirve nada viejo.
+     */
+    public const REPORTES = 'reportes';
+
     public static function remember(?string $centro, string $area, string $clave, int $ttl, Closure $calcular): mixed
     {
         // Sin centro (superadmin) no hay a quién aislar: no se cachea.

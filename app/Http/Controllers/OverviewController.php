@@ -135,7 +135,7 @@ class OverviewController extends Controller
         // created_by_teacher_id).
         if ($quiere('exams')) {
             $datos['exams'] = Exam::query()
-                ->with(['subject', 'teacher'])
+                ->with(['subject:id,name', 'teacher:id,full_name'])
                 ->when($esDocente, fn ($query) => $query->where('created_by_teacher_id', $user->id))
                 ->orderByDesc('created_at')
                 ->limit(20)
@@ -148,7 +148,7 @@ class OverviewController extends Controller
         if ($quiere('calendar')) {
             $datos['calendar'] = CalendarEvent::query()
                 ->visibleTo($user)
-                ->with(['creator', 'group', 'exam'])
+                ->with(['creator:id,full_name', 'group:id,name,grade,section', 'exam:id,title'])
                 ->orderBy('start_at')
                 ->limit(30)
                 ->get();
@@ -157,7 +157,7 @@ class OverviewController extends Controller
         if ($quiere('resources')) {
             $datos['resources'] = StudyResource::query()
                 ->visibleTo($user)
-                ->with(['creator', 'groups'])
+                ->with(['creator:id,full_name', 'groups'])
                 ->orderByDesc('created_at')
                 ->limit(20)
                 ->get();
@@ -265,7 +265,7 @@ class OverviewController extends Controller
         $user = $request->user();
 
         $student = Student::query()
-            ->with(['user', 'groups', 'progress'])
+            ->with(['groups', 'progress'])
             ->where('user_id', $user->id)
             ->first();
 
@@ -282,9 +282,13 @@ class OverviewController extends Controller
             $student->institution_id, TenantCache::CONFIG, 'institution-row', 600,
             fn () => Institution::query()->whereKey($student->institution_id)->toBase()->first()
         );
-        if ($filaCentro !== null && $student->user !== null) {
-            $student->user->setRelation('institution', (new Institution())->newFromBuilder((array) $filaCentro));
+        // El usuario ya está cargado por la autenticación: se reutiliza en vez de
+        // pedirlo otra vez (una consulta menos). Mismo contenido que `with('user')`.
+        $usuario = clone $user;
+        if ($filaCentro !== null) {
+            $usuario->setRelation('institution', (new Institution())->newFromBuilder((array) $filaCentro));
         }
+        $student->setRelation('user', $usuario);
 
         // Las materias del centro, del catálogo cacheado: antes se pedían por
         // separado para el progreso, los exámenes y las recomendaciones (3 consultas).
@@ -368,23 +372,6 @@ class OverviewController extends Controller
                 'subjects' => $subjects,
             ],
         ]);
-    }
-
-    /**
-     * Materias del centro por id, del catálogo cacheado (`TenantCache::CATALOGO`,
-     * se invalida al tocar una materia). Filas crudas en la caché y modelos
-     * armados en cada petición, para no guardar objetos Eloquent.
-     *
-     * @return Collection<string,Subject>
-     */
-    private function materiasDelCentro(string $centro): Collection
-    {
-        $filas = TenantCache::remember(
-            $centro, TenantCache::CATALOGO, 'subjects-map', 300,
-            fn () => Subject::query()->toBase()->get()->map(fn ($fila) => (array) $fila)->all()
-        );
-
-        return collect($filas)->mapWithKeys(fn (array $fila) => [$fila['id'] => (new Subject())->newFromBuilder($fila)]);
     }
 
     private function buildStudentDiagnosis(Student $student): array

@@ -54,8 +54,9 @@ class ReportController extends Controller
             ->where('exam_id', $exam->id)
             ->whereNotNull('submitted_at')
             ->with(['student.user'])
-            ->orderByDesc('score')
-            ->paginate(config('pagination.reports'));
+            ->orderByDesc('score');
+
+        $paginator = $this->paginar($paginator, $request, (int) config('pagination.reports'));
 
         $paginator->through(fn ($a) => [
             'attempt_id'      => $a->id,
@@ -225,9 +226,14 @@ class ReportController extends Controller
         $paginator = ExamAttempt::query()
             ->where('student_user_id', $student_user_id)
             ->whereNotNull('submitted_at')
-            ->with('exam.subject')
-            ->orderByDesc('submitted_at')
-            ->paginate(config('pagination.reports'));
+            ->with('exam')
+            ->orderByDesc('submitted_at');
+
+        // Sin el COUNT cuando la página no se llena (`paginar`), y las materias del
+        // catálogo en caché en vez de otra consulta.
+        $paginator = $this->paginar($paginator, $request, (int) config('pagination.reports'));
+        $materias = $this->materiasDelCentro($student->institution_id);
+        $paginator->getCollection()->each(fn ($a) => $a->exam?->setRelation('subject', $materias->get($a->exam->subject_id)));
 
         $paginator->through(fn ($a) => [
             'attempt_id'   => $a->id,

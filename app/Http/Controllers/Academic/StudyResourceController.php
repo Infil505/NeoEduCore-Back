@@ -10,6 +10,7 @@ use App\Enums\ResourceType;
 use App\Enums\UserType;
 use App\Models\Academic\StudyResource;
 use App\Services\AI\AiOutputValidator;
+use App\Support\RelacionesEnLinea;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -51,21 +52,31 @@ class StudyResourceController extends Controller
             'grade'         => ['nullable', 'integer'],
         ]);
 
-        $query = StudyResource::query()
-            ->visibleTo($request->user())
-            ->with(['creator', 'subject', 'groups'])
-            ->orderByDesc('created_at');
+        $user = $request->user();
+        $esAlumno = $user?->user_type === UserType::Student;
+
+        // Autor y materia en la MISMA consulta (LEFT JOIN, ver `RelacionesEnLinea`); las aulas
+        // solo se piden al personal (el alumno no las recibe: `acotarParaEstudiante` las
+        // oculta). Con la base remota cada consulta cuesta ~0,4 s: el alumno pasa de 4 a 1.
+        $query = RelacionesEnLinea::unir(StudyResource::query()->visibleTo($user), [
+            'creator' => ['users', 'created_by', ['id', 'full_name']],
+            'subject' => ['subjects', 'subject_id', ['id', 'name']],
+        ])->orderByDesc('study_resources.created_at');
+
+        if (!$esAlumno) {
+            $query->with('groups');
+        }
 
         if ($request->filled('resource_type')) {
-            $query->where('resource_type', $request->string('resource_type')->toString());
+            $query->where('study_resources.resource_type', $request->string('resource_type')->toString());
         }
 
         if ($request->filled('difficulty')) {
-            $query->where('difficulty', $request->string('difficulty')->toString());
+            $query->where('study_resources.difficulty', $request->string('difficulty')->toString());
         }
 
         if ($request->filled('subject_id')) {
-            $query->where('subject_id', $request->string('subject_id')->toString());
+            $query->where('study_resources.subject_id', $request->string('subject_id')->toString());
         }
 
         if ($request->filled('grade')) {
@@ -79,7 +90,9 @@ class StudyResourceController extends Controller
 
         $paginator = $this->paginar($query, $request);
 
-        $this->acotarParaEstudiante($request->user(), $paginator->getCollection());
+        RelacionesEnLinea::hidratar($paginator->getCollection(), ['creator' => \App\Models\Admin\User::class, 'subject' => \App\Models\Academic\Subject::class]);
+
+        $this->acotarParaEstudiante($user, $paginator->getCollection());
 
         return response()->json([
             'data' => $paginator,
@@ -154,7 +167,7 @@ class StudyResourceController extends Controller
         $resource->syncGroups($grupos);
 
         return response()->json([
-            'data' => $resource->load(['creator', 'subject', 'groups']),
+            'data' => $resource->load(['creator:id,full_name', 'subject:id,name', 'groups']),
         ], 201);
     }
 
@@ -168,7 +181,7 @@ class StudyResourceController extends Controller
             return response()->json(['message' => 'No encontrado'], 404);
         }
 
-        $studyResource->load(['creator', 'subject', 'groups']);
+        $studyResource->load(['creator:id,full_name', 'subject:id,name', 'groups']);
         $this->acotarParaEstudiante($request->user(), [$studyResource]);
 
         return response()->json([
@@ -251,7 +264,7 @@ class StudyResourceController extends Controller
         }
 
         return response()->json([
-            'data' => $studyResource->fresh()->load(['creator', 'subject', 'groups']),
+            'data' => $studyResource->fresh()->load(['creator:id,full_name', 'subject:id,name', 'groups']),
         ]);
     }
 

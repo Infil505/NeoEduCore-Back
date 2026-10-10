@@ -114,10 +114,12 @@ class Exam extends Model
             return $query;
         }
 
+        // Columnas con el nombre de la tabla: un listado puede unir `users` (que también
+        // tiene `status`) para traer al docente en la misma consulta.
         return $query
-            ->where('status', ExamStatus::Active->value)
-            ->where(fn ($q) => $q->whereNull('available_from')->orWhere('available_from', '<=', now()))
-            ->where(fn ($q) => $q->whereNull('available_until')->orWhere('available_until', '>=', now()))
+            ->where('exams.status', ExamStatus::Active->value)
+            ->where(fn ($q) => $q->whereNull('exams.available_from')->orWhere('exams.available_from', '<=', now()))
+            ->where(fn ($q) => $q->whereNull('exams.available_until')->orWhere('exams.available_until', '>=', now()))
             ->asignadoAlAulaDe($user);
     }
 

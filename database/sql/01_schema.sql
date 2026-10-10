@@ -1176,6 +1176,13 @@ CREATE INDEX idx_ai_institution ON public.ai_recommendations USING btree (instit
 
 
 --
+-- Name: idx_ai_recommendations_institucion_creado; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ai_recommendations_institucion_creado ON public.ai_recommendations USING btree (institution_id, created_at);
+
+
+--
 -- Name: idx_ai_recs_regen_filter; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1274,6 +1281,27 @@ CREATE INDEX idx_calendar_events_audience ON public.calendar_events USING btree 
 
 
 --
+-- Name: idx_calendar_events_aula; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_calendar_events_aula ON public.calendar_events USING btree (group_id);
+
+
+--
+-- Name: idx_calendar_events_autor; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_calendar_events_autor ON public.calendar_events USING btree (created_by);
+
+
+--
+-- Name: idx_calendar_events_institucion_inicio; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_calendar_events_institucion_inicio ON public.calendar_events USING btree (institution_id, start_at);
+
+
+--
 -- Name: idx_chat_sessions_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1292,6 +1320,34 @@ CREATE INDEX idx_exam_targets_exam ON public.exam_targets USING btree (exam_id);
 --
 
 CREATE INDEX idx_exam_targets_group ON public.exam_targets USING btree (group_id);
+
+
+--
+-- Name: idx_exams_docente; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_exams_docente ON public.exams USING btree (created_by_teacher_id);
+
+
+--
+-- Name: idx_exams_institucion_creado; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_exams_institucion_creado ON public.exams USING btree (institution_id, created_at);
+
+
+--
+-- Name: idx_exams_materia; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_exams_materia ON public.exams USING btree (subject_id);
+
+
+--
+-- Name: idx_group_students_abiertas; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_group_students_abiertas ON public.group_students USING btree (student_user_id) INCLUDE (group_id) WHERE (left_at IS NULL);
 
 
 --
@@ -1337,6 +1393,13 @@ CREATE INDEX idx_questions_exam_order ON public.questions USING btree (exam_id, 
 
 
 --
+-- Name: idx_student_progress_institucion_actualizado; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_student_progress_institucion_actualizado ON public.student_progress USING btree (institution_id, updated_at);
+
+
+--
 -- Name: idx_students_grade; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1365,10 +1428,31 @@ CREATE INDEX idx_study_resource_groups_group ON public.study_resource_groups USI
 
 
 --
+-- Name: idx_study_resources_autor; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_study_resources_autor ON public.study_resources USING btree (created_by);
+
+
+--
+-- Name: idx_study_resources_institucion_creado; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_study_resources_institucion_creado ON public.study_resources USING btree (institution_id, created_at);
+
+
+--
 -- Name: idx_users_institution; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_users_institution ON public.users USING btree (institution_id);
+
+
+--
+-- Name: idx_users_personal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_users_personal ON public.users USING btree (institution_id, created_at) WHERE (user_type <> 'student'::public.user_type);
 
 
 --

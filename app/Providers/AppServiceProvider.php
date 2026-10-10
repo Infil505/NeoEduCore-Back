@@ -68,38 +68,53 @@ class AppServiceProvider extends ServiceProvider
      */
     private function invalidarCachesDelCatalogo(): void
     {
-        $catalogo = fn (object $modelo) => TenantCache::invalidar($modelo->institution_id ?? null, TenantCache::CATALOGO);
+        // Se escucha por el NOMBRE del evento de Eloquent (`eloquent.saved: Clase`), que es
+        // exactamente lo que registra `Modelo::saved()` por dentro, pero sin escribir el
+        // nombre de la clase como `Modelo::class` ni llamar al método estático: eso cargaba
+        // en CADA petición (también en un preflight o un `ping`) 12 modelos con sus traits
+        // solo para colgarles un oyente.
+        $escuchar = function (array $clases, \Closure $accion): void {
+            foreach ($clases as $clase) {
+                foreach (['saved', 'deleted'] as $evento) {
+                    Event::listen("eloquent.{$evento}: {$clase}", $accion);
+                }
+            }
+        };
 
-        // Las materias llevan `exams_count`, así que también cuentan los exámenes.
-        foreach ([\App\Models\Academic\Subject::class, \App\Models\Academic\Group::class, \App\Models\Academic\TeacherAssignment::class, \App\Models\Exams\Exam::class] as $modelo) {
-            $modelo::saved($catalogo);
-            $modelo::deleted($catalogo);
-        }
+        // Catálogo. Las materias llevan `exams_count`, así que también cuentan los exámenes.
+        $escuchar(
+            ['App\Models\Academic\Subject', 'App\Models\Academic\Group', 'App\Models\Academic\TeacherAssignment', 'App\Models\Exams\Exam'],
+            fn (object $modelo) => TenantCache::invalidar($modelo->institution_id ?? null, TenantCache::CATALOGO)
+        );
 
         // Los avisos del alumnado (`TenantCache::AGENDA`) muestran el aviso, su
         // examen y su aula: cambia cualquiera de los tres.
-        $agenda = fn (object $modelo) => TenantCache::invalidar($modelo->institution_id ?? null, TenantCache::AGENDA);
-        foreach ([\App\Models\Academic\CalendarEvent::class, \App\Models\Exams\Exam::class, \App\Models\Academic\Group::class] as $modelo) {
-            $modelo::saved($agenda);
-            $modelo::deleted($agenda);
-        }
+        $escuchar(
+            ['App\Models\Academic\CalendarEvent', 'App\Models\Exams\Exam', 'App\Models\Academic\Group'],
+            fn (object $modelo) => TenantCache::invalidar($modelo->institution_id ?? null, TenantCache::AGENDA)
+        );
+
+        // Reportes: cambian al entregar un examen (el intento guarda `submitted_at` después
+        // de insertar sus respuestas), al revisar a mano una respuesta o al editar una
+        // pregunta (su tema). Las inserciones masivas de respuestas no disparan eventos,
+        // pero la entrega siempre termina guardando el intento.
+        $escuchar(
+            ['App\Models\Exams\ExamAttempt', 'App\Models\Students\StudentAnswer', 'App\Models\Exams\Question'],
+            fn (object $modelo) => TenantCache::invalidar($modelo->institution_id ?? null, TenantCache::REPORTES)
+        );
 
         // El listado de docentes: solo importan las cuentas de docente (alta,
         // cambio de nombre/estado, borrado, o dejar de serlo).
         $docente = \App\Enums\UserType::Teacher->value;
         $esDocente = fn ($valor) => ($valor instanceof \BackedEnum ? $valor->value : $valor) === $docente;
-        $cuentaDocente = function (\App\Models\Admin\User $usuario) use ($esDocente) {
+        $escuchar(['App\Models\Admin\User'], function (object $usuario) use ($esDocente) {
             if ($esDocente($usuario->user_type) || $esDocente($usuario->getOriginal('user_type'))) {
                 TenantCache::invalidar($usuario->institution_id, TenantCache::CATALOGO);
             }
-        };
-        \App\Models\Admin\User::saved($cuentaDocente);
-        \App\Models\Admin\User::deleted($cuentaDocente);
+        });
 
         // Ajustes del centro. La institución no tiene `institution_id`: su id es el centro.
-        $config = fn (\App\Models\Admin\Institution $centro) => TenantCache::invalidar($centro->id, TenantCache::CONFIG);
-        \App\Models\Admin\Institution::saved($config);
-        \App\Models\Admin\Institution::deleted($config);
+        $escuchar(['App\Models\Admin\Institution'], fn (object $centro) => TenantCache::invalidar($centro->id, TenantCache::CONFIG));
     }
 
     /**
@@ -217,6 +232,15 @@ class AppServiceProvider extends ServiceProvider
 
         Event::listen(ConnectionEstablished::class, function (ConnectionEstablished $evento) use ($milisegundos) {
             if ($evento->connection->getDriverName() !== 'pgsql') {
+                return;
+            }
+
+            // Conexión persistente (`DB_PERSISTENT`, solo `artisan serve`): este
+            // evento salta en CADA petición aunque la sesión de la base sea la
+            // misma, y el `SET` es un viaje más (~0,4 s con la base remota) para
+            // fijar algo que ya tiene. En producción (Octane) la conexión no es
+            // persistente de PDO y se fija una vez por conexión, como siempre.
+            if (($evento->connection->getConfig('options')[\PDO::ATTR_PERSISTENT] ?? false) === true) {
                 return;
             }
 

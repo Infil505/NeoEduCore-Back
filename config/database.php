@@ -111,12 +111,21 @@ return [
             'database' => env('DB_DATABASE', 'laravel'),
             'username' => env('DB_USERNAME', 'root'),
             'password' => env('DB_PASSWORD', ''),
-            'charset' => env('DB_CHARSET', 'utf8'),
+            // `DB_PERSISTENT=true` (solo para `php artisan serve`): conexión persistente
+            // y SIN las sentencias de sesión de Laravel (SET NAMES, TIME ZONE y
+            // search_path). `artisan serve` arranca la aplicación de cero en cada
+            // petición y abría una conexión nueva a la base remota cada vez: ~0,9 s de
+            // conexión + ~1,4 s en esas sentencias (una por viaje de ~0,4 s). El
+            // servidor ya trae UTF8, UTC y `public` en el search_path, así que no
+            // cambia nada. En producción (Octane) la conexión vive en memoria y no hace
+            // falta: déjalo en false.
+            'charset' => env('DB_PERSISTENT', false) ? null : env('DB_CHARSET', 'utf8'),
             'prefix' => '',
             'prefix_indexes' => true,
-            'search_path' => 'public',
+            'search_path' => env('DB_PERSISTENT', false) ? null : 'public',
             'sslmode' => 'prefer',
-            'timezone' => 'UTC',
+            'timezone' => env('DB_PERSISTENT', false) ? null : 'UTC',
+            'options' => env('DB_PERSISTENT', false) ? [PDO::ATTR_PERSISTENT => true] : [],
         ],
 
         'sqlsrv' => [

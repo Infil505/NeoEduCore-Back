@@ -6,7 +6,7 @@ use App\Notifications\CargaMasivaEstudiantes;
 use App\Services\Students\StudentBulkImporter;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -101,16 +101,13 @@ class ProcesarCargaMasivaEstudiantes implements ShouldQueue
      */
     private function actualizar(array $datos, bool $sinLeer = false): void
     {
-        $aviso = DatabaseNotification::find($this->avisoId);
-
-        if ($aviso === null) {
-            return; // el usuario se borró entre medias: nadie a quien avisar
-        }
-
-        $aviso->data = array_merge($aviso->data, $datos);
-        if ($sinLeer) {
-            $aviso->read_at = null;
-        }
-        $aviso->save();
+        // UNA sentencia (mezcla de jsonb en la base) en vez de leer y guardar:
+        // son dos viajes menos por actualización, ~0,8 s con la base remota.
+        // Si el aviso ya no existe (el usuario se borró entre medias) no toca nada.
+        // El JSON viaja como parámetro (no incrustado): los mensajes llevan «?» y comillas.
+        DB::update(
+            'update notifications set data = data::jsonb || ?::jsonb' . ($sinLeer ? ', read_at = null' : '') . ' where id = ?',
+            [json_encode($datos, JSON_UNESCAPED_UNICODE), $this->avisoId]
+        );
     }
 }
