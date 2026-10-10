@@ -422,11 +422,18 @@ class AiTutorService
         ]);
     }
 
-    public function getDiagnosis(string $studentUserId): string
+    /**
+     * @param  Student|null  $alumno  si quien llama ya lo tiene cargado (con su `user`), se
+     *                                reutiliza: son dos consultas menos con la base remota.
+     */
+    public function getDiagnosis(string $studentUserId, ?Student $alumno = null): string
     {
-        $student = Student::with(['user', 'progress.subject'])
-            ->where('user_id', $studentUserId)
-            ->firstOrFail();
+        $student = $alumno ?? Student::conUsuario($studentUserId) ?? throw (new \Illuminate\Database\Eloquent\ModelNotFoundException())->setModel(Student::class);
+
+        // Las materias salen del catálogo en caché del centro, no de otra consulta.
+        $materias = \App\Support\CatalogoMaterias::delCentro($student->institution_id);
+        $student->loadMissing('progress');
+        $student->progress->each(fn ($p) => $p->setRelation('subject', $materias->get($p->subject_id)));
 
         $name = $student->user?->full_name ?? 'el estudiante';
 

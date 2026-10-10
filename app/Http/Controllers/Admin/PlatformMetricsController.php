@@ -62,8 +62,18 @@ class PlatformMetricsController extends Controller
 
         $institucion = $filtros['institution_id'] ?? null;
 
-        $incidencias = $this->incidenciasPorTipo($desde, $hasta, $institucion);
-        $mensajes    = $this->mensajesDelTutor($desde, $hasta, $institucion);
+        // Con la base remota cada consulta cuesta ~0,4 s: las incidencias se piden
+        // UNA vez agrupadas por todo lo que el panel desglosa, y las sesiones y los
+        // centros otra cada una (3 consultas en vez de 8). El resto se suma aquí.
+        $filas      = $this->incidenciasAgrupadas($desde, $hasta, $institucion);
+        $sesiones   = $this->sesionesPorCentro($desde, $hasta, $institucion);
+        $centros    = Institution::query()->pluck('name', 'id');
+
+        $incidencias = $this->incidenciasPorTipo($filas);
+        $mensajes    = [
+            'sessions'           => (int) $sesiones->sum('sesiones'),
+            'assistant_messages' => intdiv((int) $sesiones->sum('mensajes'), 2),
+        ];
 
         $deValidacion = collect($incidencias)
             ->only(AiIncidentType::deValidacion())
@@ -76,7 +86,7 @@ class PlatformMetricsController extends Controller
                     'to'   => $hasta->toIso8601String(),
                 ],
                 'totals' => [
-                    'institutions'          => Institution::count(),
+                    'institutions'          => $centros->count(),
                     'sessions'              => $mensajes['sessions'],
                     'assistant_messages'    => $mensajes['assistant_messages'],
                     'incidents'             => array_sum($incidencias),
@@ -87,9 +97,9 @@ class PlatformMetricsController extends Controller
                         >= self::UMBRAL_VALIDACION,
                 ],
                 'by_type'        => $incidencias,
-                'by_stage'       => $this->incidenciasPorEtapa($desde, $hasta, $institucion),
-                'by_institution' => $this->porInstitucion($desde, $hasta, $institucion),
-                'daily'          => $this->porDia($desde, $hasta, $institucion),
+                'by_stage'       => $this->incidenciasPorEtapa($filas),
+                'by_institution' => $this->porInstitucion($filas, $sesiones, $centros),
+                'daily'          => $this->porDia($filas),
             ],
         ]);
     }
@@ -110,17 +120,34 @@ class PlatformMetricsController extends Controller
         return round(max(0, $mensajes - $incidencias) / $mensajes * 100, 2);
     }
 
+    /**
+     * Incidencias de la ventana agrupadas por tipo, etapa, centro y día.
+     *
+     * @return \Illuminate\Support\Collection<int,object{type:string,stage:string,institution_id:string,dia:string,total:int}>
+     */
+    private function incidenciasAgrupadas(Carbon $desde, Carbon $hasta, ?string $institucion)
+    {
+        return $this->incidencias($desde, $hasta, $institucion)
+            ->select('type', 'stage', 'institution_id', DB::raw('DATE(occurred_at) as dia'), DB::raw('COUNT(*) as total'))
+            ->groupBy('type', 'stage', 'institution_id', 'dia')
+            ->get();
+    }
+
+    /** Sesiones y mensajes por centro en la ventana. */
+    private function sesionesPorCentro(Carbon $desde, Carbon $hasta, ?string $institucion)
+    {
+        return $this->sesionesBase($desde, $hasta, $institucion)
+            ->select('institution_id', DB::raw('COUNT(*) as sesiones'), DB::raw('COALESCE(SUM(jsonb_array_length(messages)), 0) as mensajes'))
+            ->groupBy('institution_id')
+            ->get();
+    }
+
     /** @return array<string,int> tipo => total */
-    private function incidenciasPorTipo(Carbon $desde, Carbon $hasta, ?string $institucion): array
+    private function incidenciasPorTipo($filas): array
     {
         $base = array_fill_keys(array_column(AiIncidentType::cases(), 'value'), 0);
 
-        $contados = $this->incidencias($desde, $hasta, $institucion)
-            ->select('type', DB::raw('COUNT(*) as total'))
-            ->groupBy('type')
-            ->pluck('total', 'type')
-            ->map(fn ($t) => (int) $t)
-            ->all();
+        $contados = $filas->groupBy('type')->map(fn ($g) => (int) $g->sum('total'))->all();
 
         // Los tipos sin incidencias salen en 0 y no ausentes: un panel con
         // columnas que aparecen y desaparecen no se puede comparar entre fechas.
@@ -128,14 +155,9 @@ class PlatformMetricsController extends Controller
     }
 
     /** @return array<string,int> etapa => total */
-    private function incidenciasPorEtapa(Carbon $desde, Carbon $hasta, ?string $institucion): array
+    private function incidenciasPorEtapa($filas): array
     {
-        return $this->incidencias($desde, $hasta, $institucion)
-            ->select('stage', DB::raw('COUNT(*) as total'))
-            ->groupBy('stage')
-            ->pluck('total', 'stage')
-            ->map(fn ($t) => (int) $t)
-            ->all();
+        return $filas->groupBy('stage')->map(fn ($g) => (int) $g->sum('total'))->all();
     }
 
     /**
@@ -143,21 +165,12 @@ class PlatformMetricsController extends Controller
      * o de un colegio concreto. Lleva nombre de institución —el superadmin las
      * administra— pero ningún dato de personas.
      */
-    private function porInstitucion(Carbon $desde, Carbon $hasta, ?string $institucion): array
+    private function porInstitucion($filas, $sesiones, $nombres): array
     {
-        $incidencias = $this->incidencias($desde, $hasta, $institucion)
-            ->select('institution_id', DB::raw('COUNT(*) as total'))
-            ->groupBy('institution_id')
-            ->pluck('total', 'institution_id');
-
-        $mensajes = $this->sesionesBase($desde, $hasta, $institucion)
-            ->select('institution_id', DB::raw('SUM(jsonb_array_length(messages)) as total'))
-            ->groupBy('institution_id')
-            ->pluck('total', 'institution_id');
+        $incidencias = $filas->groupBy('institution_id')->map(fn ($g) => (int) $g->sum('total'));
+        $mensajes    = $sesiones->pluck('mensajes', 'institution_id');
 
         $ids = $incidencias->keys()->merge($mensajes->keys())->unique();
-
-        $nombres = Institution::whereIn('id', $ids)->pluck('name', 'id');
 
         return $ids->map(function ($id) use ($incidencias, $mensajes, $nombres) {
             $asistente = intdiv((int) ($mensajes[$id] ?? 0), 2);
@@ -174,34 +187,10 @@ class PlatformMetricsController extends Controller
     }
 
     /** Serie diaria de incidencias, para el gráfico de líneas del panel. */
-    private function porDia(Carbon $desde, Carbon $hasta, ?string $institucion): array
+    private function porDia($filas): array
     {
-        return $this->incidencias($desde, $hasta, $institucion)
-            ->select(DB::raw('DATE(occurred_at) as dia'), DB::raw('COUNT(*) as total'))
-            ->groupBy('dia')
-            ->orderBy('dia')
-            ->get()
-            ->map(fn ($f) => ['date' => (string) $f->dia, 'incidents' => (int) $f->total])
-            ->all();
-    }
-
-    /**
-     * Mensajes del tutor en la ventana.
-     *
-     * `messages` guarda la conversación entera, alumno y modelo alternándose, y
-     * lo que hay que medir son las respuestas **del modelo**: dividir entre dos
-     * es exacto porque cada turno escribe siempre el par.
-     */
-    private function mensajesDelTutor(Carbon $desde, Carbon $hasta, ?string $institucion): array
-    {
-        $fila = $this->sesionesBase($desde, $hasta, $institucion)
-            ->selectRaw('COUNT(*) as sesiones, COALESCE(SUM(jsonb_array_length(messages)), 0) as mensajes')
-            ->first();
-
-        return [
-            'sessions'           => (int) ($fila->sesiones ?? 0),
-            'assistant_messages' => intdiv((int) ($fila->mensajes ?? 0), 2),
-        ];
+        return $filas->groupBy('dia')->map(fn ($g, $dia) => ['date' => (string) $dia, 'incidents' => (int) $g->sum('total')])
+            ->sortKeys()->values()->all();
     }
 
     private function incidencias(Carbon $desde, Carbon $hasta, ?string $institucion)

@@ -15,6 +15,7 @@ use App\Services\Admin\ReportStrategyService;
 use App\Services\Academic\TopicMasteryService;
 use App\Services\AI\ExamAnalysisNarrative;
 use App\Services\Exams\ExamGroupAnalysisService;
+use App\Support\RelacionesEnLinea;
 use App\Support\TenantCache;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -51,17 +52,20 @@ class ReportController extends Controller
         }
 
         $paginator = ExamAttempt::query()
-            ->where('exam_id', $exam->id)
-            ->whereNotNull('submitted_at')
-            ->with(['student.user'])
-            ->orderByDesc('score');
+            ->where('exam_attempts.exam_id', $exam->id)
+            ->whereNotNull('exam_attempts.submitted_at')
+            ->orderByDesc('exam_attempts.score');
 
+        // El nombre del alumno unido en la misma consulta (`RelacionesEnLinea`): antes eran
+        // tres (intentos, alumnos y usuarios).
+        $paginator = RelacionesEnLinea::unir($paginator, ['alumno' => ['users', 'student_user_id', ['id', 'full_name']]]);
         $paginator = $this->paginar($paginator, $request, (int) config('pagination.reports'));
+        RelacionesEnLinea::hidratar($paginator->getCollection(), ['alumno' => \App\Models\Admin\User::class]);
 
         $paginator->through(fn ($a) => [
             'attempt_id'      => $a->id,
             'student_user_id' => $a->student_user_id,
-            'student_name'    => $a->student?->user?->full_name,
+            'student_name'    => $a->alumno?->full_name,
             'score'           => (float) $a->score,
             'max_score'       => (float) $a->max_score,
             'percentage'      => $a->percentage,
@@ -225,13 +229,16 @@ class ReportController extends Controller
 
         $paginator = ExamAttempt::query()
             ->where('student_user_id', $student_user_id)
-            ->whereNotNull('submitted_at')
-            ->with('exam')
-            ->orderByDesc('submitted_at');
+            ->whereNotNull('exam_attempts.submitted_at')
+            ->orderByDesc('exam_attempts.submitted_at');
+
+        // El examen unido en la misma consulta (`RelacionesEnLinea`), no una más.
+        $paginator = RelacionesEnLinea::unir($paginator, ['exam' => ['exams', 'exam_id', Exam::COLUMNAS]]);
 
         // Sin el COUNT cuando la página no se llena (`paginar`), y las materias del
         // catálogo en caché en vez de otra consulta.
         $paginator = $this->paginar($paginator, $request, (int) config('pagination.reports'));
+        RelacionesEnLinea::hidratar($paginator->getCollection(), ['exam' => Exam::class]);
         $materias = $this->materiasDelCentro($student->institution_id);
         $paginator->getCollection()->each(fn ($a) => $a->exam?->setRelation('subject', $materias->get($a->exam->subject_id)));
 
@@ -262,7 +269,7 @@ class ReportController extends Controller
      */
     public function myStrategies(Request $request)
     {
-        $student = Student::with('user')->where('user_id', $request->user()->id)->first();
+        $student = Student::conUsuario($request->user()->id);
 
         if ($student === null) {
             return response()->json(['message' => 'Este usuario no tiene perfil de estudiante'], 404);
@@ -321,9 +328,10 @@ class ReportController extends Controller
      */
     private function findStudent(string $student_user_id, object $viewer): Student
     {
-        $student = Student::with('user')->where('user_id', $student_user_id)->firstOrFail();
+        // El alumno y su usuario en una sola consulta (`Student::conUsuario`).
+        $student = $this->alumnoConUsuarioVisiblePor($viewer, $student_user_id) ?? abort(404);
 
-        if ($this->esDocente($viewer) && !$this->docenteAlcanzaEstudiante($viewer, $student_user_id)) {
+        if ($this->noAlcanzaAlAlumno($viewer, $student)) {
             abort(403, 'No autorizado: no estás asignado a ningún grupo de este estudiante.');
         }
 

@@ -4,6 +4,8 @@ namespace App\Services\Admin;
 
 use App\Models\Admin\Institution;
 use App\Support\CatalogoMaterias;
+use App\Support\RelacionesEnLinea;
+use Illuminate\Support\Arr;
 use App\Support\TenantCache;
 use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
@@ -48,8 +50,6 @@ class ReportMetricsService
      */
     public function examSummary(Exam $exam): array
     {
-        $exam->loadMissing(['subject:id,name', 'teacher:id,full_name']);
-
         $passing = $this->passingPercentage($exam->institution_id);
         $cuts    = $this->levelCuts($passing);
 
@@ -61,8 +61,10 @@ class ReportMetricsService
                 'id'      => $exam->id,
                 'title'   => $exam->title,
                 'grade'   => $exam->grade,
-                'subject' => $exam->subject?->name,
-                'teacher' => $exam->teacher?->full_name,
+                // Materia del catálogo en caché y docente en la misma consulta de los
+                // agregados: ni una consulta más (cada viaje a la base remota cuesta ~0,4 s).
+                'subject' => $exam->subject_id ? CatalogoMaterias::delCentro($exam->institution_id)->get($exam->subject_id)?->name : null,
+                'teacher' => $row->teacher_name ?? null,
             ],
             'passing_percentage' => $passing,
             'totals' => [
@@ -93,13 +95,11 @@ class ReportMetricsService
         $passing = $this->passingPercentage($student->institution_id);
         $points  = max(1, min($trendPoints, self::MAX_TREND_POINTS));
 
-        $row   = $this->studentAggregates($student, $passing);
-        $total = (int) ($row->total ?? 0);
-
-        // Los últimos intentos ya se piden para la serie: el más reciente es el
-        // «último», sin otra consulta solo para él.
-        $recientes = $this->recentAttempts($student, $points);
-        $ultimo    = $recientes->first();
+        // Totales y últimos intentos en UNA consulta: los totales se calculan con funciones de
+        // ventana (antes del LIMIT) y van en cada fila. El más reciente es el «último».
+        [$recientes, $row] = $this->recentAttemptsWithTotals($student, $points, $passing);
+        $total  = (int) ($row->total ?? 0);
+        $ultimo = $recientes->first();
 
         return [
             'student' => [
@@ -208,46 +208,65 @@ class ReportMetricsService
         $selects[]  = "COUNT(*) FILTER (WHERE {$pct} < ?) AS lvl_needs_support";
         $bindings[] = $cuts['passing'];
 
+        // Nombre del docente en la misma consulta (subselect escalar, sin relación aparte).
+        $selects[]  = '(SELECT u.full_name FROM users u WHERE u.id = ? AND u.institution_id = ?) AS teacher_name';
+        $bindings[] = $exam->created_by_teacher_id;
+        $bindings[] = $exam->institution_id;
+
         return $this->gradedAttempts()
             ->where('exam_id', $exam->id)
             ->selectRaw(implode(', ', $selects), $bindings)
             ->first();
     }
 
-    private function studentAggregates(Student $student, float $passing): object
-    {
-        $pct = '(score / max_score * 100)';
-
-        return $this->gradedAttempts()
-            ->where('student_user_id', $student->user_id)
-            ->selectRaw("
-                COUNT(*)                            AS total,
-                COALESCE(AVG({$pct}), 0)            AS average,
-                COALESCE(MAX({$pct}), 0)            AS best,
-                COUNT(*) FILTER (WHERE {$pct} >= ?) AS passed
-            ", [$passing])
-            ->first();
-    }
-
     /**
-     * Los N intentos calificados más recientes, del más nuevo al más antiguo.
+     * Los N intentos calificados más recientes (del más nuevo al más antiguo), con su examen
+     * unido (`RelacionesEnLinea`), y los totales de TODOS los calificados del alumno.
      *
-     * @return \Illuminate\Database\Eloquent\Collection<int,ExamAttempt>
+     * Los totales salen con funciones de ventana en las mismas filas (se calculan antes del
+     * `LIMIT`), así que el historial completo no se trae y no hace falta otra consulta.
+     *
+     * @return array{0:\Illuminate\Database\Eloquent\Collection<int,ExamAttempt>,1:object}
      */
-    private function recentAttempts(Student $student, int $points)
+    private function recentAttemptsWithTotals(Student $student, int $points, float $passing): array
     {
-        $intentos = $this->gradedAttempts()
-            ->where('student_user_id', $student->user_id)
-            ->with('exam:id,title,subject_id')
-            ->orderByDesc('submitted_at')
+        $pct = '(exam_attempts.score / exam_attempts.max_score * 100)';
+
+        $intentos = RelacionesEnLinea::unir(
+            $this->gradedAttempts()->where('exam_attempts.student_user_id', $student->user_id),
+            ['exam' => ['exams', 'exam_id', ['id', 'title', 'subject_id']]]
+        )
+            ->selectRaw("
+                COUNT(*) OVER ()                                    AS w_total,
+                COALESCE(AVG({$pct}) OVER (), 0)                    AS w_average,
+                COALESCE(MAX({$pct}) OVER (), 0)                    AS w_best,
+                COUNT(*) FILTER (WHERE {$pct} >= ?) OVER ()         AS w_passed
+            ", [$passing])
+            ->orderByDesc('exam_attempts.submitted_at')
             ->limit($points)
             ->get();
+
+        $primero = $intentos->first();
+        $totales = (object) [
+            'total'   => $primero?->getAttribute('w_total') ?? 0,
+            'average' => $primero?->getAttribute('w_average') ?? 0,
+            'best'    => $primero?->getAttribute('w_best') ?? 0,
+            'passed'  => $primero?->getAttribute('w_passed') ?? 0,
+        ];
+
+        foreach ($intentos as $intento) {
+            $intento->setRawAttributes(
+                Arr::except($intento->getAttributes(), ['w_total', 'w_average', 'w_best', 'w_passed']),
+                true
+            );
+        }
+        RelacionesEnLinea::hidratar($intentos, ['exam' => Exam::class]);
 
         // Materias del catálogo en caché, no una consulta más.
         $materias = CatalogoMaterias::delCentro($student->institution_id);
         $intentos->each(fn (ExamAttempt $a) => $a->exam?->setRelation('subject', $materias->get($a->exam->subject_id)));
 
-        return $intentos;
+        return [$intentos, $totales];
     }
 
     /**

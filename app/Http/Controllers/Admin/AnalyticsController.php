@@ -9,7 +9,10 @@ use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
 use App\Models\Students\StudentProgress;
 use App\Models\Exams\Exam;
+use App\Support\RelacionesEnLinea;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 
 class AnalyticsController extends Controller
 {
@@ -30,14 +33,19 @@ class AnalyticsController extends Controller
             ExamAttempt::whereNotNull('submitted_at'), $user
         );
 
-        $totalStudents  = $students()->count();
-        $activeStudents = $students()->where('status', 'active')->count();
-        $examsCompleted = $attempts()->count();
+        // Una consulta por tabla con todos los conteos a la vez (antes cuatro): con la
+        // base remota cada viaje cuesta ~0,4 s.
+        $alumnado = $students()
+            ->selectRaw("COUNT(*) as total, COUNT(*) FILTER (WHERE status = 'active') as activos")
+            ->first();
+        $intentos = $attempts()
+            ->selectRaw('COUNT(*) as entregados, AVG(CASE WHEN max_score > 0 THEN score / max_score * 100 END) as avg_pct')
+            ->first();
 
-        $avgPct = $attempts()
-            ->where('max_score', '>', 0)
-            ->selectRaw('AVG(score / max_score * 100) as avg_pct')
-            ->value('avg_pct');
+        $totalStudents  = (int) $alumnado->total;
+        $activeStudents = (int) $alumnado->activos;
+        $examsCompleted = (int) $intentos->entregados;
+        $avgPct         = $intentos->avg_pct;
 
         return response()->json([
             'data' => [
@@ -75,9 +83,7 @@ class AnalyticsController extends Controller
             $query->whereIn('id', $this->materiasDelDocente($request->user()->id));
         }
 
-        $subjects = $query->get();
-
-        return response()->json(['data' => $this->buildSubjectsPayload($subjects)]);
+        return response()->json(['data' => $this->buildSubjectsPayload($query)]);
     }
 
     /**
@@ -94,8 +100,7 @@ class AnalyticsController extends Controller
 
         $subjects = Subject::query()
             ->select('id', 'name')
-            ->whereIn('id', $this->materiasDelDocente($teacherUserId))
-            ->get();
+            ->whereIn('id', $this->materiasDelDocente($teacherUserId));
 
         return response()->json(['data' => $this->buildSubjectsPayload($subjects)]);
     }
@@ -106,32 +111,17 @@ class AnalyticsController extends Controller
      */
     private function buildSubjectsPayload($subjects)
     {
-        $subjectIds = $subjects->pluck('id');
+        // UNA consulta: las materias con sus cifras como subselects (antes eran tres:
+        // materias, progreso y exámenes). Con la base remota cada viaje cuesta ~0,4 s.
+        $filas = $subjects->conCifras()->get();
 
-        $progressStats = StudentProgress::whereIn('subject_id', $subjectIds)
-            ->selectRaw('subject_id, COUNT(*) as student_count, AVG(mastery_percentage) as avg_mastery')
-            ->groupBy('subject_id')
-            ->get()
-            ->keyBy('subject_id');
-
-        $examCounts = Exam::whereIn('subject_id', $subjectIds)
-            ->selectRaw('subject_id, COUNT(*) as exams_count')
-            ->groupBy('subject_id')
-            ->get()
-            ->keyBy('subject_id');
-
-        return $subjects->map(function ($subject) use ($progressStats, $examCounts) {
-            $ps = $progressStats->get($subject->id);
-            $ec = $examCounts->get($subject->id);
-
-            return [
-                'id'                => $subject->id,
-                'name'              => $subject->name,
-                'exams_count'       => $ec ? (int) $ec->exams_count : 0,
-                'enrolled_students' => $ps ? (int) $ps->student_count : 0,
-                'average_mastery'   => $ps ? round((float) $ps->avg_mastery, 2) : 0,
-            ];
-        });
+        return $filas->map(fn ($subject) => [
+            'id'                => $subject->id,
+            'name'              => $subject->name,
+            'exams_count'       => (int) $subject->exams_count,
+            'enrolled_students' => (int) $subject->student_count,
+            'average_mastery'   => $subject->student_count > 0 ? round((float) $subject->avg_mastery, 2) : 0,
+        ]);
     }
 
     /**
@@ -140,31 +130,38 @@ class AnalyticsController extends Controller
      */
     public function student(Request $request, string $student_user_id)
     {
-        $student = Student::with(['user', 'progress'])
-            ->where('user_id', $student_user_id)
-            ->firstOrFail();
+        // El alumno con su usuario en una sola consulta (`Student::conUsuario`).
+        $student = $this->alumnoConUsuarioVisiblePor($request->user(), $student_user_id) ?? abort(404);
 
         // Este endpoint no comprobaba nada: cualquier docente sacaba la analítica
         // individual —nota media, intentos, progreso por materia— de cualquier
         // alumno de la institución.
-        if ($this->esDocente($request->user()) && !$this->docenteAlcanzaEstudiante($request->user(), $student_user_id)) {
+        if ($this->noAlcanzaAlAlumno($request->user(), $student)) {
             return $this->noAutorizadoPorAsignacion();
         }
 
-        // Total y promedio calculados en BD para no cargar todos los intentos en memoria
-        $stats = ExamAttempt::where('student_user_id', $student_user_id)
-            ->whereNotNull('submitted_at')
-            ->where('max_score', '>', 0)
-            ->selectRaw('COUNT(*) as total_attempts, AVG(score / max_score * 100) as avg_pct')
-            ->first();
+        $student->load('progress');
 
-        // Solo los 10 más recientes para el listado
-        $recentAttempts = ExamAttempt::where('student_user_id', $student_user_id)
-            ->whereNotNull('submitted_at')
-            ->with('exam')
-            ->orderBy('submitted_at', 'desc')
+        // Los 10 intentos más recientes con su examen unido, y en las mismas filas el total
+        // y el promedio de TODOS los entregados (funciones de ventana: se calculan antes del
+        // LIMIT). Antes eran tres consultas: estadísticas, intentos y examen.
+        $recentAttempts = RelacionesEnLinea::unir(
+            ExamAttempt::where('student_user_id', $student_user_id)->whereNotNull('submitted_at'),
+            ['exam' => ['exams', 'exam_id', Exam::COLUMNAS]]
+        )
+            ->addSelect(DB::raw('COUNT(*) FILTER (WHERE exam_attempts.max_score > 0) OVER () AS total_attempts'))
+            ->addSelect(DB::raw('AVG(CASE WHEN exam_attempts.max_score > 0 THEN exam_attempts.score / exam_attempts.max_score * 100 END) OVER () AS avg_pct'))
+            ->orderBy('exam_attempts.submitted_at', 'desc')
             ->limit(10)
             ->get();
+
+        $stats = $recentAttempts->first();
+        $totalAttempts = (int) ($stats?->getAttribute('total_attempts') ?? 0);
+        $avgPct = $stats?->getAttribute('avg_pct');
+        foreach ($recentAttempts as $intento) {
+            $intento->setRawAttributes(Arr::except($intento->getAttributes(), ['total_attempts', 'avg_pct']), true);
+        }
+        RelacionesEnLinea::hidratar($recentAttempts, ['exam' => Exam::class]);
 
         // Las materias salen del catálogo en caché del centro (`materiasDelCentro`),
         // no de dos consultas más (progreso y exámenes recientes).
@@ -175,8 +172,8 @@ class AnalyticsController extends Controller
         return response()->json([
             'data' => [
                 'student'           => $student,
-                'attempts_count'    => (int) ($stats->total_attempts ?? 0),
-                'average_score_pct' => $stats->avg_pct ? round((float) $stats->avg_pct, 2) : 0,
+                'attempts_count'    => $totalAttempts,
+                'average_score_pct' => $avgPct ? round((float) $avgPct, 2) : 0,
                 'progress'          => $student->progress,
                 'recent_attempts'   => $recentAttempts,
             ],

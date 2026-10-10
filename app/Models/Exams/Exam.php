@@ -19,6 +19,14 @@ class Exam extends Model
 
     protected $table = 'exams';
 
+    /** Todas las columnas de `exams`, para unir el examen a otra consulta (`RelacionesEnLinea`). */
+    public const COLUMNAS = [
+        'id', 'institution_id', 'created_by_teacher_id', 'title', 'subject_id', 'grade', 'instructions',
+        'duration_minutes', 'status', 'max_attempts', 'show_results_immediately',
+        'allow_review_after_submission', 'randomize_questions', 'available_from', 'available_until',
+        'created_at', 'updated_at', 'video_url', 'support_resources',
+    ];
+
     public $incrementing = false;
     protected $keyType = 'string';
 

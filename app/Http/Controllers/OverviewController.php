@@ -18,6 +18,7 @@ use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
 use App\Models\Students\StudentProgress;
 use App\Services\Admin\StaffSummaryService;
+use App\Support\RelacionesEnLinea;
 use App\Support\TenantCache;
 use App\Services\Students\StudentSubjectsService;
 use Illuminate\Http\Request;
@@ -110,12 +111,15 @@ class OverviewController extends Controller
         // cualquier docente, el mismo bug que ya se había corregido en
         // StudentController::index() pero no aquí.
         if ($quiere('students')) {
-            $datos['students'] = Student::query()
-                ->with('user')
-                ->when($esDocente, fn ($query) => $this->acotarAEstudiantesDelDocente($query, $user, 'user_id'))
-                ->orderBy('student_code')
+            // El usuario unido en la misma consulta (`RelacionesEnLinea`): una consulta en vez de dos.
+            $datos['students'] = RelacionesEnLinea::unir(Student::query(), [
+                'user' => ['users', 'user_id', Student::COLUMNAS_USUARIO],
+            ])
+                ->when($esDocente, fn ($query) => $this->acotarAEstudiantesDelDocente($query, $user, 'students.user_id'))
+                ->orderBy('students.student_code')
                 ->limit(20)
                 ->get();
+            RelacionesEnLinea::hidratar($datos['students'], ['user' => User::class]);
         }
 
         // Docente: solo los grupos que tiene asignados (mismo criterio que
@@ -134,33 +138,52 @@ class OverviewController extends Controller
         // exige ExamController::update()/setStatus()/destroy() vía
         // created_by_teacher_id).
         if ($quiere('exams')) {
-            $datos['exams'] = Exam::query()
-                ->with(['subject:id,name', 'teacher:id,full_name'])
-                ->when($esDocente, fn ($query) => $query->where('created_by_teacher_id', $user->id))
-                ->orderByDesc('created_at')
+            // Docente unido en la misma consulta y materia del catálogo en caché: una consulta
+            // en vez de tres (cada viaje a la base remota cuesta ~0,4 s).
+            $datos['exams'] = RelacionesEnLinea::unir(Exam::query(), [
+                'teacher' => ['users', 'created_by_teacher_id', ['id', 'full_name']],
+            ])
+                ->when($esDocente, fn ($query) => $query->where('exams.created_by_teacher_id', $user->id))
+                ->orderByDesc('exams.created_at')
                 ->limit(20)
                 ->get();
+            RelacionesEnLinea::hidratar($datos['exams'], ['teacher' => User::class]);
+            $materiasDelCentro = $this->materiasDelCentro($user->institution_id);
+            foreach ($datos['exams'] as $examen) {
+                $materia = $materiasDelCentro->get($examen->subject_id);
+                // Solo `id` y `name`, como antes (`subject:id,name`); se clona para no tocar la
+                // copia compartida del catálogo.
+                $examen->setRelation('subject', $materia ? (clone $materia)->setVisible(['id', 'name']) : null);
+            }
         }
 
         // Misma regla que /calendar-events y /study-resources: el docente ve
         // solo lo suyo; el administrador, todo el centro. Sin `visibleTo()` el
         // overview le daba al docente los recursos y avisos de sus colegas.
         if ($quiere('calendar')) {
-            $datos['calendar'] = CalendarEvent::query()
-                ->visibleTo($user)
-                ->with(['creator:id,full_name', 'group:id,name,grade,section', 'exam:id,title'])
-                ->orderBy('start_at')
+            // Creador, aula y examen unidos en la misma consulta (`RelacionesEnLinea`): una
+            // consulta en vez de cuatro.
+            $datos['calendar'] = RelacionesEnLinea::unir(CalendarEvent::query()->visibleTo($user), [
+                'creator' => ['users', 'created_by', ['id', 'full_name']],
+                'group'   => ['groups', 'group_id', ['id', 'name', 'grade', 'section']],
+                'exam'    => ['exams', 'exam_id', ['id', 'title']],
+            ])
+                ->orderBy('calendar_events.start_at')
                 ->limit(30)
                 ->get();
+            RelacionesEnLinea::hidratar($datos['calendar'], ['creator' => User::class, 'group' => Group::class, 'exam' => Exam::class]);
         }
 
         if ($quiere('resources')) {
-            $datos['resources'] = StudyResource::query()
-                ->visibleTo($user)
-                ->with(['creator:id,full_name', 'groups'])
-                ->orderByDesc('created_at')
+            // El autor unido en la misma consulta; las aulas del recurso, en una segunda.
+            $datos['resources'] = RelacionesEnLinea::unir(StudyResource::query()->visibleTo($user), [
+                'creator' => ['users', 'created_by', ['id', 'full_name']],
+            ])
+                ->with('groups')
+                ->orderByDesc('study_resources.created_at')
                 ->limit(20)
                 ->get();
+            RelacionesEnLinea::hidratar($datos['resources'], ['creator' => User::class]);
         }
 
         // Se calcula antes de `analytics` porque, para el administrador, las cifras
@@ -193,17 +216,14 @@ class OverviewController extends Controller
                 $activosAlumnos = (int) $alumnado->activos;
             }
 
-            $progressStats = StudentProgress::whereIn('subject_id', $subjectIds)
-                ->selectRaw('subject_id, COUNT(*) as student_count, AVG(mastery_percentage) as avg_mastery')
-                ->groupBy('subject_id')
+            // Las cifras de cada materia (alumnado con progreso, exámenes, dominio medio) en UNA
+            // consulta con subselects (`Subject::conCifras`), no una por tabla.
+            $cifras = Subject::query()
+                ->whereIn('subjects.id', $subjectIds)
+                ->select('subjects.id')
+                ->conCifras()
                 ->get()
-                ->keyBy('subject_id');
-
-            $examCounts = Exam::whereIn('subject_id', $subjectIds)
-                ->selectRaw('subject_id, COUNT(*) as exams_count')
-                ->groupBy('subject_id')
-                ->get()
-                ->keyBy('subject_id');
+                ->keyBy('id');
 
             $datos['analyticsInstitution'] = [
                 'total_students' => $totalAlumnos,
@@ -212,16 +232,16 @@ class OverviewController extends Controller
                 'average_score_pct' => $avgPct ? round((float) $avgPct, 2) : 0,
             ];
 
-            $datos['analyticsSubjects'] = $subjects->map(function ($subject) use ($progressStats, $examCounts) {
-                $progress = $progressStats->get($subject['id']);
-                $examCount = $examCounts->get($subject['id']);
+            $datos['analyticsSubjects'] = $subjects->map(function ($subject) use ($cifras) {
+                $fila = $cifras->get($subject['id']);
+                $conProgreso = $fila && (int) $fila->student_count > 0;
 
                 return [
                     'id' => $subject['id'],
                     'name' => $subject['name'],
-                    'exams_count' => $examCount ? (int) $examCount->exams_count : 0,
-                    'enrolled_students' => $progress ? (int) $progress->student_count : 0,
-                    'average_mastery' => $progress ? round((float) $progress->avg_mastery, 2) : 0,
+                    'exams_count' => $fila ? (int) $fila->exams_count : 0,
+                    'enrolled_students' => $conProgreso ? (int) $fila->student_count : 0,
+                    'average_mastery' => $conProgreso ? round((float) $fila->avg_mastery, 2) : 0,
                 ];
             })->values();
         }
@@ -320,13 +340,16 @@ class OverviewController extends Controller
             ->take(100)
             ->values();
 
-        $recommendations = AiRecommendation::query()
-            ->with('exam')
-            ->where('student_user_id', $user->id)
-            ->orderByDesc('created_at')
+        // El examen unido en la misma consulta (`RelacionesEnLinea`), no una más.
+        $recommendations = RelacionesEnLinea::unir(
+            AiRecommendation::query()->where('ai_recommendations.student_user_id', $user->id),
+            ['exam' => ['exams', 'exam_id', Exam::COLUMNAS]]
+        )
+            ->orderByDesc('ai_recommendations.created_at')
             ->limit(15)
-            ->get()
-            ->each(fn ($r) => $r->setRelation('subject', $materias->get($r->subject_id)));
+            ->get();
+        RelacionesEnLinea::hidratar($recommendations, ['exam' => Exam::class]);
+        $recommendations->each(fn ($r) => $r->setRelation('subject', $materias->get($r->subject_id)));
 
         // Solo los avisos de su aula actual, y del autor solo el nombre (igual
         // que /calendar-events). Antes recibía los de todo el centro.

@@ -7,6 +7,7 @@ use App\Http\Controllers\Concerns\RevelaRespuestas;
 use App\Enums\Difficulty;
 use App\Enums\QuestionType;
 use App\Models\Exams\Exam;
+use App\Support\PreguntasEnLinea;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Exams\Question;
 use App\Models\Exams\QuestionOption;
@@ -28,23 +29,29 @@ class QuestionController extends Controller
     /**
      * Listar preguntas por examen
      */
-    public function index(Request $request, Exam $exam)
+    public function index(Request $request, string $exam)
     {
         // Misma comprobación que `ExamController::show()`: si no, esta ruta era
-        // la vía directa a los enunciados de un examen ajeno o en borrador.
-        if (!Exam::query()->whereKey($exam->getKey())->visibleTo($request->user())->exists()) {
+        // la vía directa a los enunciados de un examen ajeno o en borrador. Una sola
+        // consulta hace de binding y de visibilidad.
+        $examen = Exam::query()->visibleTo($request->user())
+            ->where('exams.id', $exam)
+            ->first(['exams.id', 'exams.institution_id', 'exams.randomize_questions']);
+
+        if ($examen === null) {
             return response()->json(['message' => 'No encontrado'], 404);
         }
 
-        $query = $exam->questions()->with('options');
+        $query = $examen->questions();
 
-        if ($exam->randomize_questions) {
+        if ($examen->randomize_questions) {
             $query->inRandomOrder();
         } else {
             $query->orderBy('order_index');
         }
 
-        $questions = $query->limit(200)->get();
+        // Preguntas y opciones en la misma consulta (ver `PreguntasEnLinea`).
+        $questions = PreguntasEnLinea::obtener($query->limit(200));
 
         // Al estudiante se le sirven las preguntas SIN `is_correct` ni
         // `correct_answer_text` (ocultos por defecto en los modelos).

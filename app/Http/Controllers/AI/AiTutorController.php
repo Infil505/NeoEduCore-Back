@@ -165,12 +165,12 @@ class AiTutorController extends Controller
     {
         $user = $request->user();
 
-        $student = Student::where('user_id', $user->id)->first();
+        $student = Student::conUsuario($user->id);
         if (!$student) {
             return response()->json(['message' => 'Solo estudiantes pueden ver el diagnóstico IA'], 403);
         }
 
-        $text = $tutorService->getDiagnosis($user->id);
+        $text = $tutorService->getDiagnosis($user->id, $student);
 
         return response()->json(['data' => [
             'diagnosis' => $text,

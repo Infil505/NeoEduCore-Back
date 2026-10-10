@@ -26,6 +26,22 @@ class Subject extends Model
      */
     protected $hidden = ['created_at', 'updated_at'];
 
+    /**
+     * Añade a cada materia sus cifras (`exams_count`, `student_count`, `avg_mastery`) como
+     * subselects: UNA consulta en vez de una por tabla (materias, exámenes, progreso). Con la
+     * base remota cada viaje cuesta ~0,4 s. Hay que pedir las columnas de la materia aparte.
+     */
+    public function scopeConCifras($query)
+    {
+        return $query
+            ->selectRaw('(SELECT COUNT(*) FROM exams e
+                          WHERE e.subject_id = subjects.id AND e.institution_id = subjects.institution_id) AS exams_count')
+            ->selectRaw('(SELECT COUNT(*) FROM student_progress sp
+                          WHERE sp.subject_id = subjects.id AND sp.institution_id = subjects.institution_id) AS student_count')
+            ->selectRaw('(SELECT AVG(sp.mastery_percentage) FROM student_progress sp
+                          WHERE sp.subject_id = subjects.id AND sp.institution_id = subjects.institution_id) AS avg_mastery');
+    }
+
     protected $fillable = [
         'institution_id',
         'name',

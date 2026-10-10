@@ -5,6 +5,8 @@ namespace App\Services\Admin;
 use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
+use App\Support\CatalogoMaterias;
+use App\Support\RelacionesEnLinea;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -85,20 +87,21 @@ class ReportExportService
      */
     private function examResultsDataset(Exam $exam): array
     {
-        // lazy() y NO cursor(): `cursor()` ignora el eager loading (necesita
-        // conocer todos los ids de antemano y por diseño va fila a fila), así
-        // que `with(['student.user'])` no se aplicaba y cada fila disparaba 2
-        // queries — ~2000 extra en un examen de 1000 alumnos. `lazy()` mantiene
-        // la memoria acotada igual, pero por lotes, y sí respeta el eager load.
-        $rows = ExamAttempt::query()
-            ->where('exam_id', $exam->id)
-            ->whereNotNull('submitted_at')
-            ->with(['student.user'])
-            ->orderByDesc('score')
+        // lazy() y NO cursor(): `cursor()` ignora el eager loading, así que cada fila
+        // disparaba sus propias consultas. `lazy()` mantiene la memoria acotada, por lotes.
+        // El nombre del alumno va unido en la MISMA consulta (LEFT JOIN, `RelacionesEnLinea`):
+        // sin consultas de relaciones por lote (cada viaje a la base remota cuesta ~0,4 s).
+        $rows = RelacionesEnLinea::unir(
+            ExamAttempt::query()
+                ->where('exam_attempts.exam_id', $exam->id)
+                ->whereNotNull('exam_attempts.submitted_at'),
+            ['alumno' => ['users', 'student_user_id', ['id', 'full_name']]]
+        )
+            ->orderByDesc('exam_attempts.score')
             ->lazy()
             ->map(fn (ExamAttempt $a) => [
                 $a->student_user_id,
-                $a->student?->user?->full_name,
+                $a->getAttribute('alumno__full_name'),
                 (float) $a->score,
                 (float) $a->max_score,
                 $a->percentage,
@@ -118,17 +121,23 @@ class ReportExportService
      */
     private function studentHistoryDataset(Student $student): array
     {
-        $rows = ExamAttempt::query()
-            ->where('student_user_id', $student->user_id)
-            ->whereNotNull('submitted_at')
-            ->with(['exam.subject'])
-            ->orderByDesc('submitted_at')
+        // El título y la materia del examen: unidos en la misma consulta (`RelacionesEnLinea`) y
+        // el nombre de la materia del catálogo en caché; ninguna consulta por lote.
+        $materias = CatalogoMaterias::delCentro($student->institution_id);
+
+        $rows = RelacionesEnLinea::unir(
+            ExamAttempt::query()
+                ->where('exam_attempts.student_user_id', $student->user_id)
+                ->whereNotNull('exam_attempts.submitted_at'),
+            ['exam' => ['exams', 'exam_id', ['id', 'title', 'subject_id']]]
+        )
+            ->orderByDesc('exam_attempts.submitted_at')
             ->lazy()
             ->map(fn (ExamAttempt $a) => [
                 $a->id,
                 $a->exam_id,
-                $a->exam?->title,
-                $a->exam?->subject?->name,
+                $a->getAttribute('exam__title'),
+                $materias->get($a->getAttribute('exam__subject_id'))?->name,
                 (float) $a->score,
                 (float) $a->max_score,
                 $a->percentage,

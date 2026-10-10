@@ -21,6 +21,12 @@ class Question extends Model
 
     protected $table = 'questions';
 
+    /** Todas las columnas de `questions`, para unir la pregunta a otra consulta (`RelacionesEnLinea`). */
+    public const COLUMNAS = [
+        'id', 'institution_id', 'exam_id', 'question_text', 'question_type', 'points', 'correct_answer_text',
+        'order_index', 'created_at', 'updated_at', 'topic', 'indicator', 'difficulty', 'topic_normalized',
+    ];
+
     public $incrementing = false;
     protected $keyType = 'string';
 

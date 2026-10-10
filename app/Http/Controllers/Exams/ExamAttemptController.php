@@ -16,6 +16,8 @@ use App\Services\Exams\ExamAttemptRulesService;
 use App\Services\Exams\ExamGradingService;
 use App\Services\Students\StudentProgressService;
 use App\Models\AI\AiRecommendation;
+use App\Support\RelacionesEnLinea;
+use App\Support\RespuestasEnLinea;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -296,18 +298,30 @@ class ExamAttemptController extends Controller
     /**
      * Ver un intento (con respuestas)
      */
-    public function show(Exam $exam, ExamAttempt $attempt, Request $request)
+    public function show(string $exam, string $attempt, Request $request)
     {
         $user = $request->user();
 
-        if ($attempt->exam_id !== $exam->id || $attempt->student_user_id !== $user->id) {
+        // El intento (que sea del alumno y de ese examen) con su examen unido, en UNA consulta
+        // en vez de los dos bindings de ruta; y las respuestas con sus preguntas y opciones en
+        // otra (`RespuestasEnLinea`), no cuatro. Con la base remota cada viaje cuesta ~0,4 s.
+        $attempt = RelacionesEnLinea::unir(
+            ExamAttempt::query()
+                ->where('exam_attempts.student_user_id', $user->id)
+                ->where('exam_attempts.exam_id', $exam),
+            ['exam' => ['exams', 'exam_id', Exam::COLUMNAS]]
+        )->where('exam_attempts.id', $attempt)->first();
+
+        if ($attempt === null) {
             return response()->json(['message' => 'No encontrado'], 404);
         }
 
-        $attempt->load([
-            'answers.question.options',
-            'answers.selectedOptions',
-        ]);
+        RelacionesEnLinea::hidratar([$attempt], ['exam' => Exam::class]);
+        $exam = $attempt->exam;
+        // El examen solo hace falta para decidir la revisión: no va en la respuesta.
+        $attempt->unsetRelation('exam');
+
+        $attempt->setRelation('answers', RespuestasEnLinea::delIntento($attempt->id));
 
         // `is_correct` y `correct_answer_text` van ocultos por defecto en los
         // modelos, así que aquí no hace falta filtrarlos: al estudiante nunca
@@ -410,9 +424,20 @@ class ExamAttemptController extends Controller
      * se lleva la fila y solo esa encola. Sin eso, cada recarga sería una
      * llamada a OpenAI más.
      */
-    public function recommendations(Request $request, ExamAttempt $attempt)
+    public function recommendations(Request $request, string $attempt)
     {
         $user = $request->user();
+
+        // El intento con su examen y el perfil del alumno, en UNA consulta (antes: el binding,
+        // el examen y el alumno por separado). Con la base remota cada viaje cuesta ~0,4 s.
+        $attempt = RelacionesEnLinea::unir(ExamAttempt::query(), [
+            'exam'   => ['exams', 'exam_id', Exam::COLUMNAS],
+            'alumno' => ['students', 'student_user_id', Student::COLUMNAS, null, 'user_id'],
+        ])->where('exam_attempts.id', $attempt)->first() ?? abort(404);
+
+        RelacionesEnLinea::hidratar([$attempt], ['exam' => Exam::class, 'alumno' => Student::class]);
+        $alumno = $attempt->getRelation('alumno');
+        $attempt->unsetRelation('alumno');
 
         if ($attempt->student_user_id !== $user->id) {
             return response()->json(['message' => 'No autorizado'], 403);
@@ -421,8 +446,6 @@ class ExamAttemptController extends Controller
         if (!$attempt->submitted_at) {
             return response()->json(['message' => 'El intento aún no ha sido enviado'], 409);
         }
-
-        $attempt->load('exam');
 
         if ($attempt->exam?->subject_id && $attempt->ai_recommendations_status === null) {
             $encolado = ExamAttempt::query()
@@ -445,7 +468,6 @@ class ExamAttemptController extends Controller
 
         // El vídeo de apoyo que el docente puso en el examen, para el alumnado
         // visual o auditivo. El examen ya está cargado; solo cuesta leer el estilo.
-        $alumno = Student::where('user_id', $user->id)->first();
         $estilo = $alumno?->learning_style;
 
         return response()->json([

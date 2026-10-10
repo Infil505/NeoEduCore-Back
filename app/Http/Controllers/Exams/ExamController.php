@@ -14,6 +14,7 @@ use App\Rules\FechaRazonable;
 use App\Rules\EnlaceDeApoyo;
 use App\Rules\UrlDeVideo;
 use App\Models\Academic\Group;
+use App\Support\PreguntasEnLinea;
 use App\Support\RelacionesEnLinea;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -238,37 +239,37 @@ class ExamController extends Controller
     /**
      * Ver examen
      */
-    public function show(Exam $exam, Request $request)
+    public function show(string $exam, Request $request)
     {
-        // El binding de ruta resuelve el examen sin mirar quién pregunta, así
-        // que la visibilidad se comprueba aquí. 404 y no 403: confirmar que el
-        // examen existe ya le diría al alumno que hay una prueba preparada.
-        //
-        // Para el docente y el administrador la regla de `scopeVisibleTo()` se
-        // decide con el propio examen ya cargado (autor / institución): sin la
-        // consulta `exists`. Solo el alumno la necesita (aulas y ventana horaria).
+        // Una consulta para el examen: ya acotado a lo que el usuario puede ver (docente: los
+        // suyos; alumno: aulas y ventana horaria; administrador: el centro) y con el
+        // docente unido. 404 y no 403: confirmar que el examen existe ya le diría al
+        // alumno que hay una prueba preparada. Antes eran el binding de ruta, la
+        // comprobación de visibilidad y una consulta por relación.
         $usuario = $request->user();
-        $visible = match ($usuario?->user_type) {
-            \App\Enums\UserType::Teacher => $exam->created_by_teacher_id === $usuario->id,
-            \App\Enums\UserType::Student => Exam::query()->whereKey($exam->getKey())->visibleTo($usuario)->exists(),
-            default => $usuario !== null,
-        };
+        $examen = RelacionesEnLinea::unir(Exam::query()->visibleTo($usuario), [
+            'teacher' => ['users', 'created_by_teacher_id', ['id', 'full_name']],
+        ])->where('exams.id', $exam)->first();
 
-        if (!$visible) {
+        if ($examen === null) {
             return response()->json(['message' => 'No encontrado'], 404);
         }
 
-        $exam->load(['teacher:id,full_name', 'groups', 'questions.options']);
+        RelacionesEnLinea::hidratar([$examen], ['teacher' => \App\Models\Admin\User::class]);
+
+        $examen->load('groups');
+        // Preguntas y opciones en la misma consulta (ver `PreguntasEnLinea`).
+        $examen->setRelation('questions', PreguntasEnLinea::obtener($examen->questions()));
         // La materia sale del catálogo en caché del centro, no de otra consulta.
-        $exam->setRelation('subject', $exam->subject_id ? $this->materiasDelCentro($exam->institution_id)->get($exam->subject_id) : null);
+        $examen->setRelation('subject', $examen->subject_id ? $this->materiasDelCentro($examen->institution_id)->get($examen->subject_id) : null);
 
         // Esta ruta es de lectura compartida (admin, teacher y student): sin
         // esto, un alumno vería `is_correct` de cada opción antes de entregar.
-        $this->revelarRespuestas($request->user(), $exam->questions);
-        $this->acotarExamen($request->user(), $exam);
+        $this->revelarRespuestas($usuario, $examen->questions);
+        $this->acotarExamen($usuario, $examen);
 
         return response()->json([
-            'data' => $exam,
+            'data' => $examen,
         ]);
     }
 

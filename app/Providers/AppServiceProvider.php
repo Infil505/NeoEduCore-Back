@@ -32,13 +32,24 @@ class AppServiceProvider extends ServiceProvider
      * PostgreSQL responde a `'no-es-un-uuid'` con un error: 500 en nueve rutas de
      * alumno y en el cierre de sesión del tutor. Con el patrón, un id que no tiene
      * forma de UUID es un 404 en el enrutador, sin llegar a la base de datos.
-     * (Los parámetros de modelo —`{exam}`, `{group}`…— ya los resuelve Eloquent.)
+     * (Los parámetros de modelo —`{group}`…— ya los resuelve Eloquent.)
+     *
+     * Los de abajo en la segunda lista SÍ son de modelo, pero sus controladores los reciben
+     * como texto y hacen ellos la consulta —una sola, que une las relaciones, en vez de
+     * el binding más las relaciones—, así que ya no pasan por Eloquent: el patrón es lo
+     * que sigue dando 404 a un id sin forma de UUID.
      */
     private function registrarPatronesDeRuta(): void
     {
         $uuid = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
 
-        foreach (['student_user_id', 'teacherUserId', 'sessionId', 'subject', 'import_id'] as $parametro) {
+        $parametros = [
+            'student_user_id', 'teacherUserId', 'sessionId', 'subject', 'import_id',
+            // Detalles que se piden en UNA consulta (ver `PreguntasEnLinea`, `RelacionesEnLinea`).
+            'exam', 'attempt', 'calendar_event', 'study_resource', 'aiRecommendation',
+        ];
+
+        foreach ($parametros as $parametro) {
             Route::pattern($parametro, $uuid);
         }
     }

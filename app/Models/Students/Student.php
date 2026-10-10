@@ -84,6 +84,53 @@ class Student extends Model
         return $this->belongsTo(User::class, 'user_id');
     }
 
+    /** Todas las columnas de `students`, para unir el alumno a otra consulta (`RelacionesEnLinea`). */
+    public const COLUMNAS = [
+        'user_id', 'institution_id', 'student_code', 'grade', 'section', 'year', 'status', 'enrolled_at',
+        'last_activity_at', 'exams_completed_count', 'overall_average', 'birth_date', 'parent_name',
+        'parent_email', 'group_code', 'adecuacion_type', 'created_at', 'updated_at', 'learning_style',
+    ];
+
+    /** Columnas de `users` que se unen al alumno (las ocultas del modelo no salen en el JSON). */
+    public const COLUMNAS_USUARIO = [
+        'id', 'institution_id', 'email', 'full_name', 'user_type', 'status',
+        'created_at', 'updated_at', 'must_change_password',
+    ];
+
+    /**
+     * El alumno con su usuario, en UNA consulta (LEFT JOIN, ver `RelacionesEnLinea`) en vez
+     * de dos (`with('user')`): con la base remota cada viaje cuesta ~0,4 s. Misma forma
+     * que `Student::with('user')->find()`; `null` si no existe en el centro del usuario.
+     */
+    public static function conUsuario(string $userId, ?\Illuminate\Database\Query\Builder $alcance = null): ?self
+    {
+        $consulta = \App\Support\RelacionesEnLinea::unir(static::query(), [
+            'user' => ['users', 'user_id', self::COLUMNAS_USUARIO],
+        ])->where('students.user_id', $userId);
+
+        // Con `$alcance` (los alumnos que un docente alcanza, ya filtrados a este alumno) la
+        // pertenencia se comprueba en la MISMA consulta, sin otro viaje a la base. El resultado
+        // queda en `$alcanzadoPorDocente`, que no es una columna y por eso no sale en el JSON.
+        if ($alcance !== null) {
+            $consulta->selectRaw('EXISTS (' . $alcance->toSql() . ') AS alcanzado_por_docente', $alcance->getBindings());
+        }
+
+        $alumno = $consulta->first();
+
+        if ($alumno !== null) {
+            if ($alcance !== null) {
+                $alumno->alcanzadoPorDocente = (bool) $alumno->getAttribute('alcanzado_por_docente');
+                $alumno->setRawAttributes(\Illuminate\Support\Arr::except($alumno->getAttributes(), 'alcanzado_por_docente'), true);
+            }
+            \App\Support\RelacionesEnLinea::hidratar([$alumno], ['user' => User::class]);
+        }
+
+        return $alumno;
+    }
+
+    /** Solo lo rellena `conUsuario()` con `$alcance`: ¿el docente que mira alcanza a este alumno? */
+    public ?bool $alcanzadoPorDocente = null;
+
     public function groups()
     {
         return $this->belongsToMany(

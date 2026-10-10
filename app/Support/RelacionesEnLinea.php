@@ -33,18 +33,22 @@ final class RelacionesEnLinea
     private const SEPARADOR = '__';
 
     /**
-     * @param  array<string,array{0:string,1:string,2:array<int,string>,3:class-string<Model>}>  $relaciones
-     *         nombre => [tabla, columna clave foránea en la tabla base, columnas a traer, clase del modelo]
+     * @param  array<string,array{0:string,1:string,2:array<int,string>,3?:mixed,4?:string}>  $relaciones
+     *         nombre => [tabla, columna clave foránea en la tabla base, columnas a traer, (ignorado), clave
+     *         primaria de la tabla relacionada si no es `id` (p. ej. `user_id` en `students`)]
      */
     public static function unir(Builder $consulta, array $relaciones): Builder
     {
         $base = $consulta->getModel()->getTable();
         $consulta->select("{$base}.*");
 
-        foreach ($relaciones as $nombre => [$tabla, $clave, $columnas]) {
+        foreach ($relaciones as $nombre => $definicion) {
+            [$tabla, $clave, $columnas] = $definicion;
+            $pk = $definicion[4] ?? 'id';
+
             // El alias es el nombre de la relación: no choca con ninguna tabla real.
-            $consulta->leftJoin("{$tabla} as {$nombre}", function ($join) use ($nombre, $base, $clave) {
-                $join->on("{$nombre}.id", '=', "{$base}.{$clave}")
+            $consulta->leftJoin("{$tabla} as {$nombre}", function ($join) use ($nombre, $base, $clave, $pk) {
+                $join->on("{$nombre}.{$pk}", '=', "{$base}.{$clave}")
                      ->on("{$nombre}.institution_id", '=', "{$base}.institution_id");
             });
 
@@ -84,7 +88,7 @@ final class RelacionesEnLinea
                 // LEFT JOIN sin fila relacionada: todas las columnas llegan nulas.
                 $modelo->setRelation(
                     $nombre,
-                    ($datos['id'] ?? null) === null ? null : (new $clase())->newFromBuilder($datos)
+                    array_filter($datos, fn ($valor) => $valor !== null) === [] ? null : (new $clase())->newFromBuilder($datos)
                 );
             }
 

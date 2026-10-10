@@ -220,17 +220,30 @@ class CalendarEventController extends Controller
     /**
      * Ver evento. 404 si no es visible para quien pregunta.
      */
-    public function show(Request $request, CalendarEvent $calendarEvent)
+    public function show(Request $request, string $calendarEvent)
     {
-        if (!CalendarEvent::query()->whereKey($calendarEvent->getKey())->visibleTo($request->user())->exists()) {
+        // Una sola consulta: el evento ya acotado a lo que el usuario puede ver, con
+        // creador, aula y examen unidos (antes eran 5 viajes a la base: el modelo, la
+        // comprobación de visibilidad y las tres relaciones). Lo no visible es 404.
+        $evento = RelacionesEnLinea::unir(CalendarEvent::query()->visibleTo($request->user()), [
+            'creator' => ['users', 'created_by', ['id', 'full_name']],
+            'group'   => ['groups', 'group_id', ['id', 'name', 'grade', 'section']],
+            'exam'    => ['exams', 'exam_id', ['id', 'title']],
+        ])->where('calendar_events.id', $calendarEvent)->first();
+
+        if ($evento === null) {
             return response()->json(['message' => 'No encontrado'], 404);
         }
 
-        $calendarEvent->load(['creator:id,full_name', 'group:id,name,grade,section', 'exam:id,title']);
-        $this->acotarParaEstudiante($request->user(), [$calendarEvent]);
+        RelacionesEnLinea::hidratar([$evento], [
+            'creator' => \App\Models\Admin\User::class,
+            'group'   => \App\Models\Academic\Group::class,
+            'exam'    => \App\Models\Exams\Exam::class,
+        ]);
+        $this->acotarParaEstudiante($request->user(), [$evento]);
 
         return response()->json([
-            'data' => $calendarEvent,
+            'data' => $evento,
         ]);
     }
 

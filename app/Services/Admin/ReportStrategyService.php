@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Models\AI\AiRecommendation;
 use App\Models\Admin\User;
 use App\Models\Students\Student;
+use App\Support\CatalogoMaterias;
 
 /**
  * Reporte de estrategias del tutor virtual (requisito [740] del informe).
@@ -68,7 +69,13 @@ class ReportStrategyService
         $numeradas = $this->baseQuery($student, $viewer, $filters)
             ->reorder()
             ->select('ai_recommendations.*')
-            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY recommendation_type ORDER BY generated_at DESC) AS rn_seccion');
+            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY recommendation_type ORDER BY generated_at DESC) AS rn_seccion')
+            // El título del examen en la misma consulta (subselect), no una relación aparte:
+            // cada viaje a la base remota cuesta ~0,4 s.
+            ->selectRaw('(SELECT e.title FROM exams e WHERE e.id = ai_recommendations.exam_id AND e.institution_id = ai_recommendations.institution_id) AS exam_title_j');
+
+        // La materia sale del catálogo en caché del centro (no de otra consulta).
+        $materias = CatalogoMaterias::delCentro($student->institution_id);
 
         // La subconsulta ya lleva el alcance de institución; el exterior solo
         // recorta y ordena, y no lo repite (la columna vive dentro de la subconsulta).
@@ -77,7 +84,6 @@ class ReportStrategyService
             ->fromSub($numeradas, 'ai_recommendations')
             ->where('rn_seccion', '<=', $limit)
             ->orderByDesc('generated_at')
-            ->with(['subject:id,name', 'exam:id,title'])
             ->get()
             ->groupBy(fn (AiRecommendation $r) => $r->recommendation_type instanceof \BackedEnum
                 ? $r->recommendation_type->value
@@ -93,9 +99,9 @@ class ReportStrategyService
                 'items' => $items->map(fn (AiRecommendation $r) => [
                     'id'           => $r->id,
                     'text'         => $r->recommendation_text,
-                    'subject'      => $r->subject?->name,
+                    'subject'      => $r->subject_id ? $materias->get($r->subject_id)?->name : null,
                     'exam_id'      => $r->exam_id,
-                    'exam_title'   => $r->exam?->title,
+                    'exam_title'   => $r->getAttribute('exam_title_j'),
                     // Recurso de la lista blanca; el frontend debe abrirlo en
                     // pestaña nueva y con aviso de salida, como pide [175].
                     'resource'     => $r->resource,

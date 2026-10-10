@@ -175,17 +175,31 @@ class StudyResourceController extends Controller
      * Ver recurso. 404 y no 403 si no es visible para quien pregunta: confirmar
      * que existe ya le diría a un docente que otro colega tiene ese material.
      */
-    public function show(Request $request, StudyResource $studyResource)
+    public function show(Request $request, string $studyResource)
     {
-        if (!StudyResource::query()->whereKey($studyResource->getKey())->visibleTo($request->user())->exists()) {
+        // Una consulta (recurso visible + autor + materia unidos) en vez de cinco viajes
+        // a la base; las aulas solo se piden al personal, el alumno no las recibe.
+        $recurso = RelacionesEnLinea::unir(StudyResource::query()->visibleTo($request->user()), [
+            'creator' => ['users', 'created_by', ['id', 'full_name']],
+            'subject' => ['subjects', 'subject_id', ['id', 'name']],
+        ])->where('study_resources.id', $studyResource)->first();
+
+        if ($recurso === null) {
             return response()->json(['message' => 'No encontrado'], 404);
         }
 
-        $studyResource->load(['creator:id,full_name', 'subject:id,name', 'groups']);
-        $this->acotarParaEstudiante($request->user(), [$studyResource]);
+        RelacionesEnLinea::hidratar([$recurso], [
+            'creator' => \App\Models\Admin\User::class,
+            'subject' => \App\Models\Academic\Subject::class,
+        ]);
+
+        if ($request->user()->user_type !== UserType::Student) {
+            $recurso->load('groups');
+        }
+        $this->acotarParaEstudiante($request->user(), [$recurso]);
 
         return response()->json([
-            'data' => $studyResource,
+            'data' => $recurso,
         ]);
     }
 

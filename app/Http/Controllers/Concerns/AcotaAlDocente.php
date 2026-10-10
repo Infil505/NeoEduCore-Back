@@ -73,6 +73,26 @@ trait AcotaAlDocente
     }
 
     /**
+     * El alumno con su usuario, en UNA consulta; si quien mira es docente, comprobando en esa
+     * misma consulta que lo alcanza (con la base remota cada viaje cuesta ~0,4 s). `null` si no
+     * existe; después, `noAlcanzaAlAlumno()` dice si el docente no tiene acceso.
+     */
+    protected function alumnoConUsuarioVisiblePor(object $viewer, string $studentUserId): ?\App\Models\Students\Student
+    {
+        $alcance = $this->esDocente($viewer)
+            ? $this->estudiantesDelDocente($viewer->id)->where('gs.student_user_id', $studentUserId)
+            : null;
+
+        return \App\Models\Students\Student::conUsuario($studentUserId, $alcance);
+    }
+
+    /** Un docente al que no le toca este alumno (solo tiene sentido tras `alumnoConUsuarioVisiblePor`). */
+    protected function noAlcanzaAlAlumno(object $viewer, \App\Models\Students\Student $alumno): bool
+    {
+        return $this->esDocente($viewer) && $alumno->alcanzadoPorDocente === false;
+    }
+
+    /**
      * ¿El docente tiene asignado algún grupo donde este estudiante esté activo?
      */
     protected function docenteAlcanzaEstudiante(object $docente, string $studentUserId): bool

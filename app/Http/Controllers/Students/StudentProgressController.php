@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Students;
 
 use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
+use App\Models\Admin\User;
 use App\Models\Students\Student;
 use App\Models\Students\StudentProgress;
+use App\Support\RelacionesEnLinea;
 use App\Models\Academic\Subject;
 use Illuminate\Http\Request;
 
@@ -27,30 +29,49 @@ class StudentProgressController extends Controller
             'subject_id'      => ['nullable', 'uuid'],
         ]);
 
-        $query = StudentProgress::query()
-            ->with(['student:user_id,student_code,grade,section', 'student.user:id,full_name', 'subject:id,name'])
-            ->orderByDesc('updated_at');
+        // Alumno y su usuario unidos en la MISMA consulta (`RelacionesEnLinea`) y la materia del
+        // catálogo en caché: antes eran cuatro viajes a la base (~0,4 s cada uno).
+        $query = RelacionesEnLinea::unir(StudentProgress::query(), [
+            'student'      => ['students', 'student_user_id', ['user_id', 'student_code', 'grade', 'section'], null, 'user_id'],
+            'student_user' => ['users', 'student_user_id', ['id', 'full_name']],
+        ])->orderByDesc('student_progress.updated_at');
 
         // Estudiante: solo lo propio
         if ($user->user_type->value === 'student') {
-            $query->where('student_user_id', $user->id);
+            $query->where('student_progress.student_user_id', $user->id);
         } else {
             if (!empty($data['student_user_id'])) {
-                $query->where('student_user_id', $data['student_user_id']);
+                $query->where('student_progress.student_user_id', $data['student_user_id']);
             }
 
             // Docente: solo los estudiantes de los grupos que tiene asignados.
             // Sin esto, listar sin filtro devolvía el progreso de toda la
             // institución.
-            $this->acotarAEstudiantesDelDocente($query, $user);
+            $this->acotarAEstudiantesDelDocente($query, $user, 'student_progress.student_user_id');
         }
 
         if (!empty($data['subject_id'])) {
-            $query->where('subject_id', $data['subject_id']);
+            $query->where('student_progress.subject_id', $data['subject_id']);
+        }
+
+        $paginator = $this->paginar($query, $request);
+
+        RelacionesEnLinea::hidratar($paginator->getCollection(), [
+            'student'      => Student::class,
+            'student_user' => User::class,
+        ]);
+        $materias = $this->materiasDelCentro($user->institution_id);
+        foreach ($paginator->getCollection() as $progreso) {
+            $progreso->student?->setRelation('user', $progreso->getRelation('student_user'));
+            $progreso->unsetRelation('student_user');
+            $materia = $materias->get($progreso->subject_id);
+            // Solo `id` y `name`, como antes (`subject:id,name`); se clona para no tocar la
+            // copia compartida del catálogo.
+            $progreso->setRelation('subject', $materia ? (clone $materia)->setVisible(['id', 'name']) : null);
         }
 
         return response()->json([
-            'data' => $this->paginar($query, $request),
+            'data' => $paginator,
         ]);
     }
 

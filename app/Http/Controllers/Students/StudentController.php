@@ -128,9 +128,10 @@ class StudentController extends Controller
 
     public function show(string $student_user_id, Request $request)
     {
-        $student = Student::with('user')->where('user_id', $student_user_id)->firstOrFail();
+        // El alumno y su usuario en una sola consulta (`Student::conUsuario`).
+        $student = $this->alumnoConUsuarioVisiblePor($request->user(), $student_user_id) ?? abort(404);
 
-        if ($this->esDocente($request->user()) && !$this->docenteAlcanzaEstudiante($request->user(), $student_user_id)) {
+        if ($this->noAlcanzaAlAlumno($request->user(), $student)) {
             return $this->noAutorizadoPorAsignacion();
         }
 

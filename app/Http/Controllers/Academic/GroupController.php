@@ -6,7 +6,9 @@ use App\Support\TenantCache;
 use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
 use App\Models\Academic\Group;
+use App\Models\Admin\User;
 use App\Models\Students\Student;
+use App\Support\RelacionesEnLinea;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -105,10 +107,18 @@ class GroupController extends Controller
 
         // De cada estudiante solo lo que muestra la lista del aula: antes cada fila
         // llevaba la ficha entera (fecha de nacimiento, acudiente…) y el usuario completo.
+        // El usuario unido en la misma consulta (`RelacionesEnLinea`), no una más: con la base
+        // remota cada viaje cuesta ~0,4 s.
         $students = $group->students()
-            ->with('user:id,full_name,email,status')
+            ->leftJoin('users as user', function ($join) {
+                $join->on('user.id', '=', 'students.user_id')->on('user.institution_id', '=', 'students.institution_id');
+            })
             ->wherePivotNull('left_at')
-            ->get(['students.user_id', 'students.student_code', 'students.section', 'students.status']);
+            ->get([
+                'students.user_id', 'students.student_code', 'students.section', 'students.status',
+                'user.id as user__id', 'user.full_name as user__full_name', 'user.email as user__email', 'user.status as user__status',
+            ]);
+        RelacionesEnLinea::hidratar($students, ['user' => User::class]);
 
         return response()->json([
             'data' => [

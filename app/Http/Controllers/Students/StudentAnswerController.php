@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Students;
 
 use App\Http\Controllers\Controller;
 use App\Models\Exams\ExamAttempt;
+use App\Models\Exams\Question;
+use App\Support\RelacionesEnLinea;
 use App\Models\Students\StudentAnswer;
 use App\Services\AI\AiRecommendationService;
 use App\Services\Students\StudentProgressService;
@@ -23,8 +25,15 @@ class StudentAnswerController extends Controller
             }
         }
 
+        // La pregunta unida a cada respuesta en la MISMA consulta (`RelacionesEnLinea`), no una
+        // más: con la base remota cada viaje cuesta ~0,4 s.
+        $respuestas = RelacionesEnLinea::unir($attempt->answers()->getQuery(), [
+            'question' => ['questions', 'question_id', Question::COLUMNAS],
+        ])->get();
+        RelacionesEnLinea::hidratar($respuestas, ['question' => Question::class]);
+
         return response()->json([
-            'data' => $attempt->answers()->with('question')->get(),
+            'data' => $respuestas,
         ]);
     }
 
