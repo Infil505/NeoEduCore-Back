@@ -2208,7 +2208,8 @@ CREATE TABLE public.exam_analysis_narratives (
     narrative jsonb NOT NULL,
     generated_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    ai_generations smallint DEFAULT 0 NOT NULL
 );
 
 

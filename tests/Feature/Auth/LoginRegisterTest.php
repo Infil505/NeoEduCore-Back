@@ -115,6 +115,26 @@ class LoginRegisterTest extends TestCase
         $this->assertNotNull($res->json('token') ?? $res->json('access_token'));
     }
 
+    public function test_el_login_y_me_traen_el_grado_del_estudiante_y_nada_para_el_resto(): void
+    {
+        $institution = Institution::factory()->create();
+        $alumno = User::factory()->student()->create([
+            'institution_id' => $institution->id, 'email' => 'nino@mail.com', 'password_hash' => Hash::make('SecurePass123!'), 'status' => 'active',
+        ]);
+        \App\Models\Students\Student::factory()->create(['user_id' => $alumno->id, 'institution_id' => $institution->id, 'grade' => 2]);
+        User::factory()->teacher()->create([
+            'institution_id' => $institution->id, 'email' => 'doc@mail.com', 'password_hash' => Hash::make('SecurePass123!'), 'status' => 'active',
+        ]);
+
+        $login = $this->postJson('/api/auth/login', ['email' => 'nino@mail.com', 'password' => 'SecurePass123!'])->assertOk();
+        $this->assertSame(2, $login->json('user.grade'));
+
+        $this->withToken($login->json('token'))->getJson('/api/auth/me')->assertOk()->assertJsonPath('user.grade', 2);
+
+        $docente = $this->postJson('/api/auth/login', ['email' => 'doc@mail.com', 'password' => 'SecurePass123!'])->assertOk();
+        $this->assertNull($docente->json('user.grade'));
+    }
+
     public function test_login_invalid_credentials(): void
     {
         Institution::factory()->create();

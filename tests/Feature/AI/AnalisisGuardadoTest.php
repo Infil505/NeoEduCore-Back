@@ -185,6 +185,109 @@ class AnalisisGuardadoTest extends TestCase
         $this->assertSame('La clase flojea en fracciones.', DB::table('exam_analysis_narratives')->where('exam_id', $this->examen->id)->value(DB::raw("narrative->>'summary'")));
     }
 
+    public function test_se_lee_la_respuesta_aunque_el_modelo_ponga_las_etiquetas_en_negrita(): void
+    {
+        OpenAI::fake([CreateResponse::fake(['choices' => [['message' => ['role' => 'assistant', 'content' =>
+            "**resumen:** La clase flojea en decimales.
+
+**dificultades:**
+- **Suma de decimales:** solo el 12 % acertó.
+
+## Acciones:
+- Usar material concreto.
+
+**atención:** Vigilar los decimales."]]]])]);
+
+        $n = $this->redactar();
+
+        $this->assertSame('ai', $n['source']);
+        $this->assertSame('La clase flojea en decimales.', $n['summary']);
+        $this->assertSame(['Suma de decimales: solo el 12 % acertó.'], $n['difficulties']);
+        $this->assertSame(['Usar material concreto.'], $n['actions']);
+        $this->assertSame('Vigilar los decimales.', $n['attention']);
+    }
+
+    public function test_si_la_respuesta_del_modelo_no_se_puede_leer_no_se_guarda_como_ia(): void
+    {
+        OpenAI::fake([CreateResponse::fake(['choices' => [['message' => ['role' => 'assistant', 'content' => 'Claro, aquí tienes un análisis general sin el formato pedido.']]]])]);
+
+        $n = $this->redactar();
+
+        $this->assertSame('heuristic', $n['source']);
+        $this->assertSame(0, $this->guardadas());
+    }
+
+    public function test_solo_se_puede_redactar_dos_veces_por_examen(): void
+    {
+        config(['openai.docente.analysis_ai_per_exam' => 2]);
+
+        $this->fingir('Primera.');
+        $this->assertSame(['used' => 1, 'limit' => 2, 'remaining' => 1], $this->redactar()['ai_usage']);
+
+        $this->fingir('Segunda.');
+        $this->assertSame(['used' => 2, 'limit' => 2, 'remaining' => 0], $this->redactar(['force' => true])['ai_usage']);
+
+        // La tercera ni llega al modelo: 429 y la lectura guardada sigue ahí.
+        OpenAI::fake([]);
+        $this->postJson("/api/reports/exams/{$this->examen->id}/analysis/ai", ['force' => true])
+            ->assertStatus(429)
+            ->assertJsonPath('ai_usage.remaining', 0);
+        OpenAI::assertNothingSent();
+
+        $n = $this->leer();
+        $this->assertSame('Segunda.', $n['summary']);
+        $this->assertSame(0, $n['ai_usage']['remaining']);
+    }
+
+    public function test_ver_lo_guardado_o_el_fallo_del_modelo_no_gastan_una_redaccion(): void
+    {
+        config(['openai.docente.analysis_ai_per_exam' => 2]);
+
+        // Un fallo del modelo no cuenta.
+        OpenAI::fake([new \RuntimeException('sin red')]);
+        $this->assertSame(0, $this->redactar()['ai_usage']['used']);
+
+        $this->fingir();
+        $this->redactar();
+
+        // Pedirla con los mismos datos devuelve lo guardado y tampoco cuenta.
+        OpenAI::fake([]);
+        Cache::flush();
+        $this->assertSame(1, $this->redactar()['ai_usage']['used']);
+        $this->assertSame(1, $this->leer()['ai_usage']['used']);
+    }
+
+    public function test_si_ya_hay_una_redaccion_en_curso_la_segunda_no_llega_al_modelo(): void
+    {
+        config(['openai.docente.analysis_ai_per_exam' => 2]);
+
+        // Otra petición del mismo examen sostiene el candado (está esperando al modelo).
+        $candado = Cache::lock("exam-analysis-ai:{$this->examen->id}", 60);
+        $this->assertTrue($candado->get());
+
+        OpenAI::fake([]);
+        $this->postJson("/api/reports/exams/{$this->examen->id}/analysis/ai", ['force' => true])->assertStatus(429);
+        OpenAI::assertNothingSent();
+        $this->assertSame(0, $this->guardadas());
+
+        // Al terminar la primera, la siguiente ya puede.
+        $candado->release();
+        $this->fingir();
+        $this->assertSame('ai', $this->redactar(['force' => true])['source']);
+    }
+
+    public function test_con_el_tope_en_cero_no_hay_limite(): void
+    {
+        config(['openai.docente.analysis_ai_per_exam' => 0]);
+
+        foreach ([1, 2, 3] as $i) {
+            $this->fingir("Lectura {$i}.");
+            $this->assertSame("Lectura {$i}.", $this->redactar(['force' => true])['summary']);
+        }
+
+        $this->assertNull($this->leer()['ai_usage']['remaining']);
+    }
+
     public function test_si_el_modelo_falla_y_no_habia_nada_guardado_queda_la_calculada(): void
     {
         OpenAI::fake([new \RuntimeException('sin red')]);

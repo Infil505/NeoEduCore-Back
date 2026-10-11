@@ -211,6 +211,22 @@ class ExamAnalysisNarrative
         return $guardada !== null && $guardada['fingerprint'] === $this->huella($a);
     }
 
+    /**
+     * Redacciones con IA de este examen frente al tope por examen (0 = sin límite).
+     *
+     * @return array{used:int, limit:int, remaining:int|null}
+     */
+    public function consumo(Exam $examen): array
+    {
+        $limite = (int) config('openai.docente.analysis_ai_per_exam', 2);
+        $usadas = (int) DB::table('exam_analysis_narratives')
+            ->where('institution_id', $examen->institution_id)
+            ->where('exam_id', $examen->id)
+            ->value('ai_generations');
+
+        return ['used' => $usadas, 'limit' => $limite, 'remaining' => $limite > 0 ? max(0, $limite - $usadas) : null];
+    }
+
     /** Huella de los datos que alimentan al modelo: si cambia, la lectura guardada ya no es de estos datos. */
     public function huella(array $a): string
     {
@@ -319,6 +335,14 @@ class ExamAnalysisNarrative
 
         $texto = $this->validator->sanitize($texto);
 
+        // Si no se reconoció ninguna sección, no hay nada redactado por el modelo: no se hace pasar la calculada por IA
+        // (ni se guarda como tal, que la dejaría fija hasta que cambien los datos).
+        if (array_filter(['resumen', 'dificultades', 'acciones', 'atencion'], fn (string $k) => $this->seccion($texto, $k) !== '') === []) {
+            Log::warning('ExamAnalysisNarrative: respuesta del modelo sin secciones reconocibles', ['inicio' => mb_substr($texto, 0, 200)]);
+
+            return $this->conservar($guardada, $reserva);
+        }
+
         $resultado = [
             'source'       => 'ai',
             'summary'      => $this->seccion($texto, 'resumen') ?: $reserva['summary'],
@@ -331,6 +355,8 @@ class ExamAnalysisNarrative
 
         if ($examen !== null) {
             $this->guardar($examen, $huella, $resultado);
+            // Esta sí llegó al modelo: cuenta para el tope por examen.
+            DB::table('exam_analysis_narratives')->where('exam_id', $examen->id)->increment('ai_generations');
         }
 
         return $resultado + ['stale' => false, 'generated_at' => now()->toIso8601String()];
@@ -408,14 +434,26 @@ class ExamAnalysisNarrative
             . "- Breve y accionable; cada acción debe poder hacerse en una clase.";
     }
 
+    /**
+     * El modelo suele decorar la etiqueta: `**resumen:**`, `## Resumen:`, `__acciones__:`. Se admiten esos adornos
+     * antes y después del nombre; el contenido se devuelve sin negritas.
+     */
     private function seccion(string $texto, string $clave): string
     {
         $nombre = $clave === 'atencion' ? 'aten(?:ci[oó]n)' : $clave; // el modelo puede acentuarla
-        if (preg_match('/^\s*' . $nombre . '\s*:\s*(.*?)(?=^\s*(?:resumen|dificultades|acciones|atencion|atención)\s*:|\z)/misu', $texto, $m)) {
-            return trim($m[1]);
+        $adorno = '[#*_\s]*';
+        $etiqueta = '(?:resumen|dificultades|acciones|atencion|atención)';
+
+        if (preg_match('/^' . $adorno . $nombre . $adorno . ':' . $adorno . '(.*?)(?=^' . $adorno . $etiqueta . $adorno . ':|\z)/misu', $texto, $m)) {
+            return trim($this->sinNegritas($m[1]));
         }
 
         return '';
+    }
+
+    private function sinNegritas(string $texto): string
+    {
+        return str_replace(['**', '__'], '', $texto);
     }
 
     /** @return string[] */

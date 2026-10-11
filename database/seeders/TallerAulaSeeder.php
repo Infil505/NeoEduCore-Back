@@ -313,7 +313,7 @@ class TallerAulaSeeder extends Seeder
      * Examen de fracciones con **metadatos curriculares** en cada ítem: es lo
      | que alimenta el diagnóstico por tema y el reporte de temas a reforzar.
      *
-     * @return array{id:string, preguntas:array<int,array{id:string,topic:string,correcta:int}>}
+     * @return array{id:string, preguntas:array<int,array{id:string,topic:string,orden:int,correcta:int,opciones:array<int,int>}>}
      */
     private function examenDeMatematicas(string $institutionId, array $docente, string $materiaId, string $grupoId): array
     {
@@ -386,8 +386,11 @@ class TallerAulaSeeder extends Seeder
                 'updated_at'     => now()->subDays(8),
             ]);
 
+            // Los ids de las opciones (por índice): las respuestas del alumnado guardan cuál marcó.
+            $idsOpciones = [];
+
             foreach ($opciones as $i => $opcion) {
-                DB::table('question_options')->insert([
+                $idsOpciones[$i] = DB::table('question_options')->insertGetId([
                     'institution_id' => $institutionId,
                     'question_id'    => $preguntaId,
                     'option_index'   => $i,
@@ -396,7 +399,7 @@ class TallerAulaSeeder extends Seeder
                 ]);
             }
 
-            $preguntas[] = ['id' => $preguntaId, 'topic' => $tema, 'orden' => $orden];
+            $preguntas[] = ['id' => $preguntaId, 'topic' => $tema, 'orden' => $orden, 'correcta' => $correcta, 'opciones' => $idsOpciones];
         }
 
         return ['id' => $examenId, 'preguntas' => $preguntas];
@@ -452,8 +455,10 @@ class TallerAulaSeeder extends Seeder
             foreach ($examen['preguntas'] as $pregunta) {
                 $acerto = !in_array($pregunta['orden'], $falladas, true);
 
+                $respuestaId = (string) Str::uuid();
+
                 DB::table('student_answers')->insert([
-                    'id'             => (string) Str::uuid(),
+                    'id'             => $respuestaId,
                     'institution_id' => $institutionId,
                     'attempt_id'     => $intentoId,
                     'question_id'    => $pregunta['id'],
@@ -463,6 +468,17 @@ class TallerAulaSeeder extends Seeder
                     'review_status'  => 'auto_graded',
                     'created_at'     => $entregado,
                     'updated_at'     => $entregado,
+                ]);
+
+                // La opción que marcó, como hace la entrega real: la correcta si acertó; si falló, uno de los
+                // distractores, rotando según alumno y pregunta para que el reparto no sea siempre el mismo.
+                $distractores = array_values(array_diff(array_keys($pregunta['opciones']), [$pregunta['correcta']]));
+                $marcada      = $acerto ? $pregunta['correcta'] : $distractores[($i + $pregunta['orden']) % count($distractores)];
+
+                DB::table('student_answer_options')->insert([
+                    'institution_id'    => $institutionId,
+                    'student_answer_id' => $respuestaId,
+                    'option_id'         => $pregunta['opciones'][$marcada],
                 ]);
             }
 

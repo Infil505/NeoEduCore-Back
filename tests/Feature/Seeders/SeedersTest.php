@@ -185,6 +185,23 @@ class SeedersTest extends TestCase
         $this->assertSame(['Reunión de padres y madres'], $this->nombres('/api/calendar-events', 'title'));
     }
 
+    public function test_cada_respuesta_del_taller_guarda_la_opcion_marcada(): void
+    {
+        $this->sembrarTaller();
+
+        $respuestas = DB::table('student_answers')->count();
+        $this->assertGreaterThan(0, $respuestas);
+
+        // Como la entrega real: una opción por respuesta, y es la correcta si y solo si la respuesta es correcta.
+        $this->assertSame(0, DB::table('student_answers as sa')->leftJoin('student_answer_options as sao', 'sao.student_answer_id', '=', 'sa.id')->whereNull('sao.id')->count());
+        $this->assertSame(0, DB::table('student_answers as sa')
+            ->join('student_answer_options as sao', 'sao.student_answer_id', '=', 'sa.id')
+            ->join('question_options as qo', 'qo.id', '=', 'sao.option_id')
+            ->whereColumn('qo.is_correct', '!=', 'sa.is_correct')
+            ->count());
+        $this->assertSame($respuestas, DB::table('student_answer_options')->count());
+    }
+
     public function test_el_taller_conserva_al_superadmin_y_es_reproducible(): void
     {
         $super = User::factory()->superAdmin()->create(['institution_id' => null, 'status' => 'active']);

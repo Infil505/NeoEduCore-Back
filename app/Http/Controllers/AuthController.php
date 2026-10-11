@@ -251,6 +251,7 @@ class AuthController extends Controller
                 'status' => $user->status->value,
                 'institution_id' => $user->institution_id,
                 'must_change_password' => (bool) $user->must_change_password,
+                'grade' => $this->gradoDelEstudiante($user),
             ],
             'token' => $token,
         ]);
@@ -279,6 +280,7 @@ class AuthController extends Controller
                 'status' => $user->status->value,
                 'institution_id' => $user->institution_id,
                 'must_change_password' => (bool) $user->must_change_password,
+                'grade' => $this->gradoDelEstudiante($user),
             ],
         ]);
     }
@@ -297,6 +299,22 @@ class AuthController extends Controller
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['message' => 'Sesión cerrada']);
+    }
+
+    /**
+     * El grado matriculado (1 a 6) de un estudiante; `null` para el resto. El front lo usa para graduar los
+     * pictogramas: viaja con el login y `/auth/me`, que ya se piden, en vez de pedirlo en otra llamada.
+     */
+    private function gradoDelEstudiante(User $user): ?int
+    {
+        if ($user->user_type !== UserType::Student) {
+            return null;
+        }
+
+        // Consulta directa y acotada al centro del usuario: el login aún no tiene contexto de tenant para `Student`.
+        $grado = DB::table('students')->where('user_id', $user->id)->where('institution_id', $user->institution_id)->value('grade');
+
+        return $grado === null ? null : (int) $grado;
     }
 
     /**

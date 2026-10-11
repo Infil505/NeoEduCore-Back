@@ -19,6 +19,7 @@ use App\Services\Exams\ExamGroupAnalysisService;
 use App\Support\RelacionesEnLinea;
 use App\Support\TenantCache;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -143,7 +144,7 @@ class ReportController extends Controller
         // La lectura en palabras, sin llamar a OpenAI: la redactada por el modelo que ya se guardó para este examen (marcada
         // `stale` si desde entonces hubo entregas o revisiones nuevas) o, si no hay, la calculada con reglas.
         // Redactarla (o volver a hacerlo) se pide aparte (`POST /analysis/ai`).
-        return response()->json(['data' => $datos + ['narrative' => $narrador->conLoGuardado($datos, $exam)]]);
+        return response()->json(['data' => $datos + ['narrative' => $narrador->conLoGuardado($datos, $exam) + ['ai_usage' => $narrador->consumo($exam)]]]);
     }
 
     /**
@@ -161,33 +162,58 @@ class ReportController extends Controller
             return response()->json(['message' => 'No autorizado'], 403);
         }
 
-        $datos = $this->analisisCacheado($exam, $analisis);
-        $forzar = $request->boolean('force');
+        // Un solo candado por examen cubre desde la comprobación del tope hasta que se cuenta la redacción: sin él, dos
+        // peticiones a la vez con `force` pasan ambas la comprobación (la llamada al modelo tarda segundos) y se
+        // redacta una vez de más. La segunda no espera: se le dice que ya hay una en curso.
+        // Vence siempre DESPUÉS de que la llamada al modelo haya terminado o se haya cortado por su tiempo máximo
+        // (`openai.request_timeout`): si venciera antes, una segunda petición entraría con el contador sin actualizar.
+        $duracion = max(60, ((int) config('openai.request_timeout', 30)) * 3 + 30);
+        $candado = Cache::lock("exam-analysis-ai:{$exam->id}", $duracion);
 
-        // Con los mismos datos y lo ya guardado no hay llamada al modelo: no gasta uso del día. Solo se reserva cuando
-        // de verdad se va a redactar (datos nuevos, primera vez o `force`).
-        $reservado = false;
-        if ($forzar || !$narrador->alDia($datos, $exam)) {
-            if ($sinCupo = $this->reservarIa($request)) {
-                return $sinCupo;
-            }
-            $reservado = true;
+        if (!$candado->get()) {
+            return response()->json(['message' => 'Ya hay una redacción con IA en curso para este examen. Espera a que termine.'], 429);
         }
 
         try {
-            $narrativa = $narrador->conIa($datos, $exam, $forzar);
-        } catch (\Throwable $e) {
-            $reservado && $this->devolverIa($request);
+            $datos = $this->analisisCacheado($exam, $analisis);
+            $forzar = $request->boolean('force');
 
-            throw $e;
+            // Con los mismos datos y lo ya guardado no hay llamada al modelo: no gasta uso del día. Solo se reserva cuando
+            // de verdad se va a redactar (datos nuevos, primera vez o `force`).
+            $reservado = false;
+            if ($forzar || !$narrador->alDia($datos, $exam)) {
+                // Tope por examen: las veces que se puede redactar con IA la lectura de ESTE examen.
+                $consumo = $narrador->consumo($exam);
+                if ($consumo['limit'] > 0 && $consumo['used'] >= $consumo['limit']) {
+                    return response()->json([
+                        'message'  => "Ya usaste las {$consumo['limit']} redacciones con IA de este examen. La lectura guardada sigue disponible.",
+                        'ai_usage' => $consumo,
+                    ], 429);
+                }
+
+                if ($sinCupo = $this->reservarIa($request)) {
+                    return $sinCupo;
+                }
+                $reservado = true;
+            }
+
+            try {
+                $narrativa = $narrador->conIa($datos, $exam, $forzar);
+            } catch (\Throwable $e) {
+                $reservado && $this->devolverIa($request);
+
+                throw $e;
+            }
+
+            // Si no salió redactada ahora (nadie presentó, el modelo falló y queda lo anterior o lo calculado), no costó.
+            if ($reservado && (($narrativa['source'] ?? null) !== 'ai' || ($narrativa['stale'] ?? false))) {
+                $this->devolverIa($request);
+            }
+
+            return response()->json(['data' => $datos + ['narrative' => $narrativa + ['ai_usage' => $narrador->consumo($exam)], 'quota' => $this->estadoIa($request)]]);
+        } finally {
+            $candado->release();
         }
-
-        // Si no salió redactada ahora (nadie presentó, el modelo falló y queda lo anterior o lo calculado), no costó.
-        if ($reservado && (($narrativa['source'] ?? null) !== 'ai' || ($narrativa['stale'] ?? false))) {
-            $this->devolverIa($request);
-        }
-
-        return response()->json(['data' => $datos + ['narrative' => $narrativa, 'quota' => $this->estadoIa($request)]]);
     }
 
     /** @return array<string,mixed> */

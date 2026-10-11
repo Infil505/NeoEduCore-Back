@@ -65,7 +65,10 @@ class CuotaDiariaDelPersonalTest extends TestCase
     private function fingir(int $n = 12): void
     {
         OpenAI::fake(array_fill(0, $n, CreateResponse::fake([
-            'choices' => [['message' => ['role' => 'assistant', 'content' => "strength: Bien.\nweakness: Refuerza.\naction: - Repasa.\nresource: Un video."]]],
+            'choices' => [['message' => ['role' => 'assistant', 'content' => "strength: Bien.\nweakness: Refuerza.\naction: - Repasa.\nresource: Un video.
+resumen: La clase flojea en fracciones.
+acciones:
+- Repasar con material concreto."]]],
         ])));
     }
 

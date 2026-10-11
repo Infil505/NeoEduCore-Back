@@ -256,6 +256,8 @@ return [
         // Usos de la IA por docente o administrador y por día: asistente, consejos, planes y «Redactar con IA» del
         // análisis, en una sola cuenta (ver `CuotaDelTutor::delPersonal`). El día es el de `tutor.daily_timezone`. 0 = sin límite.
         'daily_limit'      => (int) env('OPENAI_DOCENTE_DAILY_LIMIT', 30),
+        // Veces que se puede «Redactar con IA» la lectura del análisis de UN examen (cuenta las que llegan al modelo). 0 = sin límite.
+        'analysis_ai_per_exam' => (int) env('OPENAI_ANALYSIS_AI_PER_EXAM', 2),
         'max_tokens'       => (int) env('OPENAI_DOCENTE_MAX_TOKENS', 700),
         'temperature'      => (float) env('OPENAI_DOCENTE_TEMPERATURE', 0.4),
         'history_messages' => (int) env('OPENAI_DOCENTE_HISTORY_MESSAGES', 6),
