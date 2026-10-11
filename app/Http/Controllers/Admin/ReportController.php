@@ -303,11 +303,12 @@ class ReportController extends Controller
         ]);
     }
 
-    /** @return array{subject_id?:string,limit?:int} */
+    /** @return array{subject_id?:string,exam_id?:string,limit?:int} */
     private function strategyFilters(Request $request): array
     {
         return $request->validate([
             'subject_id' => ['sometimes', 'uuid'],
+            'exam_id'    => ['sometimes', 'uuid'],
             'limit'      => ['sometimes', 'integer', 'between:1,' . ReportStrategyService::MAX_LIMIT],
         ]);
     }
@@ -408,6 +409,11 @@ class ReportController extends Controller
      * - sesiones activas vs cerradas
      * - top 5 tipos de recomendación más generados
      * - distribución de uso por estudiante (top 10) — **solo admin**
+     * - uso por aula (alumnado que lo usó, sesiones y mensajes) — admin y docente
+     *
+     * **Alcance.** El administrador ve el centro entero. El docente, solo SUS estudiantes
+     * (matriculados ahora en las aulas que tiene asignadas) y las recomendaciones de las materias que
+     * imparte, igual que el resto de reportes por docente: antes contaba a todo el centro.
      *
      * **Por qué el docente no ve el ranking nominal.** [173] es explícito: el
      * personal docente «recibirá solo métricas agregadas», y entre los
@@ -419,21 +425,30 @@ class ReportController extends Controller
      * Se conserva para el admin, que es quien responde por los datos de la
      * institución y lo necesita para detectar abuso o coste desbocado. Es la
      * misma frontera que ya aplica `ReportStrategyService`: el docente accede al
-     * artefacto *pedagógico*, no al rastro de la conversación.
+     * artefacto *pedagógico*, no al rastro de la conversación. En su lugar recibe
+     * el uso POR AULA, que sí es un agregado.
      */
     public function tutorUsage(Request $request)
     {
-        $esAdmin = $request->user()->user_type->value === 'admin';
+        $user = $request->user();
+        $esAdmin = $user->user_type->value === 'admin';
+        $esDocente = $this->esDocente($user);
 
-        $sessions = AiChatSession::selectRaw(
-            'COUNT(*) as total_sessions,
-             COUNT(CASE WHEN ended_at IS NULL THEN 1 END) as active_sessions,
-             COUNT(CASE WHEN ended_at IS NOT NULL THEN 1 END) as closed_sessions,
-             COUNT(DISTINCT student_user_id) as unique_students,
-             SUM(jsonb_array_length(messages)) as total_messages'
-        )->first();
+        $sessions = AiChatSession::query()
+            ->when($esDocente, fn ($q) => $q->whereIn('student_user_id', $this->estudiantesDelDocente($user->id)))
+            ->selectRaw(
+                'COUNT(*) as total_sessions,
+                 COUNT(CASE WHEN ended_at IS NULL THEN 1 END) as active_sessions,
+                 COUNT(CASE WHEN ended_at IS NOT NULL THEN 1 END) as closed_sessions,
+                 COUNT(DISTINCT student_user_id) as unique_students,
+                 COALESCE(SUM(jsonb_array_length(messages)), 0) as total_messages'
+            )->first();
 
-        $topRecommendationTypes = AiRecommendation::select('recommendation_type', DB::raw('COUNT(*) as total'))
+        $topRecommendationTypes = AiRecommendation::query()
+            ->when($esDocente, fn ($q) => $q
+                ->whereIn('student_user_id', $this->estudiantesDelDocente($user->id))
+                ->whereIn('subject_id', $this->materiasDelDocente($user->id)))
+            ->select('recommendation_type', DB::raw('COUNT(*) as total'))
             ->groupBy('recommendation_type')
             ->orderByDesc('total')
             ->limit(5)
@@ -444,8 +459,12 @@ class ReportController extends Controller
             ]);
 
         $data = [
+            // De quién son las cifras: `teacher` = sus estudiantes y sus materias; `center` = todo el centro.
+            // El front lo usa para rotular las tarjetas («a tus estudiantes» / «del centro»).
+            'scope'                    => $esDocente ? 'teacher' : 'center',
             'sessions'                 => $sessions,
             'top_recommendation_types' => $topRecommendationTypes,
+            'usage_by_group'           => $this->usoDelTutorPorAula($user, $esDocente),
         ];
 
         // La consulta ni siquiera se lanza para un docente: el dato no se
@@ -470,5 +489,45 @@ class ReportController extends Controller
         }
 
         return response()->json(['data' => $data]);
+    }
+
+    /**
+     * Uso del tutor por aula: de cuántos estudiantes matriculados ahora, cuántos lo han usado y cuántas
+     * sesiones y mensajes suman. Es un agregado (no identifica a nadie), por eso lo ve también el docente,
+     * acotado a las aulas que tiene asignadas.
+     *
+     * @return array<int,array{group_id:string,name:string,students:int,students_using:int,sessions:int,messages:int}>
+     */
+    private function usoDelTutorPorAula(object $user, bool $esDocente): array
+    {
+        $centro = $user->institution_id;
+
+        // Sesiones y mensajes por alumno, UNA vez; luego se suman por aula.
+        $porAlumno = DB::table('ai_chat_sessions')
+            ->where('institution_id', $centro)
+            ->groupBy('student_user_id')
+            ->selectRaw('student_user_id, COUNT(*) AS sesiones, COALESCE(SUM(jsonb_array_length(messages)), 0) AS mensajes');
+
+        return DB::table('groups as g')
+            ->join('group_students as gs', function ($join) {
+                $join->on('gs.group_id', '=', 'g.id')->on('gs.institution_id', '=', 'g.institution_id')->whereNull('gs.left_at');
+            })
+            ->leftJoinSub($porAlumno, 'u', 'u.student_user_id', '=', 'gs.student_user_id')
+            ->where('g.institution_id', $centro)
+            ->when($esDocente, fn ($q) => $q->whereIn('g.id', $this->gruposDelDocente($user->id)))
+            ->groupBy('g.id', 'g.name')
+            ->orderBy('g.name')
+            ->selectRaw('g.id, g.name, COUNT(gs.student_user_id) AS estudiantes, COUNT(u.student_user_id) AS usando,
+                         COALESCE(SUM(u.sesiones), 0) AS sesiones, COALESCE(SUM(u.mensajes), 0) AS mensajes')
+            ->get()
+            ->map(fn ($f) => [
+                'group_id'       => $f->id,
+                'name'           => $f->name,
+                'students'       => (int) $f->estudiantes,
+                'students_using' => (int) $f->usando,
+                'sessions'       => (int) $f->sesiones,
+                'messages'       => (int) $f->mensajes,
+            ])
+            ->all();
     }
 }

@@ -7,6 +7,7 @@ use App\Exceptions\AiGenerationFailed;
 use App\Models\AI\AiRecommendation;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Academic\StudyResource;
+use App\Support\TextoDeRecomendacion;
 use App\Services\AI\AiInputSanitizer;
 use App\Services\AI\AiOutputValidator;
 use App\Services\AI\RegistroPorGrado;
@@ -841,25 +842,63 @@ class AiRecommendationService
         return null;
     }
 
+    /**
+     * Lo que el modelo propone como recurso, reducido a los campos que el sistema conoce y con el
+     * enlace validado. El modelo escribe la URL como `url`, `link` o `href`, y antes solo se validaba
+     * `url`: lo que viniera en `link` se guardaba sin pasar por la lista blanca y el front lo abría.
+     * Sin enlace permitido no hay recurso del modelo (null): entra el del docente o el del catálogo.
+     *
+     * @param  array<string,mixed>  $decoded
+     * @return array<string,mixed>|null
+     */
+    private function recursoDelModelo(array $decoded): ?array
+    {
+        // Una lista de recursos («resources»: [{…}, {…}]): vale el primero con enlace permitido.
+        foreach (['resources', 'recursos', 'items'] as $clave) {
+            if (isset($decoded[$clave]) && is_array($decoded[$clave])) {
+                foreach ($decoded[$clave] as $candidato) {
+                    $recurso = is_array($candidato) ? $this->recursoDelModelo($candidato) : null;
+
+                    if ($recurso !== null) {
+                        return $recurso;
+                    }
+                }
+
+                return null;
+            }
+        }
+
+        $texto = fn ($v, int $max) => is_string($v) && trim($v) !== '' ? mb_substr(trim($v), 0, $max) : null;
+
+        $url = $texto($decoded['url'] ?? $decoded['link'] ?? $decoded['href'] ?? null, 500);
+
+        if ($url === null || !(new AiOutputValidator())->isUrlAllowed($url)) {
+            return null;
+        }
+
+        return array_filter([
+            'title'              => $texto($decoded['title'] ?? $decoded['name'] ?? $decoded['nombre'] ?? null, 120),
+            'type'               => $texto($decoded['type'] ?? null, 30),
+            'url'                => $url,
+            'difficulty'         => $texto($decoded['difficulty'] ?? null, 30),
+            'estimated_duration' => isset($decoded['estimated_duration']) && is_numeric($decoded['estimated_duration']) ? (int) $decoded['estimated_duration'] : null,
+            'language'           => $texto($decoded['language'] ?? null, 10),
+        ], fn ($v) => $v !== null);
+    }
+
     private function extractResource(string $text): array
     {
         $resourceText = $this->extractSection($text, 'resource') ?? 'Recurso sugerido: repasar el tema con una guía práctica o un video corto.';
         $resourceJson = null;
 
-        // Intentar extraer JSON (primera ocurrencia bien formada)
-        if (preg_match('/\{.*\}/sU', $text, $m)) {
-            $candidate = $m[0];
-            $decoded = json_decode($candidate, true);
-            if (is_array($decoded)) {
-                // Validar URL contra whitelist antes de persistir
-                $url = $decoded['url'] ?? null;
-                if ($url && !(new AiOutputValidator())->isUrlAllowed($url)) {
-                    unset($decoded['url']);
-                }
-                $resourceJson = $decoded;
-            }
+        // El JSON es para el sistema: de ahí sale el recurso (el primero con enlace permitido) y se quita del
+        // texto, que es lo que leen el docente y el alumno. Los bloques pueden anidar (`{"resources": [{…}]}`).
+        foreach (TextoDeRecomendacion::bloquesJson($text) as $bloque) {
+            $resourceJson ??= $this->recursoDelModelo($bloque['datos']);
         }
 
-        return [trim($resourceText), $resourceJson];
+        $resourceText = TextoDeRecomendacion::sinBloquesJson($resourceText);
+
+        return [$resourceText !== '' ? $resourceText : 'Te recomiendo este recurso para reforzar.', $resourceJson];
     }
 }

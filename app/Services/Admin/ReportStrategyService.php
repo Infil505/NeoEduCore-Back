@@ -49,7 +49,7 @@ class ReportStrategyService
 
     /**
      * @param  User  $viewer  Quien descarga: decide el alcance (ver `scopeFor`)
-     * @param  array{subject_id?:string,limit?:int}  $filters
+     * @param  array{subject_id?:string,exam_id?:string,limit?:int}  $filters
      * @return array<string,mixed>
      */
     public function studentStrategies(Student $student, User $viewer, array $filters = []): array
@@ -154,7 +154,7 @@ class ReportStrategyService
         return $query;
     }
 
-    /** @param  array{subject_id?:string}  $filters */
+    /** @param  array{subject_id?:string,exam_id?:string}  $filters */
     private function baseQuery(Student $student, User $viewer, array $filters)
     {
         $query = AiRecommendation::query()
@@ -164,6 +164,11 @@ class ReportStrategyService
 
         if (!empty($filters['subject_id'])) {
             $query->where('subject_id', $filters['subject_id']);
+        }
+
+        // El plan de UN examen: lo que el docente ve en analíticas al elegir el examen.
+        if (!empty($filters['exam_id'])) {
+            $query->where('exam_id', $filters['exam_id']);
         }
 
         return $this->scopeFor($query, $viewer);

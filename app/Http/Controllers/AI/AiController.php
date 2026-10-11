@@ -6,6 +6,7 @@ use App\Enums\AiGenerationSource;
 use App\Http\Controllers\Concerns\AcotaAlDocente;
 use App\Http\Controllers\Controller;
 use App\Models\Exams\Exam;
+use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
 use App\Models\Academic\Subject;
 use App\Services\AI\AiOutputValidator;
@@ -17,6 +18,61 @@ use OpenAI\Laravel\Facades\OpenAI;
 class AiController extends Controller
 {
     use AcotaAlDocente;
+
+    /**
+     * POST /api/ai/plan — el PLAN COMPLETO de un estudiante para un examen: fortalezas, aspectos por
+     * reforzar, acciones y recursos, de una vez (las mismas cuatro recomendaciones que recibe el
+     * alumno al entregar). Es lo que el docente pide desde analíticas para quien aún no lo tiene.
+     *
+     * A diferencia de `generate`, que guarda UNA recomendación del tipo que se elija con el texto
+     * que se escriba, aquí el sistema reparte el contenido en sus cuatro secciones (las mismas que obtiene el alumno al regenerar).
+     *
+     * body: { "student_user_id": "uuid", "exam_id": "uuid" }
+     */
+    public function plan(Request $request, AiRecommendationService $aiService)
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'student_user_id' => ['required', 'uuid'],
+            'exam_id'         => ['required', 'uuid'],
+        ]);
+
+        // Examen y estudiante del propio centro (TenantScoped): de otro centro, 404.
+        $exam = Exam::where('id', $data['exam_id'])->firstOrFail();
+        Student::where('user_id', $data['student_user_id'])->firstOrFail();
+
+        // Mismas reglas que el informe del examen y que `generate`, y ANTES de llamar a OpenAI.
+        if ($this->esDocente($user)) {
+            if ($exam->created_by_teacher_id !== $user->id) {
+                return response()->json(['message' => 'No autorizado'], 403);
+            }
+
+            if (!$this->docenteAlcanzaEstudiante($user, $data['student_user_id'])) {
+                return $this->noAutorizadoPorAsignacion();
+            }
+        }
+
+        if (!$exam->subject_id) {
+            return response()->json(['message' => 'El examen no tiene materia asociada'], 409);
+        }
+
+        // El último intento entregado: sobre ese se arma el plan.
+        $intento = ExamAttempt::where('exam_id', $exam->id)
+            ->where('student_user_id', $data['student_user_id'])
+            ->whereNotNull('submitted_at')
+            ->orderByDesc('submitted_at')
+            ->first();
+
+        if (!$intento) {
+            return response()->json(['message' => 'Este estudiante aún no entregó el examen'], 409);
+        }
+
+        // `regenerateForAttempt` y no `generateFromAttempt`: esta última reparte según la nota (con menos de 70 %
+        // solo «por reforzar» y recurso; nunca fortaleza ni acción) y es la de la entrega. La regeneración
+        // genera SIEMPRE las cuatro secciones, que es lo que el docente espera ver en el plan.
+        return response()->json(['data' => $aiService->regenerateForAttempt($intento, $user->id)], 201);
+    }
 
     /**
      * Generar recomendación IA y guardarla en ai_recommendations

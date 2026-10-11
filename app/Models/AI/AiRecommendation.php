@@ -9,6 +9,8 @@ use App\Models\Academic\Subject;
 use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Admin\Institution;
+use App\Support\TextoDeRecomendacion;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -42,6 +44,24 @@ class AiRecommendation extends Model
         'recommendation_type' => AiRecommendationType::class,
         'generated_by'        => AiGenerationSource::class,
     ];
+
+    /**
+     * El texto SIN los bloques JSON que el modelo añadía para el sistema. Ya no se guardan así, pero las
+     * recomendaciones anteriores sí los traen: se limpian al leer, para que el docente y el alumno no vean
+     * llaves ni enlaces bloqueados. El dato guardado no se toca.
+     */
+    protected function recommendationText(): Attribute
+    {
+        return Attribute::get(function (?string $valor) {
+            if ($valor === null) {
+                return null;
+            }
+
+            $limpio = TextoDeRecomendacion::sinBloquesJson($valor);
+
+            return $limpio !== '' ? $limpio : 'Sin detalle disponible.';
+        });
+    }
 
     /* =========================
      | Relaciones

@@ -251,6 +251,9 @@ Route::middleware(['auth:sanctum', 'activa', 'clave.temporal'])->group(function 
         // más falladas, qué reforzar). Mismo gasto de IA → mismos límites.
         Route::post('/ai/teacher/chat', [\App\Http\Controllers\AI\AiAsistenteDocenteController::class, 'chat'])
             ->middleware(['throttle:ai-generate', 'throttle:ai-global']);
+        // El plan completo (las cuatro secciones) de un estudiante para un examen.
+        Route::post('/ai/plan', [AiController::class, 'plan'])
+            ->middleware(['throttle:ai-generate', 'throttle:ai-global']);
         Route::get('/ai-recommendations', [AiRecommendationController::class, 'index']);
         Route::get('/ai-recommendations/{aiRecommendation}', [AiRecommendationController::class, 'show']);
 

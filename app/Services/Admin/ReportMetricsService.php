@@ -67,6 +67,8 @@ class ReportMetricsService
                 'teacher' => $row->teacher_name ?? null,
             ],
             'passing_percentage' => $passing,
+            // Cuántas preguntas abiertas tiene el examen (0 = nada que revisar a mano).
+            'open_questions' => (int) ($row->open_questions ?? 0),
             'totals' => [
                 'attempts'  => $total,
                 'average'   => $this->round($row->average ?? 0),
@@ -211,6 +213,12 @@ class ReportMetricsService
         // Nombre del docente en la misma consulta (subselect escalar, sin relación aparte).
         $selects[]  = '(SELECT u.full_name FROM users u WHERE u.id = ? AND u.institution_id = ?) AS teacher_name';
         $bindings[] = $exam->created_by_teacher_id;
+        $bindings[] = $exam->institution_id;
+
+        // Preguntas abiertas (respuesta corta y ensayo): las que el docente puede tener que calificar a mano.
+        // Con esto el front decide si muestra los paneles de revisión (también subselect: sin consulta extra).
+        $selects[]  = "(SELECT COUNT(*) FROM questions q WHERE q.exam_id = ? AND q.institution_id = ? AND q.question_type IN ('short_answer', 'essay')) AS open_questions";
+        $bindings[] = $exam->id;
         $bindings[] = $exam->institution_id;
 
         return $this->gradedAttempts()

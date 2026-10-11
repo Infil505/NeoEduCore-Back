@@ -206,6 +206,29 @@ class ReportsTest extends TestCase
         );
     }
 
+    /**
+     * El front muestra «Revisión manual» solo si el examen tiene preguntas abiertas (respuesta corta o
+     * ensayo, que el backend deja pendientes de revisión). Opción múltiple y verdadero/falso no cuentan.
+     */
+    public function test_exam_summary_tells_how_many_open_questions_the_exam_has(): void
+    {
+        $institution = Institution::factory()->create();
+        $teacher = $this->signInTeacher(['institution_id' => $institution->id]);
+
+        $cerrado = Exam::factory()->create(['institution_id' => $institution->id, 'created_by_teacher_id' => $teacher->id]);
+        $abierto = Exam::factory()->create(['institution_id' => $institution->id, 'created_by_teacher_id' => $teacher->id]);
+
+        foreach (['multiple_choice', 'true_false'] as $tipo) {
+            \App\Models\Exams\Question::factory()->create(['institution_id' => $institution->id, 'exam_id' => $cerrado->id, 'question_type' => $tipo]);
+        }
+        foreach (['multiple_choice', 'short_answer', 'essay'] as $tipo) {
+            \App\Models\Exams\Question::factory()->create(['institution_id' => $institution->id, 'exam_id' => $abierto->id, 'question_type' => $tipo]);
+        }
+
+        $this->getJson("/api/reports/exams/{$cerrado->id}/summary")->assertOk()->assertJsonPath('data.open_questions', 0);
+        $this->getJson("/api/reports/exams/{$abierto->id}/summary")->assertOk()->assertJsonPath('data.open_questions', 2);
+    }
+
     public function test_exam_summary_honours_the_institution_passing_percentage(): void
     {
         $institution = Institution::factory()->create([

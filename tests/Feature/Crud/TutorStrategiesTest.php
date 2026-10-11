@@ -325,8 +325,14 @@ class TutorStrategiesTest extends TestCase
     public function test_the_teacher_gets_aggregates_without_the_named_ranking(): void
     {
         $institution = Institution::factory()->create();
-        $this->signInTeacher(['institution_id' => $institution->id]);
+        $docente = $this->signInTeacher(['institution_id' => $institution->id]);
         $nombre = $this->alumnoQueUsoElTutor($institution);
+
+        // Los agregados son de SUS estudiantes: el alumno tiene que estar en un aula que el docente tiene asignada.
+        $aula = \App\Models\Academic\Group::factory()->create(['institution_id' => $institution->id]);
+        $materia = \App\Models\Academic\Subject::factory()->create(['institution_id' => $institution->id]);
+        $this->asignarDocente($docente, $aula->id, $materia->id);
+        $this->matricularEnGrupo(User::where('full_name', $nombre)->value('id'), $aula->id, $institution->id);
 
         $res = $this->getJson('/api/reports/ai/tutor-usage')->assertOk();
 
