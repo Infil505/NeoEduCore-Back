@@ -284,6 +284,23 @@ return [
     | desbocada suele ser un fallo del modelo, no contenido útil.
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Verificación de la clave de los exámenes
+    |--------------------------------------------------------------------------
+    |
+    | El tutor comprueba, con una llamada aparte, si la respuesta que el docente marcó como correcta en las
+    | preguntas que el estudiante falló lo es de verdad (ver `VerificadorDeClave`). El veredicto se guarda en la
+    | pregunta: no se repite mientras el docente no la cambie. Apagarlo no deja al tutor sin examen, solo sin esta
+    | comprobación.
+    */
+
+    'clave_examen' => [
+        'enabled' => (bool) env('OPENAI_VERIFICAR_CLAVE', true),
+        // Segundos antes de reintentar una pregunta que no se pudo verificar (el modelo falló): evita repetir la espera en cada mensaje.
+        'reintento_segundos' => (int) env('OPENAI_VERIFICAR_CLAVE_REINTENTO', 300),
+    ],
+
     'output' => [
         'min_length' => (int) env('OPENAI_OUTPUT_MIN_LENGTH', 5),
         'max_length' => (int) env('OPENAI_OUTPUT_MAX_LENGTH', 4000),

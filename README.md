@@ -12,7 +12,7 @@ El frontend es un proyecto aparte (React + Vite + TypeScript): este repositorio 
 | `docs/ESTADO_Y_PENDIENTES.md` | Estado por módulo, brechas, TODO priorizado y referencia de endpoints |
 | `docs/ANALISIS_MODELO_DATOS_TFG.md` | Modelo de datos y qué corregir del informe del TFG |
 | `docs/ANALISIS_CONCURRENCIA.md` | Modelo de capacidad y prueba de carga |
-| `docs/DEPLOY_COOLIFY.md` | Despliegue en DigitalOcean + Coolify |
+| `docs/DEPLOY_COOLIFY.md` | Despliegue en DigitalOcean + Coolify (§11: entorno local con `docker compose up`) |
 | `tests/README.md` | Qué cubre cada test |
 | `postman/README.md` | Colección de Postman y su generador |
 

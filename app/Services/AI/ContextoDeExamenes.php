@@ -54,8 +54,22 @@ class ContextoDeExamenes
     /** Preguntas falladas que se detallan al hablar de un examen concreto. */
     private const PREGUNTAS_DETALLADAS = 6;
 
-    public function __construct(private readonly AiInputSanitizer $sanitizer)
-    {
+    /** Se pega a la pregunta cuya clave el verificador encontró equivocada (nunca dice cuál es la correcta). */
+    private const MARCA_CLAVE_EQUIVOCADA = ' ⚠ CLAVE EQUIVOCADA (verificado): la respuesta que el docente marcó como correcta en esta pregunta está MAL.';
+
+    /**
+     * Qué hacer con las preguntas marcadas con ⚠. Tiene prioridad sobre la regla (5) de `REGLAS_DE_EXAMEN` en ellas: no se
+     * le dice que su respuesta era incorrecta, porque quizá no lo era. Sigue sin darse la respuesta correcta.
+     */
+    private const INSTRUCCION_CLAVE_EQUIVOCADA = 'Para las preguntas marcadas con ⚠ CLAVE EQUIVOCADA, si el estudiante habla de ellas: dile con amabilidad y claridad '
+        . 'que la respuesta que su docente señala como correcta en esa pregunta parece estar equivocada, que este fallo puede no ser culpa suya y que se lo comente a '
+        . 'su docente. NO digas que su respuesta era incorrecta, NO digas ni insinúes cuál es la respuesta correcta y NO resuelvas la pregunta. '
+        . 'No menciones esto en preguntas sin la marca ⚠.';
+
+    public function __construct(
+        private readonly AiInputSanitizer $sanitizer,
+        private readonly VerificadorDeClave $verificador,
+    ) {
     }
 
     /**
@@ -119,6 +133,10 @@ class ContextoDeExamenes
             $conteos = $this->conteoPorIntento($institutionId, $ids);
             $preguntas = $this->preguntasFalladasPorIntento($institutionId, $ids);
 
+            // ¿Se equivocó el docente al marcar la clave de alguna de las preguntas que se nombran? Solo el veredicto.
+            $veredictos = $this->verificador->verificar($institutionId, $preguntas->flatten(1)->pluck('question_id')->all());
+            $hayClaveEquivocada = in_array(VerificadorDeClave::INCORRECTA, $veredictos, true);
+
             $lineas[] = 'Exámenes recientes (nota, preguntas falladas y dónde):';
             foreach ($recientes as $n => $e) {
                 $temas = ($fallos->get($e->attempt_id) ?? collect())
@@ -146,8 +164,13 @@ class ContextoDeExamenes
 
                     $lineas[] = '    · Falló: «' . $this->limpio($f->question_text, 110) . '»'
                         . ($f->topic ? ' (tema ' . $this->limpio($f->topic, 40) . ')' : '')
-                        . $respondio;
+                        . $respondio
+                        . (($veredictos[$f->question_id] ?? null) === VerificadorDeClave::INCORRECTA ? '.' . self::MARCA_CLAVE_EQUIVOCADA : '');
                 }
+            }
+
+            if ($hayClaveEquivocada) {
+                $lineas[] = self::INSTRUCCION_CLAVE_EQUIVOCADA;
             }
         }
 
@@ -187,13 +210,17 @@ class ContextoDeExamenes
             ->where('sa.is_correct', false)
             ->orderBy('q.order_index')
             ->limit(self::PREGUNTAS_DETALLADAS)
-            ->get(['q.question_text', 'q.topic', 'q.indicator', 'q.difficulty', 'sa.answer_text']);
+            ->get(['q.id as question_id', 'q.question_text', 'q.topic', 'q.indicator', 'q.difficulty', 'sa.answer_text']);
 
         if ($falladas->isEmpty()) {
             return '';
         }
 
-        $items = $falladas->map(function ($f) {
+        // ¿El docente se equivocó al marcar la clave de alguna de estas preguntas? Solo el veredicto, nunca la respuesta.
+        $veredictos = $this->verificador->verificar($institutionId, $falladas->pluck('question_id')->all());
+        $hayClaveEquivocada = in_array(VerificadorDeClave::INCORRECTA, $veredictos, true);
+
+        $items = $falladas->map(function ($f) use ($veredictos) {
             $partes = array_filter([
                 $f->topic ? 'tema ' . $this->limpio($f->topic, 60) : null,
                 $f->indicator ? 'indicador ' . $this->limpio($f->indicator, 80) : null,
@@ -205,12 +232,17 @@ class ContextoDeExamenes
                 $dato .= '. El estudiante respondió: «' . $this->limpio($f->answer_text, 80) . '»';
             }
 
+            if (($veredictos[$f->question_id] ?? null) === VerificadorDeClave::INCORRECTA) {
+                $dato .= '.' . self::MARCA_CLAVE_EQUIVOCADA;
+            }
+
             return $dato;
         })->implode("\n");
 
         return 'Examen sobre el que se conversa: «' . ($this->limpio($intento->title, 70) ?: 'Examen') . '»'
             . ($intento->subject ? ' de ' . $this->limpio($intento->subject, 40) : '')
-            . ", {$this->porcentaje($intento)} %. Preguntas que falló:\n{$items}";
+            . ", {$this->porcentaje($intento)} %. Preguntas que falló:\n{$items}"
+            . ($hayClaveEquivocada ? "\n" . self::INSTRUCCION_CLAVE_EQUIVOCADA : '');
     }
 
     /* =========================================================
@@ -262,8 +294,8 @@ class ContextoDeExamenes
 
         // Las primeras N de CADA intento (ventana), no las N primeras de todos.
         $filas = DB::select(
-            "SELECT attempt_id, question_text, topic, answer_text FROM (
-                SELECT sa.attempt_id, q.question_text, q.topic, sa.answer_text,
+            "SELECT attempt_id, question_id, question_text, topic, answer_text FROM (
+                SELECT sa.attempt_id, q.id AS question_id, q.question_text, q.topic, sa.answer_text,
                        ROW_NUMBER() OVER (PARTITION BY sa.attempt_id ORDER BY q.order_index) AS n
                   FROM student_answers sa
                   JOIN questions q ON q.id = sa.question_id

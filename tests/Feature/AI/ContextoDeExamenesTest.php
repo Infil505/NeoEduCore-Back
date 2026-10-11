@@ -183,6 +183,110 @@ class ContextoDeExamenesTest extends TestCase
         $this->assertStringNotContainsString('sobre los temas que falló en su examen', $enviado);
     }
 
+    /* ============================================================
+     | Verificación de la clave que marcó el docente
+     |
+     | Las preguntas de este examen son de respuesta corta: la verificación hace DOS pasadas y solo acusa si coinciden.
+     | (Las de opciones se prueban en `VerificacionDeClaveTest`.)
+     ============================================================ */
+
+    private function respuestaDeVerificacion(string $veredicto): CreateResponse
+    {
+        return $this->respuestaDelModelo('[{"n":1,"clave":"' . $veredicto . '"}]');
+    }
+
+    private function claveDeLaPregunta(): ?string
+    {
+        return DB::table('questions')->where('exam_id', $this->examen->id)->where('order_index', 1)->value('key_check_result');
+    }
+
+    public function test_si_la_clave_del_docente_esta_mal_el_tutor_se_lo_dice_al_estudiante_sin_dar_la_respuesta(): void
+    {
+        config(['openai.clave_examen.enabled' => true]);
+        OpenAI::fake([$this->respuestaDeVerificacion('incorrecta'), $this->respuestaDeVerificacion('incorrecta'), $this->respuestaDelModelo('Revisa con tu docente esa pregunta.')]);
+
+        $this->postJson('/api/ai/tutor/chat', ['message' => 'No entiendo por qué fallé la primera', 'exam_id' => $this->examen->id])->assertOk();
+
+        // Las peticiones 0 y 1 son la verificación (aislada); la 2, el chat del estudiante.
+        $this->assertStringContainsString(self::SECRETO, $this->enviado(0), 'La verificación de respuesta corta sí ve la clave: es su trabajo.');
+        $chat = $this->enviado(2);
+        $this->assertStringContainsString('CLAVE EQUIVOCADA', $chat);
+        $this->assertStringContainsString('NO digas que su respuesta era incorrecta', $chat);
+        $this->assertStringNotContainsString(self::SECRETO, $chat, 'El tutor nunca recibe la respuesta correcta.');
+        $this->assertSame('incorrecta', $this->claveDeLaPregunta());
+    }
+
+    public function test_si_las_dos_pasadas_no_coinciden_o_la_clave_esta_bien_el_tutor_no_dice_nada(): void
+    {
+        config(['openai.clave_examen.enabled' => true]);
+
+        foreach ([['correcta', 'correcta', 'correcta'], ['dudosa', 'dudosa', 'dudosa'], ['incorrecta', 'correcta', 'dudosa'], ['incorrecta', 'dudosa', 'dudosa']] as [$uno, $dos, $esperado]) {
+            \Illuminate\Support\Facades\Cache::flush();
+            DB::table('questions')->where('exam_id', $this->examen->id)->update(['key_check_hash' => null, 'key_check_result' => null]);
+            OpenAI::fake([$this->respuestaDeVerificacion($uno), $this->respuestaDeVerificacion($dos), $this->respuestaDelModelo('Vamos a repasarlo.')]);
+
+            $this->postJson('/api/ai/tutor/chat', ['message' => 'Ayúdame con mi examen', 'exam_id' => $this->examen->id])->assertOk();
+
+            $this->assertStringNotContainsString('CLAVE EQUIVOCADA', $this->enviado(2), "{$uno}/{$dos}");
+            $this->assertSame($esperado, $this->claveDeLaPregunta(), "{$uno}/{$dos}");
+        }
+    }
+
+    public function test_el_veredicto_se_guarda_y_no_se_vuelve_a_pagar_mientras_el_docente_no_toque_la_pregunta(): void
+    {
+        config(['openai.clave_examen.enabled' => true]);
+        OpenAI::fake([$this->respuestaDeVerificacion('incorrecta'), $this->respuestaDeVerificacion('incorrecta'), $this->respuestaDelModelo('Uno.')]);
+        $this->postJson('/api/ai/tutor/chat', ['message' => 'Hola', 'exam_id' => $this->examen->id])->assertOk();
+
+        // Otra conversación (caché vacía): solo el chat, sin verificar de nuevo.
+        \Illuminate\Support\Facades\Cache::flush();
+        OpenAI::fake([$this->respuestaDelModelo('Dos.')]);
+        $this->postJson('/api/ai/tutor/chat', ['message' => 'Otra vez', 'exam_id' => $this->examen->id])->assertOk();
+        $this->assertStringContainsString('CLAVE EQUIVOCADA', $this->enviado(0));
+        OpenAI::assertSent(Chat::class, 1);
+
+        // Si el docente corrige la pregunta, la huella cambia y se verifica de nuevo.
+        DB::table('questions')->where('exam_id', $this->examen->id)->where('order_index', 1)->update(['correct_answer_text' => 'OTRA-CLAVE-CORREGIDA']);
+        \Illuminate\Support\Facades\Cache::flush();
+        OpenAI::fake([$this->respuestaDeVerificacion('correcta'), $this->respuestaDeVerificacion('correcta'), $this->respuestaDelModelo('Tres.')]);
+        $this->postJson('/api/ai/tutor/chat', ['message' => 'Ya la corrigió', 'exam_id' => $this->examen->id])->assertOk();
+        $this->assertStringNotContainsString('CLAVE EQUIVOCADA', $this->enviado(2));
+        $this->assertSame('correcta', $this->claveDeLaPregunta());
+    }
+
+    public function test_si_la_verificacion_falla_o_no_se_entiende_el_tutor_sigue_y_no_guarda_nada(): void
+    {
+        config(['openai.clave_examen.enabled' => true]);
+
+        // [respuestas de la verificación, posición del chat]
+        $casos = [
+            [[new \RuntimeException('sin red')], 1],
+            [[$this->respuestaDelModelo('La clave es A, claro.')], 1],
+            [[$this->respuestaDelModelo('[{"n":1,"clave":"quizá"},{"n":7,"clave":"incorrecta"}]'), $this->respuestaDelModelo('[{"n":1,"clave":"quizá"}]')], 2],
+        ];
+
+        foreach ($casos as [$verificacion, $posicionDelChat]) {
+            \Illuminate\Support\Facades\Cache::flush();
+            OpenAI::fake([...$verificacion, $this->respuestaDelModelo('Vamos a repasarlo.')]);
+
+            $this->postJson('/api/ai/tutor/chat', ['message' => 'Ayúdame', 'exam_id' => $this->examen->id])->assertOk();
+
+            $this->assertStringNotContainsString('CLAVE EQUIVOCADA', $this->enviado($posicionDelChat));
+            $this->assertNull($this->claveDeLaPregunta(), 'Sin veredicto válido no se guarda nada (se reintenta la próxima vez).');
+        }
+    }
+
+    public function test_apagada_no_se_llama_a_nadie(): void
+    {
+        config(['openai.clave_examen.enabled' => false]);
+        $this->fingir();
+
+        $this->postJson('/api/ai/tutor/chat', ['message' => 'Ayúdame', 'exam_id' => $this->examen->id])->assertOk();
+
+        OpenAI::assertSent(Chat::class, 1);
+        $this->assertNull($this->claveDeLaPregunta());
+    }
+
     public function test_al_entrar_por_una_materia_el_tutor_ve_su_ultimo_examen_de_ella(): void
     {
         $this->fingir();

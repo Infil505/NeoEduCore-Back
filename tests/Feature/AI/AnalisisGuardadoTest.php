@@ -288,6 +288,57 @@ class AnalisisGuardadoTest extends TestCase
         $this->assertNull($this->leer()['ai_usage']['remaining']);
     }
 
+    /** El veredicto de la IA sobre la clave de la pregunta de opciones, tal como lo guarda `VerificadorDeClave`. */
+    private function marcarClaveComoMala(): void
+    {
+        $q = DB::table('questions')->where('id', $this->preguntaMc->id)->first();
+        $ops = DB::table('question_options')->where('question_id', $q->id)->orderBy('option_index')->get();
+
+        DB::table('questions')->where('id', $q->id)->update([
+            'key_check_result' => 'incorrecta',
+            'key_check_hash'   => \App\Services\AI\VerificadorDeClave::huella($q->question_text, $q->question_type, $ops->map(fn ($o) => [$o->option_text, (bool) $o->is_correct])->all(), $q->correct_answer_text),
+        ]);
+        Cache::flush();
+    }
+
+    private function analisis(): array
+    {
+        return $this->getJson("/api/reports/exams/{$this->examen->id}/analysis")->assertOk()->json('data');
+    }
+
+    public function test_sin_veredicto_no_hay_alerta_de_clave(): void
+    {
+        $this->assertSame([], $this->analisis()['key_alerts']);
+    }
+
+    public function test_el_docente_ve_la_pregunta_cuya_clave_la_ia_encontro_equivocada(): void
+    {
+        $this->marcarClaveComoMala();
+
+        $datos = $this->analisis();
+
+        $this->assertCount(1, $datos['key_alerts']);
+        $this->assertSame($this->preguntaMc->id, $datos['key_alerts'][0]['question_id']);
+        $marcadas = collect($datos['questions'])->where('key_suspect', true)->pluck('id')->all();
+        $this->assertSame([$this->preguntaMc->id], $marcadas);
+        // Solo el aviso: la respuesta correcta no viaja en el análisis (solo el texto de las opciones, como antes).
+        $this->assertArrayNotHasKey('key_check_result', $datos['questions'][0]);
+    }
+
+    public function test_si_el_docente_corrige_la_pregunta_la_alerta_desaparece(): void
+    {
+        $this->marcarClaveComoMala();
+        $this->assertCount(1, $this->analisis()['key_alerts']);
+
+        // Cambia la clave: el veredicto ya era de otra versión de la pregunta.
+        $nueva = QuestionOption::where('question_id', $this->preguntaMc->id)->where('option_index', 2)->first();
+        QuestionOption::where('question_id', $this->preguntaMc->id)->update(['is_correct' => false]);
+        $nueva->update(['is_correct' => true]);
+        Cache::flush();
+
+        $this->assertSame([], $this->analisis()['key_alerts']);
+    }
+
     public function test_si_el_modelo_falla_y_no_habia_nada_guardado_queda_la_calculada(): void
     {
         OpenAI::fake([new \RuntimeException('sin red')]);

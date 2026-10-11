@@ -15,7 +15,8 @@ class Question extends Model
      * La respuesta de las preguntas abiertas tampoco se serializa por defecto.
      * Ver el comentario equivalente en QuestionOption.
      */
-    protected $hidden = ['correct_answer_text'];
+    // El veredicto de la verificación de la clave es de uso interno (lo lee el tutor): nunca sale en la API.
+    protected $hidden = ['correct_answer_text', 'key_check_hash', 'key_check_result', 'key_checked_at'];
 
     use HasFactory, HasUuids, TenantScoped;
 
@@ -29,6 +30,7 @@ class Question extends Model
     public const COLUMNAS = [
         'id', 'institution_id', 'exam_id', 'question_text', 'question_type', 'points', 'correct_answer_text',
         'order_index', 'created_at', 'updated_at', 'topic', 'indicator', 'difficulty', 'topic_normalized',
+        'key_check_hash', 'key_check_result', 'key_checked_at',
     ];
 
     public $incrementing = false;

@@ -254,3 +254,25 @@ configuración, en este orden:
 
 Mientras esto no esté hecho no se rompe nada: el alumno ve el examen al recargar o en su notificación.
 Seguimiento en la checklist, tarea **P9**.
+
+---
+
+## 11. Entorno local con Docker Compose (anotado el 11/10/2026)
+
+El `Dockerfile` es el de producción; para trabajar en local hay un `docker-compose.yml` en la raíz que lo
+reutiliza y arranca todo con un comando:
+
+```
+docker compose up --build
+docker compose exec app php artisan migrate --force   # solo la primera vez
+```
+
+- **Servicios**: `app` (API en `localhost:8000`), `queue` (`queue:work --queue=default,correos`, necesario
+  para correos y carga masiva) y `db` (Postgres 16 local, volumen `dbdata`).
+- **No usa la Supabase del `.env`**: la base es local y vacía. Del `.env` solo lee `APP_KEY` (obligatoria) y,
+  si existe, `OPENAI_API_KEY`.
+- Correo en `log` (no envía nada) y `BROADCAST_CONNECTION=null` (Reverb apagado en local).
+- Apagar: `docker compose down`; con `-v` también se borra la base.
+- Estado: el archivo se validó con `docker compose config`, pero **no se probó levantándolo** (Docker estaba
+  bloqueado en la máquina de desarrollo). Ojo: `migrate` a secas ejecuta la migración que borra
+  `personal_access_tokens`; en una base local vacía no importa.

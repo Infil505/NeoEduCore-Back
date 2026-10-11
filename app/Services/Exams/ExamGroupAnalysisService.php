@@ -4,6 +4,7 @@ namespace App\Services\Exams;
 
 use App\Models\Exams\Exam;
 use App\Services\Admin\ReportMetricsService;
+use App\Services\AI\VerificadorDeClave;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -57,7 +58,7 @@ class ExamGroupAnalysisService
             ->where('institution_id', $centro)
             ->where('exam_id', $exam->id)
             ->orderBy('order_index')->orderBy('id')
-            ->get(['id', 'question_text', 'question_type', 'points', 'topic', 'topic_normalized', 'indicator', 'difficulty']);
+            ->get(['id', 'question_text', 'question_type', 'points', 'topic', 'topic_normalized', 'indicator', 'difficulty', 'correct_answer_text', 'key_check_hash', 'key_check_result']);
 
         $porPregunta = $this->respuestasPorPregunta($centro, $idsIntento);
         $opciones    = $this->opciones($centro, $preguntas->pluck('id')->all(), $idsIntento);
@@ -85,8 +86,14 @@ class ExamGroupAnalysisService
                 'options'      => $opciones->get($p->id)?->all() ?? [],
                 // Solo abiertas: la respuesta equivocada que más se repite.
                 'common_wrong_answers' => $comunes->get($p->id, []),
+                // ¿La IA encontró equivocada la clave que marcó el docente? Solo si el veredicto sigue siendo de la
+                // pregunta tal como está ahora (si ya la corrigió, la huella no coincide y no se avisa).
+                'key_suspect'  => $this->claveSospechosa($p, $opciones->get($p->id)),
             ];
         })->all();
+
+        $clavesSospechosas = collect($detalle)->where('key_suspect', true)
+            ->map(fn (array $q) => ['question_id' => $q['id'], 'number' => $q['number'], 'text' => $q['text']])->values()->all();
 
         $porcentajes = $intentos->map(fn ($a) => $this->porcentaje($a))->values();
         $presentaron = $intentos->count();
@@ -112,6 +119,8 @@ class ExamGroupAnalysisService
                 'needs_review'     => (int) $porPregunta->sum('pending'),
             ],
             'questions' => $detalle,
+            // Preguntas cuya clave la IA encontró equivocada al verificarla con una consulta de un estudiante: a revisar.
+            'key_alerts' => $clavesSospechosas,
             'hardest_questions' => $this->masDificiles($detalle),
             'topics' => $temas,
             'groups' => $this->porAula($asignados, $intentos),
@@ -121,6 +130,25 @@ class ExamGroupAnalysisService
                 ->map(fn ($a) => ['student_user_id' => $a->student_id, 'name' => $a->full_name, 'group' => $a->group_name])
                 ->values()->all(),
         ];
+    }
+
+    /**
+     * @param  Collection<int,array<string,mixed>>|null  $opciones  las del análisis (texto, es_correcta, …), en orden
+     */
+    private function claveSospechosa(object $p, ?Collection $opciones): bool
+    {
+        if ($p->key_check_result !== VerificadorDeClave::INCORRECTA) {
+            return false;
+        }
+
+        $huella = VerificadorDeClave::huella(
+            $p->question_text,
+            $p->question_type,
+            ($opciones ?? collect())->map(fn (array $o) => [$o['text'], (bool) $o['is_correct']])->all(),
+            $p->correct_answer_text
+        );
+
+        return $p->key_check_hash === $huella;
     }
 
     /* =========================================================

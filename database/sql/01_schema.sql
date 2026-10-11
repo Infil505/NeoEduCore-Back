@@ -618,6 +618,9 @@ CREATE TABLE public.questions (
     indicator character varying(255),
     difficulty character varying(255),
     topic_normalized character varying(120) GENERATED ALWAYS AS (NULLIF(regexp_replace(btrim(lower((topic)::text)), '\s+'::text, ' '::text, 'g'::text), ''::text)) STORED,
+    key_check_hash character varying(32),
+    key_check_result character varying(12),
+    key_checked_at timestamp(0) without time zone,
     CONSTRAINT questions_difficulty_check CHECK (((difficulty IS NULL) OR ((difficulty)::text = ANY (ARRAY['basic'::text, 'intermediate'::text, 'advanced'::text]))))
 );
 

@@ -1,0 +1,62 @@
+# NeoEduCore — entorno local con un solo comando:
+#
+#     docker compose up --build
+#
+# Levanta Postgres + la API (puerto 8000) + el worker de cola, usando el
+# Dockerfile existente. NO toca la Supabase del .env: la base es local y propia.
+# Lo único que se lee del .env de la raíz es APP_KEY (y opcionalmente OPENAI_API_KEY).
+#
+# Primera vez, con la API arriba:
+#     docker compose exec app php artisan migrate --force
+#
+# Apagar:  docker compose down        (añadir -v para borrar también la base)
+
+x-app: &app
+  build: .
+  environment: &app-env
+    APP_ENV: local
+    APP_DEBUG: "true"
+    APP_KEY: ${APP_KEY:?define APP_KEY en el .env (php artisan key:generate --show)}
+    APP_URL: http://localhost:8000
+    DB_CONNECTION: pgsql
+    DB_HOST: db
+    DB_PORT: 5432
+    DB_DATABASE: neoeducore
+    DB_USERNAME: neoeducore
+    DB_PASSWORD: neoeducore
+    QUEUE_CONNECTION: database
+    CACHE_STORE: file
+    SESSION_DRIVER: database
+    MAIL_MAILER: log
+    BROADCAST_CONNECTION: "null"
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  app:
+    <<: *app
+    ports:
+      - "8000:8000"
+
+  # Mismo código, otro comando: manda correos y procesa la carga masiva.
+  queue:
+    <<: *app
+    command: ["php", "artisan", "queue:work", "--queue=default,correos", "--tries=3"]
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: neoeducore
+      POSTGRES_USER: neoeducore
+      POSTGRES_PASSWORD: neoeducore
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U neoeducore -d neoeducore"]
+      interval: 3s
+      retries: 20
+
+volumes:
+  dbdata:
