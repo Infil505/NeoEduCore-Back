@@ -211,6 +211,9 @@ Route::middleware(['auth:sanctum', 'activa', 'clave.temporal'])->group(function 
         // Los tests no lo detectaban porque activan los exámenes por factory.
         Route::patch('/exams/{exam}/status', [ExamController::class, 'setStatus']);
 
+        // Seguimiento en vivo: presentando, entregados (con nota) y pendientes.
+        Route::get('/exams/{exam}/monitor', [ExamController::class, 'monitor']);
+
         // Preguntas (CRUD)
         Route::post('/exams/{exam}/questions', [QuestionController::class, 'store']);
         Route::put('/questions/{question}', [QuestionController::class, 'update']);

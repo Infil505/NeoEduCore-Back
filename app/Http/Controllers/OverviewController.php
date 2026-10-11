@@ -140,26 +140,36 @@ class OverviewController extends Controller
         if ($quiere('exams')) {
             // Docente unido en la misma consulta y materia del catálogo en caché: una consulta
             // en vez de tres (cada viaje a la base remota cuesta ~0,4 s).
-            $datos['exams'] = RelacionesEnLinea::unir(Exam::query(), [
+            $exams = RelacionesEnLinea::unir(Exam::query(), [
                 'teacher' => ['users', 'created_by_teacher_id', ['id', 'full_name']],
             ])
                 ->when($esDocente, fn ($query) => $query->where('exams.created_by_teacher_id', $user->id))
                 ->orderByDesc('exams.created_at')
                 ->limit(20)
                 ->get();
-            RelacionesEnLinea::hidratar($datos['exams'], ['teacher' => User::class]);
+            RelacionesEnLinea::hidratar($exams, ['teacher' => User::class]);
             $materiasDelCentro = $this->materiasDelCentro($user->institution_id);
-            foreach ($datos['exams'] as $examen) {
+            foreach ($exams as $examen) {
                 $materia = $materiasDelCentro->get($examen->subject_id);
                 // Solo `id` y `name`, como antes (`subject:id,name`); se clona para no tocar la
                 // copia compartida del catálogo.
                 $examen->setRelation('subject', $materia ? (clone $materia)->setVisible(['id', 'name']) : null);
             }
+
+            // Cuántos lo están presentando, lo entregaron o les falta (columna de la
+            // tabla de exámenes). Los borradores no tienen a nadie presentándolos.
+            $monitor = app(\App\Services\Exams\ExamMonitorService::class)
+                ->resumen($exams->reject(fn ($exam) => $exam->status->value === 'draft'));
+            $exams->each(fn ($exam) => $exam->setAttribute('monitor', $monitor[$exam->id] ?? null));
+
+            $datos['exams'] = $exams;
         }
 
         // Misma regla que /calendar-events y /study-resources: el docente ve
         // solo lo suyo; el administrador, todo el centro. Sin `visibleTo()` el
         // overview le daba al docente los recursos y avisos de sus colegas.
+        // Los más recientes primero: con los 30 más ANTIGUOS, con el tiempo los
+        // avisos nuevos dejaban de aparecer en las listas.
         if ($quiere('calendar')) {
             // Creador, aula y examen unidos en la misma consulta (`RelacionesEnLinea`): una
             // consulta en vez de cuatro.
@@ -168,8 +178,8 @@ class OverviewController extends Controller
                 'group'   => ['groups', 'group_id', ['id', 'name', 'grade', 'section']],
                 'exam'    => ['exams', 'exam_id', ['id', 'title']],
             ])
-                ->orderBy('calendar_events.start_at')
-                ->limit(30)
+                ->orderByDesc('calendar_events.start_at')
+                ->limit(100)
                 ->get();
             RelacionesEnLinea::hidratar($datos['calendar'], ['creator' => User::class, 'group' => Group::class, 'exam' => Exam::class]);
         }
@@ -186,35 +196,22 @@ class OverviewController extends Controller
             RelacionesEnLinea::hidratar($datos['resources'], ['creator' => User::class]);
         }
 
-        // Se calcula antes de `analytics` porque, para el administrador, las cifras
-        // del centro son las mismas y se reutilizan en vez de consultarlas otra vez.
+        // Se calcula antes de `analytics` porque las cifras son las mismas y se
+        // reutilizan en vez de consultarlas otra vez.
         $resumenDatos = $quiere('summary') ? $resumen->para($user) : null;
 
         if ($quiere('analytics')) {
             $subjectIds = $subjects->pluck('id');
 
-            if ($resumenDatos !== null && ! $esDocente) {
-                // Administrador con `summary`: ya están contadas (alcance = centro).
-                $entregados = (int) $resumenDatos['attempts_submitted'];
-                $avgPct = $resumenDatos['average_pct'];
-                $totalAlumnos = (int) $resumenDatos['students']['total'];
-                $activosAlumnos = (int) $resumenDatos['students']['active'];
-            } else {
-                // Una sola consulta para entregados y promedio, y otra para total
-                // y activos del alumnado. Con la base remota cada consulta cuesta
-                // cientos de milisegundos.
-                $intentos = ExamAttempt::whereNotNull('submitted_at')
-                    ->selectRaw('COUNT(*) as entregados, AVG(CASE WHEN max_score > 0 THEN score / max_score * 100 END) as avg_pct')
-                    ->first();
-                $entregados = (int) $intentos->entregados;
-                $avgPct = $intentos->avg_pct;
-
-                $alumnado = Student::query()
-                    ->selectRaw("COUNT(*) as total, COUNT(*) FILTER (WHERE status = 'active') as activos")
-                    ->first();
-                $totalAlumnos = (int) $alumnado->total;
-                $activosAlumnos = (int) $alumnado->activos;
-            }
+            // Siempre con el alcance del rol: al docente, sus estudiantes y sus
+            // exámenes (contar sin acotar le daba las cifras de todo el centro).
+            // Si no se pidió `summary`, se calcula aquí: el del admin es una sola
+            // consulta.
+            $cifras = $resumenDatos ?? $resumen->para($user);
+            $entregados = (int) $cifras['attempts_submitted'];
+            $avgPct = $cifras['average_pct'];
+            $totalAlumnos = (int) $cifras['students']['total'];
+            $activosAlumnos = (int) $cifras['students']['active'];
 
             // Las cifras de cada materia (alumnado con progreso, exámenes, dominio medio) en UNA
             // consulta con subselects (`Subject::conCifras`), no una por tabla.

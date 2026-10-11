@@ -76,20 +76,29 @@ class ExamAttemptRulesService
             throw new \RuntimeException('Este intento ya fue enviado');
         }
 
-        if ($exam->duration_minutes && $attempt->started_at) {
-            $multiplier  = $this->timeMultiplierFor($student);
-            $adjustedMin = (int) ceil($exam->duration_minutes * $multiplier);
-
-            // Descontar tiempo acumulado en pausas + 30 s de gracia para latencia.
-            // La pausa en curso también cuenta, pero con el mismo tope que al reanudar.
-            $pausedSoFar = $this->pausaAcreditada($attempt);
-            $deadline = $attempt->started_at->copy()
-                ->addMinutes($adjustedMin)
-                ->addSeconds($pausedSoFar)
-                ->addSeconds((int) config('academic.exam.grace_seconds'));
-            if (now()->gt($deadline)) {
-                throw new \RuntimeException('El tiempo del examen ha expirado');
-            }
+        $deadline = $this->plazoDeEntrega($exam, $attempt, $student);
+        if ($deadline && now()->gt($deadline)) {
+            throw new \RuntimeException('El tiempo del examen ha expirado');
         }
+    }
+
+    /**
+     * Hasta cuándo se puede entregar un intento: inicio + duración (ajustada por
+     * adecuación) + pausas acreditadas + gracia por latencia. Null si el examen no
+     * tiene duración. Lo usan el envío y el monitor del docente.
+     */
+    public function plazoDeEntrega(Exam $exam, ExamAttempt $attempt, ?Student $student = null): ?\Illuminate\Support\Carbon
+    {
+        if (!$exam->duration_minutes || !$attempt->started_at) {
+            return null;
+        }
+
+        $adjustedMin = (int) ceil($exam->duration_minutes * $this->timeMultiplierFor($student));
+
+        // La pausa en curso también cuenta, con el mismo tope que al reanudar.
+        return $attempt->started_at->copy()
+            ->addMinutes($adjustedMin)
+            ->addSeconds($this->pausaAcreditada($attempt))
+            ->addSeconds((int) config('academic.exam.grace_seconds'));
     }
 }

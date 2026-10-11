@@ -222,7 +222,9 @@ class ExamController extends Controller
             'randomize_questions' => ['nullable', 'boolean'],
 
             'available_from' => ['nullable', new FechaRazonable()],
-            'available_until' => ['bail', 'nullable', new FechaRazonable(), ...FechaRazonable::posteriorA($request, 'available_from')],
+            // Que el cierre quede después de la apertura (y con margen para la
+            // duración) lo comprueba `errorDeVentana()`, con un mensaje claro.
+            'available_until' => ['nullable', new FechaRazonable()],
 
             // grupos objetivo (opcional)
             'group_ids' => ['nullable', 'array'],
@@ -230,6 +232,10 @@ class ExamController extends Controller
         ]);
 
         $user = $request->user();
+
+        if ($error = $this->errorDeVentana($data['available_from'] ?? null, $data['available_until'] ?? null, (int) $data['duration_minutes'])) {
+            return $error;
+        }
 
         // Se valida ANTES de crear: si el docente apunta a un grupo que no
         // tiene asignado, la petición se rechaza entera y no queda un examen
@@ -350,7 +356,9 @@ class ExamController extends Controller
             'randomize_questions' => ['sometimes', 'boolean'],
 
             'available_from' => ['nullable', new FechaRazonable()],
-            'available_until' => ['bail', 'nullable', new FechaRazonable(), ...FechaRazonable::posteriorA($request, 'available_from')],
+            // Que el cierre quede después de la apertura (y con margen para la
+            // duración) lo comprueba `errorDeVentana()`, con un mensaje claro.
+            'available_until' => ['nullable', new FechaRazonable()],
 
             'group_ids' => ['nullable', 'array'],
             'group_ids.*' => ['uuid'],
@@ -372,6 +380,17 @@ class ExamController extends Controller
         }
 
         $exam->fill($data);
+
+        if ($error = $this->errorDeVentana($exam->available_from, $exam->available_until, (int) $exam->duration_minutes)) {
+            return $error;
+        }
+
+        // Un examen «Listo» está programado: la apertura tiene que seguir en el
+        // futuro y el cierre definido, o la sincronización no sabría qué hacer.
+        if ($exam->status === ExamStatus::Published && ($error = $this->errorDeProgramacion($exam))) {
+            return $error;
+        }
+
         $exam->save();
 
         if ($grupos !== null) {
@@ -466,12 +485,23 @@ class ExamController extends Controller
             }
         }
 
+        // «Listo» = programado: se abrirá y cerrará solo con sus fechas.
+        if ($next === ExamStatus::Published->value && ($error = $this->errorDeProgramacion($exam))) {
+            return $error;
+        }
+
         // No activar si la ventana ya expiró
         if ($next === ExamStatus::Active->value) {
             if ($exam->available_until && now()->gt($exam->available_until)) {
                 return response()->json([
-                    'message' => 'No se puede activar: la ventana de disponibilidad ya expiró',
+                    'message' => 'No se puede abrir: la fecha de cierre ya pasó. Cámbiala primero.',
                 ], 409);
+            }
+
+            // «Abrir ahora»: si estaba programado para más tarde, se adelanta
+            // la apertura para que los estudiantes lo vean ya.
+            if ($exam->available_from && now()->lt($exam->available_from)) {
+                $exam->available_from = now()->startOfMinute();
             }
         }
 
@@ -494,6 +524,70 @@ class ExamController extends Controller
         return response()->json([
             'data' => $exam,
         ]);
+    }
+
+    /**
+     * El cierre tiene que dejar tiempo para presentar el examen completo: al
+     * menos su duración después de la apertura. Puede ser el mismo día.
+     */
+    private function errorDeVentana(mixed $desde, mixed $hasta, int $duracion): ?\Illuminate\Http\JsonResponse
+    {
+        if (!$desde || !$hasta) {
+            return null;
+        }
+
+        $desde = \Illuminate\Support\Carbon::parse($desde);
+        $hasta = \Illuminate\Support\Carbon::parse($hasta);
+
+        if ($hasta->lt($desde->copy()->addMinutes($duracion))) {
+            return response()->json([
+                'message' => "El cierre tiene que ser al menos {$duracion} minutos después de la apertura (lo que dura el examen). Puede ser el mismo día, a una hora posterior.",
+                'errors' => ['available_until' => ["El cierre debe ser al menos {$duracion} minutos después de la apertura."]],
+            ], 422);
+        }
+
+        return null;
+    }
+
+    /**
+     * Por qué un examen no puede quedar programado («Listo»), o null si puede.
+     * Necesita apertura en el futuro y cierre posterior a ella.
+     */
+    private function errorDeProgramacion(Exam $exam): ?\Illuminate\Http\JsonResponse
+    {
+        if (!$exam->available_from || !$exam->available_until) {
+            return response()->json([
+                'message' => 'Para dejarlo listo, el examen necesita fecha de apertura («Disponible desde») y de cierre: con ellas se abre y se cierra solo.',
+                'errors' => ['available_from' => ['Indica cuándo se abre y cuándo se cierra el examen.']],
+            ], 422);
+        }
+
+        if ($error = $this->errorDeVentana($exam->available_from, $exam->available_until, (int) $exam->duration_minutes)) {
+            return $error;
+        }
+
+        if (now()->gte($exam->available_from)) {
+            return response()->json([
+                'message' => 'La fecha «Disponible desde» ya pasó. Cámbiala por una fecha futura, o usa «Abrir ahora» para abrirlo de inmediato.',
+                'errors' => ['available_from' => ['La apertura tiene que ser en el futuro.']],
+            ], 422);
+        }
+
+        return null;
+    }
+
+    /**
+     * Seguimiento en vivo: quién lo está presentando, quién ya entregó (con su
+     * nota) y a quién le falta. Solo el docente autor o el administrador.
+     */
+    public function monitor(Request $request, Exam $exam, \App\Services\Exams\ExamMonitorService $monitor)
+    {
+        $user = $request->user();
+        if ($user->user_type->value === 'teacher' && $exam->created_by_teacher_id !== $user->id) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
+
+        return response()->json(['data' => $monitor->monitor($exam)]);
     }
 
     /**
