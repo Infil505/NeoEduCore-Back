@@ -42,6 +42,9 @@ class ContextoDeExamenes
     /** Pendientes que se nombran. */
     private const PENDIENTES = 3;
 
+    /** Exámenes presentados cuyas respuestas correctas se vigilan. */
+    private const EXAMENES_PROTEGIDOS = 6;
+
     /** Preguntas falladas que se nombran por cada examen reciente. */
     private const PREGUNTAS_POR_EXAMEN = 3;
 
@@ -117,7 +120,7 @@ class ContextoDeExamenes
             $preguntas = $this->preguntasFalladasPorIntento($institutionId, $ids);
 
             $lineas[] = 'Exámenes recientes (nota, preguntas falladas y dónde):';
-            foreach ($recientes as $e) {
+            foreach ($recientes as $n => $e) {
                 $temas = ($fallos->get($e->attempt_id) ?? collect())
                     ->sortByDesc('fallos')->take(self::TEMAS_POR_EXAMEN)
                     ->map(fn ($t) => $this->limpio($t->topic, 60))->filter()->implode(', ');
@@ -125,7 +128,8 @@ class ContextoDeExamenes
                 $c = $conteos->get($e->attempt_id);
 
                 $lineas[] = sprintf(
-                    '- %s, «%s»: %s %%%s%s%s',
+                    '- %s%s, «%s»: %s %%%s%s%s',
+                    $n === 0 ? '(el más reciente) ' : '',
                     $this->limpio($e->subject, 40) ?: 'Materia',
                     $this->limpio($e->title, 70) ?: 'Examen',
                     $this->porcentaje($e),
@@ -303,7 +307,7 @@ class ContextoDeExamenes
                     return '';
                 }
 
-                return "Puntos a mejorar (temas con más fallos en todos sus exámenes):\n"
+                return "Temas flojos acumulados de todos sus exámenes (apoyo; el titular es siempre el examen más reciente):\n"
                     . $flojos->map(fn (array $t) => sprintf(
                         '- %s: %s %% (%d de %d correctas)',
                         $this->limpio($t['topic'], 60) ?: 'Tema',
@@ -311,6 +315,108 @@ class ContextoDeExamenes
                         $t['correctas'],
                         $t['total']
                     ))->implode("\n");
+            }
+        );
+    }
+
+    /**
+     * Las respuestas CORRECTAS de las preguntas que el estudiante falló o aún puede presentar
+     * (las que acertó no hay por qué ocultarlas), cada una con su enunciado. **Nunca viajan al
+     * modelo**: solo sirven para comprobar, ya en el servidor, que lo que contestó no las revela
+     * (`AiTutorService::sinFugas`).
+     *
+     * @return array<int,array{respuesta:string,enunciado:string}>
+     */
+    public function respuestasProtegidas(string $studentUserId, string $institutionId): array
+    {
+        return Cache::remember(
+            $this->clave($studentUserId, 'protegidas'),
+            (int) config('openai.tutor.context_ttl', 300),
+            function () use ($studentUserId, $institutionId) {
+                $presentados = DB::table('exam_attempts')
+                    ->where('institution_id', $institutionId)
+                    ->where('student_user_id', $studentUserId)
+                    ->whereNotNull('submitted_at')
+                    ->orderByDesc('submitted_at')->limit(self::EXAMENES_PROTEGIDOS)
+                    ->pluck('exam_id')->unique()->values();
+
+                $pendientes = DB::table('exam_targets as t')
+                    ->join('exams as e', 'e.id', '=', 't.exam_id')
+                    ->where('t.institution_id', $institutionId)
+                    ->where('e.status', 'active')
+                    ->whereIn('t.group_id', DB::table('group_students')->select('group_id')
+                        ->where('institution_id', $institutionId)
+                        ->where('student_user_id', $studentUserId)->whereNull('left_at'))
+                    ->pluck('e.id');
+
+                $examenes = $presentados->merge($pendientes)->unique()->values();
+
+                if ($examenes->isEmpty()) {
+                    return [];
+                }
+
+                // De los exámenes ya presentados solo las falladas; de los pendientes, todas.
+                $falladas = DB::table('student_answers as sa')
+                    ->join('exam_attempts as ea', 'ea.id', '=', 'sa.attempt_id')
+                    ->where('sa.institution_id', $institutionId)
+                    ->where('ea.student_user_id', $studentUserId)
+                    ->whereIn('ea.exam_id', $presentados)
+                    ->where('sa.is_correct', false)
+                    ->pluck('sa.question_id')->unique();
+
+                $preguntas = DB::table('questions')
+                    ->where('institution_id', $institutionId)
+                    ->whereIn('exam_id', $examenes)
+                    ->get(['id', 'exam_id', 'question_type', 'question_text', 'correct_answer_text'])
+                    ->filter(fn ($q) => $pendientes->contains($q->exam_id) || $falladas->contains($q->id));
+
+                $opciones = DB::table('question_options')
+                    ->where('institution_id', $institutionId)
+                    ->whereIn('question_id', $preguntas->pluck('id'))
+                    ->where('is_correct', true)
+                    ->pluck('option_text', 'question_id');
+
+                return $preguntas->map(fn ($q) => [
+                    'respuesta' => trim((string) ($q->question_type === 'short_answer' ? $q->correct_answer_text : $opciones->get($q->id))),
+                    'enunciado' => (string) $q->question_text,
+                ])->filter(fn (array $p) => mb_strlen($p['respuesta']) >= 2 && mb_strlen($p['respuesta']) <= 80)
+                    ->values()->all();
+            }
+        );
+    }
+
+    /**
+     * Mensaje de reserva calculado SIN modelo, para cuando dos intentos seguidos del tutor revelaron la
+     * solución de una pregunta: su examen más reciente, la nota, los temas flojos y una invitación a
+     * empezar por uno. Nunca lleva respuestas. Cadena vacía si no ha entregado ningún examen.
+     */
+    public function mensajeDeReserva(string $studentUserId, string $institutionId): string
+    {
+        return Cache::remember(
+            $this->clave($studentUserId, 'reserva'),
+            (int) config('openai.tutor.context_ttl', 300),
+            function () use ($studentUserId, $institutionId) {
+                $examen = $this->ultimosIntentos($studentUserId, $institutionId)->first();
+
+                if ($examen === null) {
+                    return '';
+                }
+
+                $temas = ($this->temasFalladosPorIntento($institutionId, [$examen->attempt_id])->get($examen->attempt_id) ?? collect())
+                    ->sortByDesc('fallos')->take(self::TEMAS_POR_EXAMEN)
+                    ->map(fn ($t) => $this->limpio($t->topic, 60))->filter()->values();
+
+                $texto = sprintf(
+                    'En tu examen más reciente%s («%s») sacaste %s %%.',
+                    $examen->subject ? ' de ' . $this->limpio($examen->subject, 40) : '',
+                    $this->limpio($examen->title, 70) ?: 'Examen',
+                    $this->porcentaje($examen)
+                );
+
+                return $temas->isEmpty()
+                    ? $texto . ' ¿Repasamos juntos las preguntas que fallaste, con pistas y ejemplos distintos?'
+                    : $texto . ' Lo que más conviene repasar: ' . $temas->implode(', ')
+                        . '. ¿Empezamos por «' . $temas->first() . '» con pistas y ejemplos distintos?';
             }
         );
     }

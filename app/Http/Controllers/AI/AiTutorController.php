@@ -14,6 +14,20 @@ use Illuminate\Http\Request;
 
 class AiTutorController extends Controller
 {
+    /** @return \Illuminate\Support\Collection<int,string> ids de las materias que lleva el estudiante */
+    private function materiasDelEstudiante(string $studentUserId, string $institutionId): \Illuminate\Support\Collection
+    {
+        // Corta: se pregunta en cada mensaje del chat y la lista casi no cambia.
+        $ids = \Illuminate\Support\Facades\Cache::remember(
+            "ai:tutor:materias:{$studentUserId}",
+            60,
+            fn () => app(\App\Services\Students\StudentSubjectsService::class)
+                ->materias($studentUserId, $institutionId)->pluck('subject_id')->all()
+        );
+
+        return collect($ids);
+    }
+
     public function chat(Request $request, AiTutorService $tutorService)
     {
         $user = $request->user();
@@ -34,11 +48,10 @@ class AiTutorController extends Controller
             'async'      => ['nullable', 'boolean'],
         ]);
 
-        // La materia debe existir y pertenecer a la institución del estudiante.
-        // Subject es TenantScoped, así que exists() ya filtra por tenant y evita
-        // guardar en la sesión una referencia cruzada a otra institución.
-        // Contra el catálogo de materias en caché: sin consulta a la base.
-        if (!empty($data['subject_id']) && !$this->materiasDelCentro($user->institution_id)->has($data['subject_id'])) {
+        // La materia debe ser una de las QUE LLEVA el estudiante (su sección + las inscritas a mano):
+        // es lo que ofrece el selector. Eso ya implica que existe y es de su institución.
+        if (!empty($data['subject_id'])
+            && !$this->materiasDelEstudiante($user->id, $user->institution_id)->contains($data['subject_id'])) {
             return response()->json(['message' => 'Materia no encontrada'], 422);
         }
 
@@ -50,7 +63,8 @@ class AiTutorController extends Controller
             'studentUserId' => $user->id,
             'message'       => $data['message'],
             'sessionId'     => $data['session_id'] ?? null,
-            'subjectId'     => $data['subject_id'] ?? null,
+            // null = no vino (se deja la de la sesión); «» = vino vacía: «cualquier materia».
+            'subjectId'     => $request->has('subject_id') ? ($data['subject_id'] ?? '') : null,
             'mode'          => $data['mode'] ?? 'ask',
             'topic'         => $data['topic'] ?? null,
             'examId'        => $data['exam_id'] ?? null,

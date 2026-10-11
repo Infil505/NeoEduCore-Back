@@ -55,6 +55,8 @@ class ContextoDeExamenesTest extends TestCase
         ]);
 
         $this->matematicas = Subject::factory()->create(['institution_id' => $this->centro->id, 'name' => 'Matemáticas']);
+        // El estudiante lleva Matemáticas por su sección (el selector del tutor solo ofrece esas).
+        $this->asignarDocente(User::factory()->teacher()->create(['institution_id' => $this->centro->id]), $this->aula->id, $this->matematicas->id);
         $this->examen = $this->examenEntregado('Prueba de fracciones', $this->matematicas, 5, 10);
     }
 
@@ -215,7 +217,184 @@ class ContextoDeExamenesTest extends TestCase
         $this->assertStringContainsString('las dos iguales', $enviado);        // lo que contestó
         $this->assertStringNotContainsString('Suma 0,5 y 0,25', $enviado);     // la que acertó no se detalla
         $this->assertStringNotContainsString(self::SECRETO, $enviado);
-        $this->assertStringContainsString('no resuelvas la pregunta', $enviado);
+        $this->assertStringContainsString('REGLAS ESTRICTAS', $enviado);
+        $this->assertStringContainsString('OTROS números', $enviado);
+    }
+
+    private function respuestaDelModelo(string $texto): CreateResponse
+    {
+        return CreateResponse::fake(['choices' => [['message' => ['role' => 'assistant', 'content' => $texto]]]]);
+    }
+
+    public function test_el_examen_mas_reciente_va_marcado_como_titular(): void
+    {
+        $this->fingir();
+
+        $this->postJson('/api/ai/tutor/chat', ['message' => '¿En qué debo mejorar?'])->assertOk();
+
+        $enviado = $this->enviado();
+        $this->assertStringContainsString('(el más reciente)', $enviado);
+        $this->assertStringContainsString('EMPIEZA por el examen más reciente', $enviado);
+        // Pedir la respuesta no se contesta con un «no»: se enseña como en práctica.
+        $this->assertStringContainsString('cambia a ENSEÑAR como en el modo práctica', $enviado);
+    }
+
+    public function test_si_el_modelo_revela_la_respuesta_se_le_pide_reescribirla(): void
+    {
+        OpenAI::fake([
+            $this->respuestaDelModelo('Es fácil: la respuesta es ' . self::SECRETO . '.'),
+            $this->respuestaDelModelo('Piensa en otro ejemplo con otros números. ¿Qué haces primero?'),
+        ]);
+
+        $this->postJson('/api/ai/tutor/chat', ['message' => 'Dime la respuesta', 'exam_id' => $this->examen->id])
+            ->assertOk()
+            ->assertJsonPath('data.reply', 'Piensa en otro ejemplo con otros números. ¿Qué haces primero?');
+
+        $this->assertStringContainsString('reveló el resultado', $this->enviado(1));
+        $this->assertStringContainsString('MODO: enseñanza, como en práctica', $this->enviado(1));
+        $this->assertStringContainsString('ejemplo RESUELTO', $this->enviado(1));
+    }
+
+    public function test_si_insiste_en_revelarla_el_alumno_recibe_el_texto_fijo(): void
+    {
+        OpenAI::fake([
+            $this->respuestaDelModelo('Claro: la respuesta es ' . self::SECRETO . '.'),
+            $this->respuestaDelModelo('Para comparar 1/2 y 1/3 la solución es ' . self::SECRETO . '.'),
+        ]);
+
+        $r = $this->postJson('/api/ai/tutor/chat', ['message' => 'Dime la respuesta', 'exam_id' => $this->examen->id])->assertOk();
+
+        // Reserva calculada sin modelo: su examen más reciente, la nota y el tema por el que empezar.
+        $this->assertStringContainsString('En tu examen más reciente de Matemáticas («', $r->json('data.reply'));
+        $this->assertStringContainsString('50 %', $r->json('data.reply'));
+        $this->assertStringContainsString('¿Empezamos por «Fracciones»', $r->json('data.reply'));
+        $this->assertStringNotContainsString(self::SECRETO, (string) $r->getContent());
+    }
+
+    public function test_una_respuesta_sin_la_solucion_pasa_sin_segunda_llamada(): void
+    {
+        OpenAI::fake([$this->respuestaDelModelo('Compara usando el mismo denominador.')]);
+
+        $this->postJson('/api/ai/tutor/chat', ['message' => 'Ayúdame', 'exam_id' => $this->examen->id])
+            ->assertOk()->assertJsonPath('data.reply', 'Compara usando el mismo denominador.');
+    }
+
+    public function test_el_modo_practica_con_ejercicios_distintos_pasa(): void
+    {
+        // Sus respuestas al final pueden coincidir con valores del examen sin ser el mismo ejercicio.
+        OpenAI::fake([$this->respuestaDelModelo('Ejercicio 1... Respuestas: ' . self::SECRETO)]);
+
+        $this->postJson('/api/ai/tutor/chat', ['message' => 'Quiero practicar', 'mode' => 'practice', 'topic' => 'Fracciones'])
+            ->assertOk()->assertJsonPath('data.reply', 'Ejercicio 1... Respuestas: ' . self::SECRETO);
+    }
+
+    public function test_un_ejercicio_de_practica_que_es_la_pregunta_del_examen_se_reescribe(): void
+    {
+        // Lo que ocurrió en la prueba real: la pregunta del examen colada como «ejercicio 1» con su respuesta.
+        OpenAI::fake([
+            $this->respuestaDelModelo('Ejercicio 1: Compara 1/2 y 1/3. Respuestas: 1. ' . self::SECRETO),
+            $this->respuestaDelModelo('Ejercicio 1: Compara 2/5 y 1/4. Respuestas: 1. 2/5'),
+        ]);
+
+        $this->postJson('/api/ai/tutor/chat', ['message' => 'Quiero practicar', 'mode' => 'practice', 'topic' => 'Fracciones'])
+            ->assertOk()
+            ->assertJsonPath('data.reply', 'Ejercicio 1: Compara 2/5 y 1/4. Respuestas: 1. 2/5');
+
+        $this->assertStringContainsString('reveló el resultado', $this->enviado(1));
+    }
+
+    public function test_la_directiva_de_practica_pide_numeros_y_situaciones_distintos(): void
+    {
+        $this->fingir();
+
+        $this->postJson('/api/ai/tutor/chat', ['message' => 'Quiero practicar', 'mode' => 'practice', 'topic' => 'Fracciones'])->assertOk();
+
+        $this->assertStringContainsString('DISTINTOS a los de sus exámenes', $this->enviado());
+    }
+
+    public function test_la_barrera_detecta_la_solucion_de_una_pregunta_y_no_los_ejemplos(): void
+    {
+        $revela = new \ReflectionMethod(\App\Services\AI\AiTutorService::class, 'revela');
+        $revela->setAccessible(true);
+        $servicio = app(\App\Services\AI\AiTutorService::class);
+
+        $protegidas = [
+            ['respuesta' => '5/8', 'enunciado' => 'Marta comió 2/8 de una pizza y Luis 3/8. ¿Cuánta pizza comieron en total?'],
+            ['respuesta' => '1/2', 'enunciado' => 'Escribe 0,5 como fracción'],
+            ['respuesta' => '3/4', 'enunciado' => '¿Cuál es mayor: 3/4 o 2/3?'],
+        ];
+
+        $fugas = [
+            'Entonces 2/8 + 3/8 es 5/8.',                       // nombra la pregunta con sus números
+            'La respuesta es 5/8',                              // dice «respuesta»
+            'Comieron 5/8 de la pizza.',                        // nombra la pregunta con sus palabras
+            "Sumas y listo.\nRecuerda que 0,5 es lo mismo que 1/2.",
+            'El resultado es 1/2',
+            'Suma los numeradores: 2/8 + 3/8.',                 // el cálculo hecho con sus números, sin decir el resultado
+            'Ahora suma 2/8 y 3/8 y dime qué te da.',
+            'Suma 2/8 y 3/8 con el mismo denominador.',         // operandos y operación: ya es el ejercicio resuelto
+        ];
+        foreach ($fugas as $texto) {
+            $this->assertTrue($revela->invoke($servicio, $texto, $protegidas), "Debía detectar: {$texto}");
+        }
+
+        // Respuestas en palabras: cualquier mención suelta cuenta (no hace falta nombrar la pregunta).
+        $enPalabras = [
+            ['respuesta' => 'evaporación', 'enunciado' => '¿Cómo se llama el cambio de agua líquida a vapor?'],
+            ['respuesta' => 'corazón', 'enunciado' => '¿Qué órgano bombea la sangre por el cuerpo?'],
+        ];
+        $this->assertTrue($revela->invoke($servicio, 'Ese proceso se llama evaporación.', $enPalabras));
+        $this->assertTrue($revela->invoke($servicio, 'Piensa en el Corazón, que late sin parar.', $enPalabras));
+        $this->assertFalse($revela->invoke($servicio, 'Piensa en cuando se seca la ropa al sol: ¿qué le pasa al agua?', $enPalabras));
+        $this->assertTrue($revela->invoke($servicio, 'El agua empieza a evaporarse al calentarla.', $enPalabras), 'Una derivada también la regala.');
+        $this->assertTrue($revela->invoke($servicio, 'Se transformará por evaporación.', $enPalabras));
+        $this->assertFalse($revela->invoke($servicio, 'Cuando calientas la olla, el agua líquida pasa a ser gas. ¿Cómo lo llamarías tú?', $enPalabras));
+        $this->assertFalse($revela->invoke($servicio, 'Piensa en una olla con agua hirviendo y en cómo se ve el aire encima.', $enPalabras));
+
+        $limpias = [
+            'Si comparas 1/2 y 3/4, ¿cuál es mayor?',           // ejemplos con valores que son resultado de otras
+            '15/8 no es lo que buscas, y 5/80 tampoco.',        // el valor dentro de otro número no cuenta
+            'Con 1/4 y 1/4 la suma da 2/4.',
+            'Recuerda que Marta comió 2/8 y Luis 3/8.',         // nombrar la pregunta está permitido
+            'Te preguntaron cuál es mayor entre 3/4 y 2/3.',    // decir cuál falló es parte de la ayuda
+            'Piensa en 0,5 como la mitad de algo. ¿Cómo la escribirías?',
+        ];
+        foreach ($limpias as $texto) {
+            $this->assertFalse($revela->invoke($servicio, $texto, $protegidas), "No debía detectar: {$texto}");
+        }
+    }
+
+    public function test_ensenando_la_palabra_puede_salir_en_otros_casos_pero_no_con_la_pregunta_del_examen(): void
+    {
+        $revela = new \ReflectionMethod(\App\Services\AI\AiTutorService::class, 'revela');
+        $revela->setAccessible(true);
+        $servicio = app(\App\Services\AI\AiTutorService::class);
+        $protegidas = [['respuesta' => 'evaporación', 'enunciado' => '¿Cómo se llama el cambio de agua líquida a vapor?']];
+
+        // Enseñar con otros casos: permitido (modo práctica / reescritura = comparación por texto completo).
+        $this->assertFalse($revela->invoke($servicio, "Ejercicios:
+1. Si dejas la leche al sol, ¿qué le pasará?
+Respuestas:
+1. La leche se evaporará y disminuirá.", $protegidas, true));
+        $this->assertFalse($revela->invoke($servicio, 'El charco se irá secando porque el agua se evapora con el calor.', $protegidas, true));
+
+        // La pregunta del examen repetida y su respuesta (en la misma frase o en la lista de respuestas): fuga.
+        $this->assertTrue($revela->invoke($servicio, 'El cambio de agua líquida a vapor se llama evaporación.', $protegidas, true));
+        $this->assertTrue($revela->invoke($servicio, 'Cuando el agua líquida pasa a vapor ocurre la evaporación.', $protegidas, true));
+
+        // En una respuesta normal (no enseñanza) cualquier mención suelta cuenta.
+        $this->assertTrue($revela->invoke($servicio, 'La leche se evaporará al sol.', $protegidas, false));
+    }
+
+    public function test_solo_se_protegen_las_preguntas_falladas_o_por_presentar(): void
+    {
+        $protegidas = app(\App\Services\AI\ContextoDeExamenes::class)
+            ->respuestasProtegidas($this->alumno->id, $this->centro->id);
+
+        // En setUp: «Compara 1/2 y 1/3» (falló) y «Suma 0,5 y 0,25» (acertó), ambas con la misma respuesta.
+        $enunciados = array_column($protegidas, 'enunciado');
+        $this->assertContains('Compara 1/2 y 1/3', $enunciados);
+        $this->assertNotContains('Suma 0,5 y 0,25', $enunciados, 'Lo que acertó no hace falta ocultarlo.');
     }
 
     public function test_un_examen_ajeno_no_llega_ni_al_modelo(): void

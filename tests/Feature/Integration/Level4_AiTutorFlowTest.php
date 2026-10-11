@@ -261,11 +261,32 @@ class Level4_AiTutorFlowTest extends TestCase
         $res->assertStatus(422);
     }
 
+    public function test_chat_rejects_a_subject_of_the_tenant_the_student_does_not_take(): void
+    {
+        ['institution' => $institution, 'studentUser' => $studentUser] = $this->buildStudent();
+
+        // Existe en su centro, pero no la lleva: el selector del asistente no la ofrece.
+        $subject = Subject::factory()->create(['institution_id' => $institution->id]);
+
+        $this->actingAs($studentUser, 'sanctum');
+
+        $this->postJson('/api/ai/tutor/chat', ['message' => 'Hola', 'subject_id' => $subject->id])->assertStatus(422);
+    }
+
     public function test_chat_accepts_subject_from_same_tenant(): void
     {
         ['institution' => $institution, 'studentUser' => $studentUser] = $this->buildStudent();
 
         $subject = Subject::factory()->create(['institution_id' => $institution->id]);
+
+        // La lleva: inscrita a mano (también valdría la de su sección).
+        \Illuminate\Support\Facades\DB::table('student_subjects')->insert([
+            'id'              => (string) \Illuminate\Support\Str::uuid(),
+            'institution_id'  => $institution->id,
+            'student_user_id' => $studentUser->id,
+            'subject_id'      => $subject->id,
+            'enrolled_at'     => now(),
+        ]);
 
         $this->actingAs($studentUser, 'sanctum');
 

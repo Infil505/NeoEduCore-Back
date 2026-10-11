@@ -144,6 +144,16 @@ return [
         ),
 
         /*
+         | Lo que se responde cuando, aun tras pedirle que la reescriba, la respuesta del
+         | modelo seguía revelando la solución de una pregunta de examen.
+         */
+        'leak_reply' => env(
+            'OPENAI_TUTOR_LEAK_REPLY',
+            'Esa respuesta es parte de tu examen, pero sí puedo ayudarte a aprenderlo: '
+            . 'dime el tema y lo vemos juntos con pistas y ejemplos distintos.'
+        ),
+
+        /*
         |----------------------------------------------------------------------
         | Registro de lenguaje por grado
         |----------------------------------------------------------------------
