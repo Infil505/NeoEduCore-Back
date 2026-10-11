@@ -124,6 +124,9 @@ class ExamAvailableNotificationTest extends TestCase
             'created_by_teacher_id' => $this->docente->id,
             'subject_id'            => $this->materia->id,
             'status'                => 'draft',
+            // «Listo» exige una ventana programada en el futuro.
+            'available_from'        => now()->addDay(),
+            'available_until'       => now()->addDays(2),
         ]);
         Question::factory()->create(['institution_id' => $this->institution->id, 'exam_id' => $exam->id]);
         $exam->syncGroups([$this->grupo->id]);

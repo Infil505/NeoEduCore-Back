@@ -38,7 +38,10 @@ class QuestionController extends Controller
         // consulta hace de binding y de visibilidad.
         $examen = Exam::query()->visibleTo($request->user())
             ->where('exams.id', $exam)
-            ->first(['exams.id', 'exams.institution_id', 'exams.randomize_questions']);
+            ->select(['exams.id', 'exams.institution_id', 'exams.randomize_questions'])
+            // Si ya tiene intentos, en la misma consulta (lo usa `meta.locked`).
+            ->selectRaw('EXISTS (SELECT 1 FROM exam_attempts ea WHERE ea.exam_id = exams.id AND ea.institution_id = exams.institution_id) AS tiene_intentos')
+            ->first();
 
         if ($examen === null) {
             return response()->json(['message' => 'No encontrado'], 404);
@@ -64,7 +67,7 @@ class QuestionController extends Controller
             // Para el personal: con intentos, el editor bloquea borrar preguntas y
             // cambiar puntos, opciones o respuesta correcta (ver update()/destroy()).
             'meta' => $this->puedeVerRespuestas($request->user())
-                ? ['locked' => $this->examenConIntentos($exam->id)]
+                ? ['locked' => (bool) $examen->getAttribute('tiene_intentos')]
                 : (object) [],
         ]);
     }

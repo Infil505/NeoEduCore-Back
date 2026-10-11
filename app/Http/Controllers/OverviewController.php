@@ -205,13 +205,29 @@ class OverviewController extends Controller
 
             // Siempre con el alcance del rol: al docente, sus estudiantes y sus
             // exámenes (contar sin acotar le daba las cifras de todo el centro).
-            // Si no se pidió `summary`, se calcula aquí: el del admin es una sola
-            // consulta.
-            $cifras = $resumenDatos ?? $resumen->para($user);
-            $entregados = (int) $cifras['attempts_submitted'];
-            $avgPct = $cifras['average_pct'];
-            $totalAlumnos = (int) $cifras['students']['total'];
-            $activosAlumnos = (int) $cifras['students']['active'];
+            // El docente (o quien ya pidió `summary`) reutiliza el resumen acotado. El
+            // administrador sin `summary` no lo calcula entero (≈3 consultas): para estas
+            // cuatro cifras bastan dos, y el alcance es el centro.
+            $resumido = $resumenDatos ?? ($esDocente ? $resumen->para($user) : null);
+
+            if ($resumido !== null) {
+                $entregados = (int) $resumido['attempts_submitted'];
+                $avgPct = $resumido['average_pct'];
+                $totalAlumnos = (int) $resumido['students']['total'];
+                $activosAlumnos = (int) $resumido['students']['active'];
+            } else {
+                $intentos = ExamAttempt::whereNotNull('submitted_at')
+                    ->selectRaw('COUNT(*) as entregados, AVG(CASE WHEN max_score > 0 THEN score / max_score * 100 END) as avg_pct')
+                    ->first();
+                $entregados = (int) $intentos->entregados;
+                $avgPct = $intentos->avg_pct;
+
+                $alumnado = Student::query()
+                    ->selectRaw("COUNT(*) as total, COUNT(*) FILTER (WHERE status = 'active') as activos")
+                    ->first();
+                $totalAlumnos = (int) $alumnado->total;
+                $activosAlumnos = (int) $alumnado->activos;
+            }
 
             // Las cifras de cada materia (alumnado con progreso, exámenes, dominio medio) en UNA
             // consulta con subselects (`Subject::conCifras`), no una por tabla.

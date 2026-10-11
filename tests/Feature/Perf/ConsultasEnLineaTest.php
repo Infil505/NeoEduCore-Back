@@ -378,8 +378,11 @@ class ConsultasEnLineaTest extends TestCase
             foreach (['summary', 'users', 'students', 'subjects', 'groups', 'exams', 'calendar', 'resources', 'analytics', 'teachers', 'assignments'] as $seccion) {
                 $url = "/api/dashboard/staff-overview?include={$seccion}";
                 $this->getJson($url)->assertOk(); // calienta cachés
+                // `exams` suma la columna de seguimiento (`ExamMonitorService::resumen`: destinatarios,
+                // intentos y fichas, 3 consultas propias): 4 en total. `analytics` del docente calcula
+                // sus cifras acotadas (antes veía las del centro entero): también 4. El resto, 3.
                 $this->assertLessThanOrEqual(
-                    3,
+                    ($seccion === 'exams' || ($seccion === 'analytics' && $usuario->user_type->value === 'teacher')) ? 4 : 3,
                     $this->consultas(fn () => $this->getJson($url)->assertOk()),
                     "include={$seccion} como {$usuario->user_type->value}"
                 );

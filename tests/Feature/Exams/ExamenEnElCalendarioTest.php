@@ -95,7 +95,8 @@ class ExamenEnElCalendarioTest extends TestCase
 
     public function test_las_fechas_son_las_de_la_ventana_del_examen(): void
     {
-        $desde = now()->addDay()->startOfMinute();
+        // Apertura ya pasada: «Abrir ahora» adelanta una apertura futura a este momento.
+        $desde = now()->subHour()->startOfMinute();
         $hasta = now()->addDays(2)->startOfMinute();
         $exam = $this->examenPublicado(['available_from' => $desde, 'available_until' => $hasta]);
 

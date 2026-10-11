@@ -52,6 +52,9 @@ class ExamStatusTransitionsTest extends TestCase
             'created_by_teacher_id' => $this->docente->id,
             'subject_id'            => $this->materia->id,
             'status'                => $status,
+            // «Listo» exige una ventana programada: apertura futura y cierre posterior.
+            'available_from'        => now()->addDay(),
+            'available_until'       => now()->addDays(2),
         ]);
 
         if ($conPreguntas) {
@@ -139,7 +142,7 @@ class ExamStatusTransitionsTest extends TestCase
 
         $this->cambiar($exam, 'active')
             ->assertStatus(409)
-            ->assertJsonPath('message', fn ($m) => str_contains($m, 'ventana'));
+            ->assertJsonPath('message', fn ($m) => str_contains($m, 'cierre'));
     }
 
     public function test_an_invalid_status_value_is_rejected(): void

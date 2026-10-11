@@ -142,9 +142,11 @@ class ExamenesMateriasYDuracionTest extends TestCase
         Question::factory()->create(['institution_id' => $this->centro->id, 'exam_id' => $exam->id]);
 
         $this->centro->update(['settings' => ['max_exam_duration' => 90]]);
+        // Con ventana: el 422 tiene que ser por la duración, no por faltar las fechas.
+        $exam->update(['available_from' => now()->addDay(), 'available_until' => now()->addDays(2)]);
 
         $this->patchJson("/api/exams/{$exam->id}/status", ['status' => 'published'])
-            ->assertStatus(422);
+            ->assertStatus(422)->assertJsonPath('message', fn ($m) => str_contains($m, '90'));
         $this->assertSame('draft', $exam->fresh()->status->value);
     }
 
@@ -156,7 +158,7 @@ class ExamenesMateriasYDuracionTest extends TestCase
         // Publicado cuando el límite lo permitía; el director lo bajó después
         // (no había exámenes activos, así que pudo hacerlo).
         $exam = $this->examen($this->docente, $materia, 120);
-        $exam->update(['status' => 'published']);
+        $exam->update(['status' => 'published', 'available_from' => now()->addDay(), 'available_until' => now()->addDays(2)]);
         $this->centro->update(['settings' => ['max_exam_duration' => 90]]);
 
         $this->patchJson("/api/exams/{$exam->id}/status", ['status' => 'active'])
