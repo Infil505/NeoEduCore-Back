@@ -2,7 +2,10 @@
 
 namespace App\Services\AI;
 
+use App\Models\Exams\Exam;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use OpenAI\Laravel\Facades\OpenAI;
 
@@ -171,15 +174,102 @@ class ExamAnalysisNarrative
      ========================================================= */
 
     /**
-     * La versión redactada por el modelo, o la calculada si el modelo no responde
-     * o su salida no pasa el filtro. Lo bueno se cachea por contenido.
+     * Qué se muestra al ENTRAR al análisis de un examen, sin llamar a OpenAI: la lectura redactada por IA que ya se
+     * guardó, si hay (marcada `stale` si desde entonces cambiaron los datos: entregas o revisiones nuevas), o la
+     * calculada. Antes la redactada no se guardaba y al volver había que pedirla otra vez.
+     *
+     * Agrega a la lectura `stale` (¿los datos cambiaron desde que se redactó?) y `generated_at`.
      *
      * @param  array<string,mixed>  $a
      * @return array<string,mixed>
      */
-    public function conIa(array $a): array
+    public function conLoGuardado(array $a, Exam $examen): array
     {
-        $reserva = $this->heuristica($a);
+        $reserva = $this->heuristica($a) + ['stale' => false, 'generated_at' => null];
+
+        if ($a['coverage']['presented'] === 0) {
+            return $reserva;
+        }
+
+        $guardada = $this->guardada($examen);
+
+        if ($guardada === null) {
+            return $reserva;
+        }
+
+        return $guardada['narrative'] + [
+            'stale'        => $guardada['fingerprint'] !== $this->huella($a),
+            'generated_at' => $guardada['generated_at'],
+        ];
+    }
+
+    /** ¿Hay una lectura guardada de ESTOS datos? Pedirla entonces no llama al modelo (y no gasta uso del día). */
+    public function alDia(array $a, Exam $examen): bool
+    {
+        $guardada = $this->guardada($examen);
+
+        return $guardada !== null && $guardada['fingerprint'] === $this->huella($a);
+    }
+
+    /** Huella de los datos que alimentan al modelo: si cambia, la lectura guardada ya no es de estos datos. */
+    public function huella(array $a): string
+    {
+        return md5($this->prompt($a));
+    }
+
+    /** @return array{fingerprint:string,narrative:array<string,mixed>,generated_at:string}|null */
+    public function guardada(Exam $examen): ?array
+    {
+        $fila = DB::table('exam_analysis_narratives')
+            ->where('institution_id', $examen->institution_id)
+            ->where('exam_id', $examen->id)
+            ->first(['fingerprint', 'narrative', 'generated_at']);
+
+        if ($fila === null) {
+            return null;
+        }
+
+        $narrative = json_decode((string) $fila->narrative, true);
+
+        return is_array($narrative)
+            ? ['fingerprint' => $fila->fingerprint, 'narrative' => $narrative, 'generated_at' => Carbon::parse($fila->generated_at, 'UTC')->toIso8601String()]
+            : null;
+    }
+
+    private function guardar(Exam $examen, string $huella, array $narrativa): void
+    {
+        $ahora = now();
+
+        DB::table('exam_analysis_narratives')->upsert(
+            [[
+                'id'             => (string) \Illuminate\Support\Str::uuid(),
+                'institution_id' => $examen->institution_id,
+                'exam_id'        => $examen->id,
+                'fingerprint'    => $huella,
+                'narrative'      => json_encode($narrativa, JSON_UNESCAPED_UNICODE),
+                'generated_at'   => $ahora,
+                'created_at'     => $ahora,
+                'updated_at'     => $ahora,
+            ]],
+            ['exam_id'],
+            ['fingerprint', 'narrative', 'generated_at', 'updated_at']
+        );
+    }
+
+    /**
+     * La versión redactada por el modelo, o la calculada si el modelo no responde
+     * o su salida no pasa el filtro.
+     *
+     * Con `$examen`, lo redactado se GUARDA (una fila por examen) y, mientras los datos no cambien, no se vuelve a
+     * pagar una llamada: se devuelve lo guardado. `$forzar` redacta de nuevo aunque los datos sean los mismos. Si el
+     * modelo falla, se devuelve lo guardado (como desactualizado) en vez de perderlo.
+     *
+     * @param  array<string,mixed>  $a
+     * @return array<string,mixed>
+     */
+    public function conIa(array $a, ?Exam $examen = null, bool $forzar = false): array
+    {
+        $reserva = $this->heuristica($a) + ['stale' => false, 'generated_at' => null];
 
         // Sin nadie que haya presentado no hay nada que el modelo pueda añadir.
         if ($a['coverage']['presented'] === 0) {
@@ -187,11 +277,22 @@ class ExamAnalysisNarrative
         }
 
         $prompt = $this->prompt($a);
-        $clave  = 'ai:exam-analysis:' . md5($prompt);
+        $huella = md5($prompt);
+        $guardada = $examen !== null ? $this->guardada($examen) : null;
 
-        $guardado = Cache::get($clave);
+        if (!$forzar && $guardada !== null && $guardada['fingerprint'] === $huella) {
+            return $guardada['narrative'] + ['stale' => false, 'generated_at' => $guardada['generated_at']];
+        }
+
+        $clave = 'ai:exam-analysis:' . md5($prompt);
+
+        $guardado = $forzar ? null : Cache::get($clave);
         if (is_array($guardado)) {
-            return $guardado;
+            if ($examen !== null) {
+                $this->guardar($examen, $huella, $guardado);
+            }
+
+            return $guardado + ['stale' => false, 'generated_at' => now()->toIso8601String()];
         }
 
         try {
@@ -209,11 +310,11 @@ class ExamAnalysisNarrative
         } catch (\Throwable $e) {
             Log::warning('ExamAnalysisNarrative: OpenAI error', ['error' => $e->getMessage()]);
 
-            return $reserva;
+            return $this->conservar($guardada, $reserva);
         }
 
         if ($texto === '' || $this->validator->motivo($texto) !== null) {
-            return $reserva;
+            return $this->conservar($guardada, $reserva);
         }
 
         $texto = $this->validator->sanitize($texto);
@@ -228,7 +329,19 @@ class ExamAnalysisNarrative
 
         Cache::put($clave, $resultado, 43200); // 12 h; el hash cambia solo si cambian los datos
 
-        return $resultado;
+        if ($examen !== null) {
+            $this->guardar($examen, $huella, $resultado);
+        }
+
+        return $resultado + ['stale' => false, 'generated_at' => now()->toIso8601String()];
+    }
+
+    /** Si el modelo no responde: lo último que se había redactado (desactualizado) antes que perderlo; si no, lo calculado. */
+    private function conservar(?array $guardada, array $reserva): array
+    {
+        return $guardada !== null
+            ? $guardada['narrative'] + ['stale' => true, 'generated_at' => $guardada['generated_at']]
+            : $reserva;
     }
 
     /** @param array<string,mixed> $a */

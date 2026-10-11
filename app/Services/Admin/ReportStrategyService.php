@@ -48,8 +48,21 @@ class ReportStrategyService
     ];
 
     /**
+     * Los mismos cuatro apartados cuando son consejo PARA EL DOCENTE: se rotulan para quien los lee (no
+     * «Acciones sugeridas», que al estudiante le habla de lo que debe hacer él).
+     *
+     * @var array<string,string>
+     */
+    public const SECTIONS_DOCENTE = [
+        'strength' => 'Fortalezas del estudiante',
+        'weakness' => 'Aspectos por reforzar',
+        'action'   => 'Qué puedes hacer tú',
+        'resource' => 'Recursos de apoyo',
+    ];
+
+    /**
      * @param  User  $viewer  Quien descarga: decide el alcance (ver `scopeFor`)
-     * @param  array{subject_id?:string,exam_id?:string,limit?:int}  $filters
+     * @param  array{subject_id?:string,exam_id?:string,audience?:string,limit?:int}  $filters
      * @return array<string,mixed>
      */
     public function studentStrategies(Student $student, User $viewer, array $filters = []): array
@@ -57,6 +70,12 @@ class ReportStrategyService
         $student->loadMissing('user:id,full_name');
 
         $limit = max(1, min((int) ($filters['limit'] ?? self::DEFAULT_LIMIT), self::MAX_LIMIT));
+
+        // A quién va dirigido lo que se pide. Para `teacher` se trae también lo del estudiante, en la MISMA consulta:
+        // si el docente aún no generó su consejo, el plan muestra lo que recibió el estudiante (y lo dice).
+        $pedida = ($filters['audience'] ?? AiRecommendation::PARA_ESTUDIANTE) === AiRecommendation::PARA_DOCENTE
+            ? AiRecommendation::PARA_DOCENTE
+            : AiRecommendation::PARA_ESTUDIANTE;
 
         $sections = [];
         $totals   = [];
@@ -69,7 +88,7 @@ class ReportStrategyService
         $numeradas = $this->baseQuery($student, $viewer, $filters)
             ->reorder()
             ->select('ai_recommendations.*')
-            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY recommendation_type ORDER BY generated_at DESC) AS rn_seccion')
+            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY audience, recommendation_type ORDER BY generated_at DESC) AS rn_seccion')
             // El título del examen en la misma consulta (subselect), no una relación aparte:
             // cada viaje a la base remota cuesta ~0,4 s.
             ->selectRaw('(SELECT e.title FROM exams e WHERE e.id = ai_recommendations.exam_id AND e.institution_id = ai_recommendations.institution_id) AS exam_title_j');
@@ -84,12 +103,20 @@ class ReportStrategyService
             ->fromSub($numeradas, 'ai_recommendations')
             ->where('rn_seccion', '<=', $limit)
             ->orderByDesc('generated_at')
-            ->get()
+            ->get();
+
+        // Consejo del docente si ya hay alguno; si no, lo que recibió el estudiante.
+        $efectiva = $pedida === AiRecommendation::PARA_DOCENTE && $todas->contains(fn (AiRecommendation $r) => $r->audience === AiRecommendation::PARA_DOCENTE)
+            ? AiRecommendation::PARA_DOCENTE
+            : AiRecommendation::PARA_ESTUDIANTE;
+
+        $todas = $todas
+            ->filter(fn (AiRecommendation $r) => $r->audience === $efectiva)
             ->groupBy(fn (AiRecommendation $r) => $r->recommendation_type instanceof \BackedEnum
                 ? $r->recommendation_type->value
                 : (string) $r->recommendation_type);
 
-        foreach (self::SECTIONS as $key => $label) {
+        foreach (($efectiva === AiRecommendation::PARA_DOCENTE ? self::SECTIONS_DOCENTE : self::SECTIONS) as $key => $label) {
             $items = $todas->get($key, collect());
 
             $sections[] = [
@@ -120,6 +147,10 @@ class ReportStrategyService
                 'grade'        => $student->grade,
                 'section'      => $student->section,
             ],
+            // `audience` es lo que se está mostrando; `requested_audience`, lo que se pidió. Si difieren, el docente
+            // pidió su consejo y todavía no existe: lo que se ve es lo que recibió el estudiante.
+            'audience'           => $efectiva,
+            'requested_audience' => $pedida,
             'totals'     => $totals + ['total' => array_sum($totals)],
             'truncated'  => collect($totals)->contains(fn (int $n) => $n >= $limit),
             'limit'      => $limit,
@@ -164,6 +195,11 @@ class ReportStrategyService
 
         if (!empty($filters['subject_id'])) {
             $query->where('subject_id', $filters['subject_id']);
+        }
+
+        // Lo dirigido al estudiante; con `teacher` también el consejo del docente (se elige luego, ver arriba).
+        if (($filters['audience'] ?? AiRecommendation::PARA_ESTUDIANTE) !== AiRecommendation::PARA_DOCENTE) {
+            $query->where('audience', AiRecommendation::PARA_ESTUDIANTE);
         }
 
         // El plan de UN examen: lo que el docente ve en analíticas al elegir el examen.

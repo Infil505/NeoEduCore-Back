@@ -133,6 +133,8 @@ Route::middleware(['auth:sanctum', 'activa', 'clave.temporal'])->group(function 
         // reserva workers para el flujo de examen. Ver bootstrap/app.php.
         Route::post('/ai/tutor/chat', [AiTutorController::class, 'chat'])
             ->middleware(['throttle:ai-chat', 'throttle:ai-global']);
+        // Cuántas consultas le quedan hoy (tope diario por estudiante, ver `CuotaDelTutor`).
+        Route::get('/ai/tutor/quota', [AiTutorController::class, 'quota']);
         Route::get('/ai/tutor/diagnosis', [AiTutorController::class, 'diagnosis'])
             ->middleware(['throttle:ai-diagnosis', 'throttle:ai-global']);
         Route::patch('/ai/tutor/sessions/{sessionId}/end', [AiTutorController::class, 'endSession']);
@@ -251,6 +253,8 @@ Route::middleware(['auth:sanctum', 'activa', 'clave.temporal'])->group(function 
         // más falladas, qué reforzar). Mismo gasto de IA → mismos límites.
         Route::post('/ai/teacher/chat', [\App\Http\Controllers\AI\AiAsistenteDocenteController::class, 'chat'])
             ->middleware(['throttle:ai-generate', 'throttle:ai-global']);
+        // Cuántos usos de la IA le quedan hoy al personal (tope diario compartido, ver `LimitaIaDelPersonal`).
+        Route::get('/ai/staff/quota', [AiController::class, 'quota']);
         // El plan completo (las cuatro secciones) de un estudiante para un examen.
         Route::post('/ai/plan', [AiController::class, 'plan'])
             ->middleware(['throttle:ai-generate', 'throttle:ai-global']);

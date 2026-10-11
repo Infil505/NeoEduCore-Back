@@ -99,6 +99,14 @@ return [
         // de la fila, no el coste de la petición.
         'stored_messages' => (int) env('OPENAI_STORED_MESSAGES', 60),
 
+        /*
+         | Consultas por estudiante y por día (500 estudiantes = 500 × este número de llamadas a OpenAI como
+         | máximo al día). Cuenta lo que llega al modelo: no lo rechazado ni las respuestas de reserva. `0` = sin límite.
+         | El día es el del colegio, no el de UTC (ver `CuotaDelTutor`).
+         */
+        'daily_limit'    => (int) env('OPENAI_TUTOR_DAILY_LIMIT', 5),
+        'daily_timezone' => env('OPENAI_TUTOR_DAILY_TZ', 'America/Costa_Rica'),
+
         // Vigencia (segundos) del prompt de sistema cacheado por estudiante.
         'context_ttl' => (int) env('OPENAI_CONTEXT_TTL', 300),
 
@@ -245,6 +253,9 @@ return [
     | que el tutor, con respuestas más largas porque propone actividades.
     */
     'docente' => [
+        // Usos de la IA por docente o administrador y por día: asistente, consejos, planes y «Redactar con IA» del
+        // análisis, en una sola cuenta (ver `CuotaDelTutor::delPersonal`). El día es el de `tutor.daily_timezone`. 0 = sin límite.
+        'daily_limit'      => (int) env('OPENAI_DOCENTE_DAILY_LIMIT', 30),
         'max_tokens'       => (int) env('OPENAI_DOCENTE_MAX_TOKENS', 700),
         'temperature'      => (float) env('OPENAI_DOCENTE_TEMPERATURE', 0.4),
         'history_messages' => (int) env('OPENAI_DOCENTE_HISTORY_MESSAGES', 6),

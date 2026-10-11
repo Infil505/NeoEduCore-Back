@@ -35,6 +35,9 @@
         <env name="CACHE_STORE" value="array"/>
         <!-- Sin red en los tests: los que prueban la comprobación la activan y simulan Http. -->
         <env name="AI_LINK_CHECK" value="false"/>
+        <!-- Sin tope diario del tutor: muchos tests mandan decenas de mensajes con el mismo alumno. Los de la cuota lo activan. -->
+        <env name="OPENAI_TUTOR_DAILY_LIMIT" value="0"/>
+        <env name="OPENAI_DOCENTE_DAILY_LIMIT" value="0"/>
         <!-- La suite lanza cientos de peticiones desde la misma IP: el limite
              general se sube para que no se bloquee a si misma. Los limites
              especificos (login, ai-global) se dejan reales, que son los que

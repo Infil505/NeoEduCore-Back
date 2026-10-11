@@ -15,6 +15,7 @@ use App\Models\AI\AiRecommendation;
 use App\Models\AI\AiTutorIncident;
 use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
+use App\Models\Exams\ExamNarrative;
 use App\Models\Exams\Question;
 use App\Models\Exams\QuestionOption;
 use App\Models\Students\Student;
@@ -64,6 +65,9 @@ class EloquentRelationsMatchFksTest extends TestCase
         'calendar_events.exam_id'            => [CalendarEvent::class, 'exam'],
         'calendar_events.group_id'           => [CalendarEvent::class, 'group'],
         'calendar_events.created_by'         => [CalendarEvent::class, 'creator'],
+
+        'exam_analysis_narratives.institution_id' => [ExamNarrative::class, 'institution'],
+        'exam_analysis_narratives.exam_id'        => [ExamNarrative::class, 'exam'],
 
         'exam_attempts.institution_id'       => [ExamAttempt::class, 'institution'],
         'exam_attempts.exam_id'              => [ExamAttempt::class, 'exam'],

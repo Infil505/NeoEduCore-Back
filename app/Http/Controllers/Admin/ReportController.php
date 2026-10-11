@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\AcotaAlDocente;
+use App\Http\Controllers\Concerns\LimitaIaDelPersonal;
 use App\Http\Controllers\Controller;
 use App\Models\AI\AiChatSession;
 use App\Models\AI\AiRecommendation;
@@ -23,7 +24,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ReportController extends Controller
 {
-    use AcotaAlDocente;
+    use AcotaAlDocente, LimitaIaDelPersonal;
 
 
     public function __construct(
@@ -139,9 +140,10 @@ class ReportController extends Controller
 
         $datos = $this->analisisCacheado($exam, $analisis);
 
-        // La lectura en palabras, calculada con reglas: no cuesta consultas ni
-        // llama a OpenAI. La redactada por el modelo se pide aparte (`/analysis/ai`).
-        return response()->json(['data' => $datos + ['narrative' => $narrador->heuristica($datos)]]);
+        // La lectura en palabras, sin llamar a OpenAI: la redactada por el modelo que ya se guardó para este examen (marcada
+        // `stale` si desde entonces hubo entregas o revisiones nuevas) o, si no hay, la calculada con reglas.
+        // Redactarla (o volver a hacerlo) se pide aparte (`POST /analysis/ai`).
+        return response()->json(['data' => $datos + ['narrative' => $narrador->conLoGuardado($datos, $exam)]]);
     }
 
     /**
@@ -160,8 +162,32 @@ class ReportController extends Controller
         }
 
         $datos = $this->analisisCacheado($exam, $analisis);
+        $forzar = $request->boolean('force');
 
-        return response()->json(['data' => $datos + ['narrative' => $narrador->conIa($datos)]]);
+        // Con los mismos datos y lo ya guardado no hay llamada al modelo: no gasta uso del día. Solo se reserva cuando
+        // de verdad se va a redactar (datos nuevos, primera vez o `force`).
+        $reservado = false;
+        if ($forzar || !$narrador->alDia($datos, $exam)) {
+            if ($sinCupo = $this->reservarIa($request)) {
+                return $sinCupo;
+            }
+            $reservado = true;
+        }
+
+        try {
+            $narrativa = $narrador->conIa($datos, $exam, $forzar);
+        } catch (\Throwable $e) {
+            $reservado && $this->devolverIa($request);
+
+            throw $e;
+        }
+
+        // Si no salió redactada ahora (nadie presentó, el modelo falló y queda lo anterior o lo calculado), no costó.
+        if ($reservado && (($narrativa['source'] ?? null) !== 'ai' || ($narrativa['stale'] ?? false))) {
+            $this->devolverIa($request);
+        }
+
+        return response()->json(['data' => $datos + ['narrative' => $narrativa, 'quota' => $this->estadoIa($request)]]);
     }
 
     /** @return array<string,mixed> */
@@ -279,7 +305,8 @@ class ReportController extends Controller
             'data' => $this->strategies->studentStrategies(
                 $student,
                 $request->user(),
-                $this->strategyFilters($request),
+                // El estudiante solo ve lo que se escribió para él, pida lo que pida.
+                ['audience' => AiRecommendation::PARA_ESTUDIANTE] + $this->strategyFilters($request),
             ),
         ]);
     }
@@ -303,12 +330,14 @@ class ReportController extends Controller
         ]);
     }
 
-    /** @return array{subject_id?:string,exam_id?:string,limit?:int} */
+    /** @return array{subject_id?:string,exam_id?:string,audience?:string,limit?:int} */
     private function strategyFilters(Request $request): array
     {
         return $request->validate([
             'subject_id' => ['sometimes', 'uuid'],
             'exam_id'    => ['sometimes', 'uuid'],
+            // `teacher`: el consejo para el docente (si aún no hay, lo que recibió el estudiante). Por defecto, lo del estudiante.
+            'audience'   => ['sometimes', \Illuminate\Validation\Rule::in([AiRecommendation::PARA_ESTUDIANTE, AiRecommendation::PARA_DOCENTE])],
             'limit'      => ['sometimes', 'integer', 'between:1,' . ReportStrategyService::MAX_LIMIT],
         ]);
     }
@@ -445,6 +474,8 @@ class ReportController extends Controller
             )->first();
 
         $topRecommendationTypes = AiRecommendation::query()
+            // Las que recibe el estudiante: el consejo para el docente no cuenta como «entregado al alumnado».
+            ->where('audience', AiRecommendation::PARA_ESTUDIANTE)
             ->when($esDocente, fn ($q) => $q
                 ->whereIn('student_user_id', $this->estudiantesDelDocente($user->id))
                 ->whereIn('subject_id', $this->materiasDelDocente($user->id)))

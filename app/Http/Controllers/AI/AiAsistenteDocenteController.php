@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\AI;
 
 use App\Http\Controllers\Concerns\AcotaAlDocente;
+use App\Http\Controllers\Concerns\LimitaIaDelPersonal;
 use App\Http\Controllers\Controller;
 use App\Models\Exams\Exam;
 use App\Services\AI\AiAsistenteDocenteService;
@@ -10,7 +11,7 @@ use Illuminate\Http\Request;
 
 class AiAsistenteDocenteController extends Controller
 {
-    use AcotaAlDocente;
+    use AcotaAlDocente, LimitaIaDelPersonal;
 
     /**
      * POST /api/ai/teacher/chat — conversar con la IA sobre los resultados de la clase.
@@ -43,13 +44,31 @@ class AiAsistenteDocenteController extends Controller
             }
         }
 
-        $respuesta = $asistente->responder(
-            $user->institution_id,
-            $this->esDocente($user) ? $user->id : null,
-            $data['message'],
-            $foco,
-            $data['history'] ?? []
-        );
+        // El tope diario del personal. Después de las validaciones (no gastan) y antes del modelo.
+        if ($sinCupo = $this->reservarIa($request)) {
+            return $sinCupo;
+        }
+
+        try {
+            $respuesta = $asistente->responder(
+                $user->institution_id,
+                $this->esDocente($user) ? $user->id : null,
+                $data['message'],
+                $foco,
+                $data['history'] ?? []
+            );
+        } catch (\Throwable $e) {
+            $this->devolverIa($request);
+
+            throw $e;
+        }
+
+        // Lo que no llegó al modelo (intento de inyección, respuesta de reserva) no gasta uso.
+        if (($respuesta['counted'] ?? true) === false) {
+            $this->devolverIa($request);
+        }
+        unset($respuesta['counted']);
+        $respuesta['quota'] = $this->estadoIa($request);
 
         return response()->json(['data' => $respuesta]);
     }

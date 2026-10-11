@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Services\AI\AiTutorService;
+use App\Services\AI\CuotaDelTutor;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -61,6 +62,9 @@ class ResponderTutor implements ShouldQueue
     public function failed(?Throwable $e): void
     {
         app(AiTutorService::class)->liberarPendiente($this->sessionId, $this->message, $this->mode);
+
+        // El alumno recibió el mensaje de reserva: la consulta no le cuenta para el tope del día.
+        app(CuotaDelTutor::class)->devolver($this->studentUserId);
 
         Log::warning('Turno asíncrono del tutor fallido en la sesión ' . $this->sessionId, [
             'error' => $e?->getMessage(),

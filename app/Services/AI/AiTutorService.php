@@ -182,7 +182,12 @@ class AiTutorService
             ->first();
 
         if ($session) {
-            $this->responderTurno($session, $studentUserId, $message, $mode, $topic);
+            $resultado = $this->responderTurno($session, $studentUserId, $message, $mode, $topic);
+
+            // La consulta se apuntó al recibir la petición; si fue la respuesta de reserva, se devuelve.
+            if (($resultado['counted'] ?? true) === false) {
+                app(CuotaDelTutor::class)->devolver($studentUserId);
+            }
         }
     }
 
@@ -225,6 +230,8 @@ class AiTutorService
             'reply'         => (string) config('openai.tutor.injection_reply'),
             'ai_notice'     => (string) config('openai.tutor.notice'),
             'message_count' => count($session->messages ?? []),
+            // No llegó al modelo: no cuenta para la cuota diaria (`CuotaDelTutor`).
+            'counted'       => false,
         ];
     }
 
@@ -322,6 +329,8 @@ class AiTutorService
             // El append + truncado ocurre en SQL; el resultado es determinista,
             // así que se calcula aquí en vez de releer la fila.
             'message_count' => min($totalPrevio + count($nuevos), $this->ajuste('stored_messages')),
+            // Si OpenAI falló y el alumno recibió el mensaje de reserva, no se le gasta una consulta del día.
+            'counted'       => $reply !== $this->fallbackReply(),
         ];
     }
 

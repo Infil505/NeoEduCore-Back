@@ -248,7 +248,9 @@ CREATE TABLE public.ai_recommendations (
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
     attempt_id uuid,
-    generated_by public.ai_generation_source DEFAULT 'heuristic'::public.ai_generation_source NOT NULL
+    generated_by public.ai_generation_source DEFAULT 'heuristic'::public.ai_generation_source NOT NULL,
+    audience character varying(16) DEFAULT 'student'::character varying NOT NULL,
+    CONSTRAINT ai_recommendations_audience_check CHECK (((audience)::text = ANY ((ARRAY['student'::character varying, 'teacher'::character varying])::text[])))
 );
 
 
@@ -2193,6 +2195,60 @@ ALTER TABLE public.teacher_assignments ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: exam_analysis_narratives; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.exam_analysis_narratives (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    institution_id uuid NOT NULL,
+    exam_id uuid NOT NULL,
+    fingerprint character varying(32) NOT NULL,
+    narrative jsonb NOT NULL,
+    generated_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone
+);
+
+
+--
+-- Name: exam_analysis_narratives exam_analysis_narratives_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_analysis_narratives
+    ADD CONSTRAINT exam_analysis_narratives_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: exam_analysis_narratives exam_analysis_narratives_exam_id_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_analysis_narratives
+    ADD CONSTRAINT exam_analysis_narratives_exam_id_unique UNIQUE (exam_id);
+
+
+--
+-- Name: exam_analysis_narratives exam_analysis_narratives_exam_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_analysis_narratives
+    ADD CONSTRAINT exam_analysis_narratives_exam_id_foreign FOREIGN KEY (exam_id) REFERENCES public.exams(id) ON DELETE CASCADE;
+
+
+--
+-- Name: exam_analysis_narratives exam_analysis_narratives_institution_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_analysis_narratives
+    ADD CONSTRAINT exam_analysis_narratives_institution_id_foreign FOREIGN KEY (institution_id) REFERENCES public.institutions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: exam_analysis_narratives; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.exam_analysis_narratives ENABLE ROW LEVEL SECURITY;
 
 --
 -- PostgreSQL database dump complete

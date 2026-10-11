@@ -355,7 +355,9 @@ class OverviewController extends Controller
 
         // El examen unido en la misma consulta (`RelacionesEnLinea`), no una más.
         $recommendations = RelacionesEnLinea::unir(
-            AiRecommendation::query()->where('ai_recommendations.student_user_id', $user->id),
+            AiRecommendation::query()
+                ->where('ai_recommendations.student_user_id', $user->id)
+                ->where('ai_recommendations.audience', AiRecommendation::PARA_ESTUDIANTE),
             ['exam' => ['exams', 'exam_id', Exam::COLUMNAS]]
         )
             ->orderByDesc('ai_recommendations.created_at')

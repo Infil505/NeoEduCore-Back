@@ -22,6 +22,10 @@ class AiRecommendation extends Model
 
     protected $table = 'ai_recommendations';
 
+    /** Lo que recibe el estudiante (por defecto) y el consejo que se escribe PARA EL DOCENTE sobre un estudiante. */
+    public const PARA_ESTUDIANTE = 'student';
+    public const PARA_DOCENTE = 'teacher';
+
     public $incrementing = false;
     protected $keyType = 'string';
 
@@ -36,6 +40,7 @@ class AiRecommendation extends Model
         'recommendation_type',
         'resource',
         'generated_by',
+        'audience',
     ];
 
     protected $casts = [

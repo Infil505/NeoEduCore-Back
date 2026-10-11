@@ -505,6 +505,8 @@ class ExamAttemptController extends Controller
 
         $recomendaciones = AiRecommendation::query()
             ->where('attempt_id', $attempt->id)
+            // Lo que recibe el estudiante: el consejo que el docente pidió sobre él no es para su pantalla.
+            ->where('audience', AiRecommendation::PARA_ESTUDIANTE)
             ->orderBy('generated_at')
             ->get();
 
@@ -573,6 +575,8 @@ class ExamAttemptController extends Controller
         $MAX_REGENS = 3;
 
         $generacionesPrevias = AiRecommendation::where('attempt_id', $attempt->id)
+            // El cupo es del estudiante: lo que genera el docente no se lo gasta.
+            ->where('audience', AiRecommendation::PARA_ESTUDIANTE)
             ->distinct()
             ->count('generated_at');
 

@@ -9,6 +9,7 @@ use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Students\Student;
 use App\Services\AI\AiTutorService;
+use App\Services\AI\CuotaDelTutor;
 use App\Services\AI\FormatoPorEstilo;
 use Illuminate\Http\Request;
 
@@ -28,7 +29,15 @@ class AiTutorController extends Controller
         return collect($ids);
     }
 
-    public function chat(Request $request, AiTutorService $tutorService)
+    /**
+     * GET /api/ai/tutor/quota — cuántas consultas le quedan hoy al estudiante. Solo lee la caché.
+     */
+    public function quota(Request $request, CuotaDelTutor $cuota)
+    {
+        return response()->json(['data' => $cuota->estado($request->user()->id)]);
+    }
+
+    public function chat(Request $request, AiTutorService $tutorService, CuotaDelTutor $cuota)
     {
         $user = $request->user();
 
@@ -59,6 +68,17 @@ class AiTutorController extends Controller
             return response()->json(['message' => 'Examen no encontrado'], 422);
         }
 
+        // El tope diario. Va DESPUÉS de las validaciones (un 422 no gasta consulta) y ANTES de tocar el modelo.
+        // Se apunta de antemano para que dos mensajes a la vez no se cuelen; si no llega al modelo, se devuelve.
+        if (!$cuota->reservar($user->id)) {
+            $estado = $cuota->estado($user->id);
+
+            return response()->json([
+                'message' => "Ya usaste tus {$estado['limit']} consultas de hoy con el tutor. Se renuevan mañana; mientras tanto puedes repasar tus recursos y tus resultados.",
+                'quota'   => $estado,
+            ], 429);
+        }
+
         $argumentos = [
             'studentUserId' => $user->id,
             'message'       => $data['message'],
@@ -72,9 +92,21 @@ class AiTutorController extends Controller
 
         $asincrono = (bool) ($data['async'] ?? false);
 
-        $result = $asincrono
-            ? $tutorService->chatAsincrono(...$argumentos)
-            : $tutorService->chat(...$argumentos);
+        try {
+            $result = $asincrono
+                ? $tutorService->chatAsincrono(...$argumentos)
+                : $tutorService->chat(...$argumentos);
+        } catch (\Throwable $e) {
+            $cuota->devolver($user->id);
+
+            throw $e;
+        }
+
+        // Lo que no llegó al modelo (otro mensaje aún en curso, intento de inyección, respuesta de reserva)
+        // no gasta consulta.
+        if ($result === null || ($result['counted'] ?? true) === false) {
+            $cuota->devolver($user->id);
+        }
 
         if ($result === null) {
             return response()->json([
@@ -87,6 +119,10 @@ class AiTutorController extends Controller
         // ya cargado arriba: no cuesta una consulta.
         $formato = app(FormatoPorEstilo::class);
         $result['presentation'] = $formato->presentacion($student->learning_style);
+
+        // Lo que le queda hoy, para que la pantalla lo muestre sin otra petición.
+        unset($result['counted']);
+        $result['quota'] = $cuota->estado($user->id);
 
         // El vídeo que el docente puso en el examen del que se está hablando:
         // el de esta petición o, si no vino, el que la sesión ya tenía fijado.

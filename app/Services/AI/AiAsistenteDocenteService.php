@@ -40,7 +40,8 @@ class AiAsistenteDocenteService
         $aviso = (string) config('openai.docente.notice');
 
         if ($this->sanitizer->pareceInyeccion($mensaje)) {
-            return ['reply' => (string) config('openai.docente.injection_reply'), 'ai_notice' => $aviso];
+            // No llegó al modelo: no gasta uso del día (`counted`).
+            return ['reply' => (string) config('openai.docente.injection_reply'), 'ai_notice' => $aviso, 'counted' => false];
         }
 
         $turnos = collect($historial)
@@ -65,14 +66,14 @@ class AiAsistenteDocenteService
         } catch (\Throwable $e) {
             Log::warning('AiAsistenteDocenteService: OpenAI error', ['error' => $e->getMessage()]);
 
-            return ['reply' => $this->reserva(), 'ai_notice' => $aviso];
+            return ['reply' => $this->reserva(), 'ai_notice' => $aviso, 'counted' => false];
         }
 
         if ($texto === '' || $this->validator->motivo($texto) !== null) {
-            return ['reply' => $this->reserva(), 'ai_notice' => $aviso];
+            return ['reply' => $this->reserva(), 'ai_notice' => $aviso, 'counted' => false];
         }
 
-        return ['reply' => $this->validator->sanitize($texto), 'ai_notice' => $aviso];
+        return ['reply' => $this->validator->sanitize($texto), 'ai_notice' => $aviso, 'counted' => true];
     }
 
     private function sistema(string $institutionId, ?string $docenteId, ?Exam $foco): string

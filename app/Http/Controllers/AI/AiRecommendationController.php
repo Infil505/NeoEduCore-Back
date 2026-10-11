@@ -30,6 +30,8 @@ class AiRecommendationController extends Controller
             'subject_id'        => ['nullable', 'uuid'],
             'exam_id'           => ['nullable', 'uuid'],
             'recommendation_type' => ['nullable', Rule::in(['strength', 'weakness', 'resource', 'action'])],
+            // Solo el personal: a quién iba dirigida (el estudiante nunca ve las del docente).
+            'audience'          => ['nullable', Rule::in([AiRecommendation::PARA_ESTUDIANTE, AiRecommendation::PARA_DOCENTE])],
         ]);
 
         // Alumno, su usuario y el examen unidos en la MISMA consulta (`RelacionesEnLinea`) y
@@ -44,7 +46,10 @@ class AiRecommendationController extends Controller
 
         // 👩‍🎓 Estudiante: solo sus recomendaciones
         if ($user->user_type->value === 'student') {
-            $query->where('ai_recommendations.student_user_id', $user->id);
+            $query->where('ai_recommendations.student_user_id', $user->id)
+                ->where('ai_recommendations.audience', AiRecommendation::PARA_ESTUDIANTE);
+        } elseif (!empty($data['audience'])) {
+            $query->where('ai_recommendations.audience', $data['audience']);
         }
 
         // 👨‍🏫 Docente: solo sus estudiantes (grupo asignado) y solo sus materias.
@@ -132,8 +137,9 @@ class AiRecommendationController extends Controller
             return response()->json(['message' => 'No encontrado'], 404);
         }
 
-        // Estudiante: solo puede ver las suyas
-        if ($user->user_type->value === 'student' && $aiRecommendation->student_user_id !== $user->id) {
+        // Estudiante: solo puede ver las suyas, y no el consejo que se escribió para el docente
+        if ($user->user_type->value === 'student'
+            && ($aiRecommendation->student_user_id !== $user->id || $aiRecommendation->audience !== AiRecommendation::PARA_ESTUDIANTE)) {
             return response()->json(['message' => 'No autorizado'], 403);
         }
 
@@ -185,6 +191,7 @@ class AiRecommendationController extends Controller
             'exam' => ['exams', 'exam_id', Exam::COLUMNAS],
         ])
             ->where('ai_recommendations.student_user_id', $user->id)
+            ->where('ai_recommendations.audience', AiRecommendation::PARA_ESTUDIANTE)
             ->orderByDesc('ai_recommendations.created_at');
 
         if (!empty($data['subject_id'])) {
