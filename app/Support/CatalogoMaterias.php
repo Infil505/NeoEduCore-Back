@@ -24,7 +24,7 @@ final class CatalogoMaterias
         }
 
         $filas = TenantCache::remember(
-            $centro, TenantCache::CATALOGO, 'subjects-map', 300,
+            $centro, TenantCache::MAPAS, 'subjects-map', 300,
             fn () => Subject::query()->toBase()->get()->map(fn ($fila) => (array) $fila)->all()
         );
 

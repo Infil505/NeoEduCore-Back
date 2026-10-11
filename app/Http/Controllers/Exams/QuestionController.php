@@ -8,6 +8,8 @@ use App\Enums\Difficulty;
 use App\Enums\QuestionType;
 use App\Models\Exams\Exam;
 use App\Support\PreguntasEnLinea;
+use App\Support\RelacionesEnLinea;
+use Illuminate\Support\Arr;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Exams\Question;
 use App\Models\Exams\QuestionOption;
@@ -152,53 +154,51 @@ class QuestionController extends Controller
             }
         }
 
-        return DB::transaction(function () use ($exam, $data, $type, $request) {
-            $orderIndex = $data['order_index'] ?? ($exam->questions()->max('order_index') + 1);
+        // Pregunta y opciones en UNA sentencia atómica (ver `PreguntasEnLinea::crear`): antes eran
+        // siete viajes a la base y una transacción. Las opciones, con `option_index` por posición
+        // si no lo traen.
+        $opciones = [];
+        foreach (array_values($data['options'] ?? []) as $idx => $opt) {
+            $opciones[] = [
+                'option_index' => isset($opt['option_index']) ? (int) $opt['option_index'] : $idx,
+                'option_text'  => $opt['option_text'],
+                'is_correct'   => (bool) $opt['is_correct'],
+            ];
+        }
 
-            $question = Question::create([
-                'exam_id' => $exam->id,
-                'question_text' => $data['question_text'],
-                'question_type' => $type,
-                'points' => (int) $data['points'],
-                'correct_answer_text' => $type === QuestionType::ShortAnswer->value ? $data['correct_answer_text'] : null,
-                'order_index' => (int) $orderIndex,
+        $question = PreguntasEnLinea::crear($exam->institution_id, $exam->id, [
+            'question_text' => $data['question_text'],
+            'question_type' => $type,
+            'points' => (int) $data['points'],
+            'correct_answer_text' => $type === QuestionType::ShortAnswer->value ? $data['correct_answer_text'] : null,
+            'order_index' => isset($data['order_index']) ? (int) $data['order_index'] : null,
 
-                // D2: `topic_normalized` sale sola, la genera PostgreSQL.
-                'topic' => $data['topic'] ?? null,
-                'indicator' => $data['indicator'] ?? null,
-                'difficulty' => $data['difficulty'] ?? null,
-            ]);
+            // D2: `topic_normalized` sale sola, la genera PostgreSQL.
+            'topic' => $data['topic'] ?? null,
+            'indicator' => $data['indicator'] ?? null,
+            'difficulty' => $data['difficulty'] ?? null,
+        ], $opciones);
 
-            // Crear opciones si aplica
-            if (!empty($data['options'])) {
-                foreach ($data['options'] as $idx => $opt) {
-                    QuestionOption::create([
-                        'question_id' => $question->id,
-                        'option_index' => isset($opt['option_index']) ? (int) $opt['option_index'] : $idx,
-                        'option_text'  => $opt['option_text'],
-                        'is_correct'   => (bool) $opt['is_correct'],
-                    ]);
-                }
-            }
+        // Ruta admin/teacher: aquí sí procede devolver las respuestas.
+        $this->revelarRespuestasDe($request->user(), $question);
 
-            // Ruta admin/teacher: aquí sí procede devolver las respuestas.
-            $question->load('options');
-            $this->revelarRespuestasDe($request->user(), $question);
-
-            return response()->json([
-                'data' => $question,
-            ], 201);
-        });
+        return response()->json([
+            'data' => $question,
+        ], 201);
     }
 
     /**
      * Actualizar pregunta + opciones
      */
-    public function update(Request $request, Question $question)
+    public function update(Request $request, string $question)
     {
         $user = $request->user();
+
+        // La pregunta con su examen, sus opciones y si el examen ya tiene intentos, en UNA consulta
+        // (antes: binding, examen, comprobación de intentos y opciones por separado).
+        $question = $this->preguntaConExamen($question) ?? abort(404);
+
         if ($user->user_type->value === 'teacher') {
-            $question->loadMissing('exam');
             if ($question->exam->created_by_teacher_id !== $user->id) {
                 return response()->json(['message' => 'No autorizado'], 403);
             }
@@ -262,52 +262,57 @@ class QuestionController extends Controller
             }
         }
 
-        if ($this->examenConIntentos($question->exam_id) && $this->cambiaLoQuePuntua($question, $data)) {
+        if ($question->tiene_intentos && $this->cambiaLoQuePuntua($question, $data)) {
             return response()->json([
                 'message' => 'Este examen ya tiene intentos: no se pueden cambiar las opciones, la respuesta correcta ni los puntos de una pregunta. El enunciado sí se puede corregir.',
             ], 409);
         }
 
-        return DB::transaction(function () use ($question, $data, $request) {
-            $question->fill($data);
+        $question->fill(Arr::except($data, 'options'));
+
+        if (array_key_exists('options', $data)) {
+            // Cambiar las opciones son varias sentencias: ahí sí hace falta la transacción.
+            DB::transaction(function () use ($question, $data) {
+                $question->save();
+                $question->setRelation('options', PreguntasEnLinea::reemplazarOpciones(
+                    $question->institution_id,
+                    $question->id,
+                    collect($data['options'])->map(fn ($o) => [
+                        'option_index' => (int) $o['option_index'],
+                        'option_text'  => $o['option_text'],
+                        'is_correct'   => (bool) $o['is_correct'],
+                    ])->all()
+                ));
+            });
+        } else {
+            // Una sola sentencia; las opciones ya vienen cargadas de la primera consulta.
             $question->save();
+        }
 
-            // Reemplazar opciones si vienen
-            if (array_key_exists('options', $data)) {
-                $question->options()->delete();
+        $this->revelarRespuestasDe($request->user(), $question);
 
-                foreach ($data['options'] as $opt) {
-                    QuestionOption::create([
-                        'question_id' => $question->id,
-                        'option_index' => (int) $opt['option_index'],
-                        'option_text' => $opt['option_text'],
-                        'is_correct' => (bool) $opt['is_correct'],
-                    ]);
-                }
-            }
-
-            $question->load('options');
-            $this->revelarRespuestasDe($request->user(), $question);
-
-            return response()->json([
-                'data' => $question,
-            ]);
-        });
+        return response()->json([
+            'data' => $question,
+        ]);
     }
 
     /**
      * Eliminar pregunta (no permitir eliminar la última)
      */
-    public function destroy(Request $request, Question $question)
+    public function destroy(Request $request, string $question)
     {
         $user = $request->user();
+
+        // La pregunta con su examen, si hay intentos y cuántas preguntas tiene el examen, en UNA
+        // consulta (antes: binding, examen, intentos y recuento).
+        $question = $this->preguntaConExamen($question) ?? abort(404);
         $exam = $question->exam;
 
         if ($user->user_type->value === 'teacher' && $exam->created_by_teacher_id !== $user->id) {
             return response()->json(['message' => 'No autorizado'], 403);
         }
 
-        if ($this->examenConIntentos($exam->id)) {
+        if ($question->tiene_intentos) {
             // `student_answers.question_id` es ON DELETE CASCADE: borrarla se
             // llevaría las respuestas y las notas ya calculadas de los alumnos.
             return response()->json([
@@ -315,7 +320,7 @@ class QuestionController extends Controller
             ], 409);
         }
 
-        if ($exam->questions()->limit(2)->count() <= 1) {
+        if ($question->total_preguntas <= 1) {
             return response()->json([
                 'message' => 'No se puede eliminar la última pregunta del examen',
             ], 409);
@@ -326,10 +331,38 @@ class QuestionController extends Controller
         return response()->noContent();
     }
 
-    /** ¿Alguien ha empezado o entregado este examen? Desde ahí sus notas dependen de las preguntas. */
-    private function examenConIntentos(string $examId): bool
+    /**
+     * La pregunta con su examen (`exam`), sus opciones (`options`) y dos datos del examen que piden
+     * `update` y `destroy`: si ya tiene intentos (`tiene_intentos`: desde ahí sus notas dependen de
+     * las preguntas) y cuántas preguntas tiene (`total_preguntas`). Todo en UNA consulta.
+     */
+    private function preguntaConExamen(string $id): ?Question
     {
-        return ExamAttempt::query()->where('exam_id', $examId)->exists();
+        $consulta = RelacionesEnLinea::unir(Question::query(), [
+            'exam' => ['exams', 'exam_id', Exam::COLUMNAS],
+        ]);
+        PreguntasEnLinea::seleccionarOpciones($consulta);
+        $pregunta = $consulta
+            ->selectRaw('EXISTS (SELECT 1 FROM exam_attempts ea WHERE ea.exam_id = questions.exam_id AND ea.institution_id = questions.institution_id) AS tiene_intentos')
+            ->selectRaw('(SELECT COUNT(*) FROM questions q2 WHERE q2.exam_id = questions.exam_id AND q2.institution_id = questions.institution_id) AS total_preguntas')
+            ->where('questions.id', $id)
+            ->first();
+
+        if ($pregunta === null) {
+            return null;
+        }
+
+        $tieneIntentos = (bool) $pregunta->getAttribute('tiene_intentos');
+        $total = (int) $pregunta->getAttribute('total_preguntas');
+        $pregunta->setRawAttributes(Arr::except($pregunta->getAttributes(), ['tiene_intentos', 'total_preguntas']), true);
+        RelacionesEnLinea::hidratar([$pregunta], ['exam' => Exam::class]);
+        PreguntasEnLinea::hidratar([$pregunta]);
+
+        // No son columnas: propiedades de la petición (no salen en el JSON ni se guardan).
+        $pregunta->tiene_intentos = $tieneIntentos;
+        $pregunta->total_preguntas = $total;
+
+        return $pregunta;
     }
 
     /**
@@ -353,7 +386,7 @@ class QuestionController extends Controller
                 ->map(fn ($o) => [(int) $o['option_index'], (string) $o['option_text'], (bool) $o['is_correct']])
                 ->sortBy(0)->values()->all();
 
-            return $forma($data['options'] ?? []) !== $forma($question->options()->get()->map(fn ($o) => [
+            return $forma($data['options'] ?? []) !== $forma($question->options->map(fn ($o) => [
                 'option_index' => $o->option_index, 'option_text' => $o->option_text, 'is_correct' => $o->is_correct,
             ])->all());
         }

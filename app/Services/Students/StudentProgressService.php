@@ -61,36 +61,74 @@ class StudentProgressService
      */
     public function recalcFromAttempts(string $studentUserId, string $subjectId): StudentProgress
     {
-        // JOIN en lugar de whereHas + get() evita cargar registros en RAM para calcular AVG.
-        //
-        // El corte de `reset_at` va como subconsulta en vez de leerse antes en
-        // una query aparte (O3). Sin fila de progreso, o sin corte, COALESCE da
-        // '-infinity' y el filtro no excluye nada: mismo resultado que antes.
-        $result = ExamAttempt::query()
-            ->join('exams', 'exams.id', '=', 'exam_attempts.exam_id')
-            ->where('exam_attempts.student_user_id', $studentUserId)
-            ->whereNotNull('exam_attempts.submitted_at')
-            ->where('exams.subject_id', $subjectId)
-            ->where('exam_attempts.max_score', '>', 0)
-            ->whereRaw(
-                "exam_attempts.submitted_at > COALESCE((
-                    SELECT sp.reset_at FROM student_progress sp
-                    WHERE sp.student_user_id = exam_attempts.student_user_id AND sp.subject_id = ?
-                ), '-infinity'::timestamp)",
-                [$subjectId]
-            )
-            ->selectRaw('COUNT(*) as total, AVG((exam_attempts.score / exam_attempts.max_score) * 100) as avg_pct')
-            ->first();
+        $tenant = app()->bound('tenant_id') ? app('tenant_id') : null;
 
-        if (!$result || (int) $result->total === 0) {
-            return $this->upsertProgress($studentUserId, $subjectId, 0);
+        // UNA sentencia (antes eran tres viajes a la base): calcula el promedio de los intentos
+        // entregados, guarda el progreso de la materia (`INSERT … ON CONFLICT`) y, si hay intentos,
+        // pone al día la media general y los exámenes completados del alumno.
+        //
+        // Respeta `reset_at`: si al estudiante se le reseteó el progreso en esta materia
+        // (repitente), solo cuentan los intentos posteriores al corte (subconsulta; sin fila o sin
+        // corte, COALESCE da '-infinity' y no excluye nada). Los anteriores siguen en la BD para
+        // auditoría, pero no arrastran la nota.
+        //
+        // La media general no puede leer lo que inserta esta misma sentencia, así que suma el valor
+        // nuevo a los progresos de las OTRAS materias.
+        $acotar = $tenant ? ' AND s.institution_id = ?' : '';
+        $fila = DB::selectOne(
+            "WITH agg AS (
+                 SELECT COUNT(*) AS total, AVG((ea.score / ea.max_score) * 100) AS avg_pct
+                   FROM exam_attempts ea
+                   JOIN exams e ON e.id = ea.exam_id
+                  WHERE ea.student_user_id = ? AND ea.submitted_at IS NOT NULL AND e.subject_id = ? AND ea.max_score > 0
+                    AND ea.submitted_at > COALESCE((SELECT sp.reset_at FROM student_progress sp
+                                                     WHERE sp.student_user_id = ea.student_user_id AND sp.subject_id = ?), '-infinity'::timestamp)
+             ),
+             nuevo AS (SELECT CASE WHEN total = 0 THEN 0 ELSE ROUND(avg_pct::numeric, 2) END AS pct FROM agg),
+             prog AS (
+                 INSERT INTO student_progress (id, institution_id, student_user_id, subject_id, mastery_percentage, updated_at)
+                 SELECT ?, s.institution_id, s.user_id, ?, nuevo.pct, ?
+                   FROM students s, nuevo
+                  WHERE s.user_id = ?{$acotar}
+                 ON CONFLICT (student_user_id, subject_id)
+                 DO UPDATE SET mastery_percentage = EXCLUDED.mastery_percentage, updated_at = EXCLUDED.updated_at
+                 RETURNING *
+             ),
+             est AS (
+                 UPDATE students SET
+                        overall_average = ROUND(COALESCE((SELECT AVG(m) FROM (
+                                              SELECT sp.mastery_percentage AS m FROM student_progress sp
+                                               WHERE sp.student_user_id = students.user_id AND sp.subject_id <> ?
+                                              UNION ALL SELECT pct FROM nuevo) t), 0)::numeric, 2),
+                        exams_completed_count = (SELECT COUNT(*) FROM exam_attempts ea2
+                                                  WHERE ea2.student_user_id = students.user_id AND ea2.submitted_at IS NOT NULL),
+                        last_activity_at = ?, updated_at = ?
+                  WHERE user_id = ?{$this->acotarEst($tenant)} AND (SELECT total FROM agg) > 0
+                  RETURNING 1
+             )
+             SELECT * FROM prog",
+            array_merge(
+                [$studentUserId, $subjectId, $subjectId, (string) Str::orderedUuid(), $subjectId, now(), $studentUserId],
+                $tenant ? [$tenant] : [],
+                [$subjectId, now(), now(), $studentUserId],
+                $tenant ? [$tenant] : []
+            )
+        );
+
+        if (!$fila) {
+            throw new \RuntimeException("No existe el estudiante {$studentUserId} en esta institución.");
         }
 
-        $progress = $this->upsertProgress($studentUserId, $subjectId, (float) $result->avg_pct);
+        // El tutor arma su contexto con el progreso y los resultados de exámenes:
+        // si esto cambió (entrega, revisión, reseteo), que lo vea ya y no al caducar.
+        AiTutorService::olvidarContexto($studentUserId);
 
-        $this->syncStudentStats($studentUserId);
+        return StudentProgress::hydrate([(array) $fila])->first();
+    }
 
-        return $progress;
+    private function acotarEst(?string $tenant): string
+    {
+        return $tenant ? ' AND institution_id = ?' : '';
     }
 
     /**

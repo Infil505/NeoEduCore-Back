@@ -9,6 +9,7 @@ use App\Models\Academic\Subject;
 use App\Models\Academic\CalendarEvent;
 use App\Models\Academic\Group;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Models\Concerns\TenantScoped;
@@ -207,30 +208,26 @@ class Exam extends Model
         $inicio = $this->available_from ?? now();
         $fin    = $this->available_until ?? $inicio->copy()->addMinutes((int) $this->duration_minutes);
 
-        $yaTienen = CalendarEvent::query()
-            ->where('exam_id', $this->id)
-            ->pluck('group_id')
-            ->all();
+        // UNA sentencia: inserta un evento por cada aula destino que aún no lo tiene. Antes eran la
+        // lectura de los eventos, la de las aulas, la de la materia y un INSERT por aula (con la base
+        // remota, ~0,4 s cada uno). Al no pasar por Eloquent no salta el observador que invalida la
+        // caché de avisos del alumnado: se invalida aquí a mano.
+        $creados = DB::affectingStatement(
+            'INSERT INTO calendar_events (id, institution_id, title, description, start_at, end_at, event_type, exam_id, group_id, created_by, created_at, updated_at)
+             SELECT gen_random_uuid(), et.institution_id, ?, (SELECT s.name FROM subjects s WHERE s.id = ? AND s.institution_id = ?), ?, ?, ?, et.exam_id, et.group_id, ?, now(), now()
+               FROM exam_targets et
+              WHERE et.exam_id = ? AND et.institution_id = ?
+                AND NOT EXISTS (SELECT 1 FROM calendar_events ce
+                                 WHERE ce.exam_id = et.exam_id AND ce.group_id = et.group_id AND ce.institution_id = et.institution_id)',
+            [
+                'Examen: ' . $this->title, $this->subject_id, $this->institution_id,
+                $inicio->toDateTimeString(), $fin->toDateTimeString(), \App\Enums\CalendarEventType::Exam->value,
+                $this->created_by_teacher_id, $this->id, $this->institution_id,
+            ]
+        );
 
-        $creados = 0;
-
-        foreach ($this->groups()->pluck('groups.id') as $groupId) {
-            if (in_array($groupId, $yaTienen, true)) {
-                continue;
-            }
-
-            CalendarEvent::create([
-                'institution_id' => $this->institution_id,
-                'title'          => 'Examen: ' . $this->title,
-                'description'    => $this->subject?->name,
-                'start_at'       => $inicio,
-                'end_at'         => $fin,
-                'event_type'     => \App\Enums\CalendarEventType::Exam,
-                'exam_id'        => $this->id,
-                'group_id'       => $groupId,
-                'created_by'     => $this->created_by_teacher_id,
-            ]);
-            $creados++;
+        if ($creados > 0) {
+            \App\Support\TenantCache::invalidar($this->institution_id, \App\Support\TenantCache::AGENDA);
         }
 
         return $creados;

@@ -44,6 +44,15 @@ final class TenantCache
     public const CONFIG = 'config';
 
     /**
+     * Mapas id → fila de materias y de aulas (`CatalogoMaterias`, `CatalogoGrupos`). Aparte de
+     * `CATALOGO` a propósito: ese se invalida con cada examen (las materias llevan `exams_count`),
+     * y estos mapas solo dependen de las propias materias y aulas (y del recuento de alumnado de
+     * cada aula). Si colgaran de `CATALOGO`, cada examen creado o activado los dejaría fríos y la
+     * respuesta de la propia escritura tendría que volver a leerlos.
+     */
+    public const MAPAS = 'mapas';
+
+    /**
      * Avisos del calendario que ve el alumnado, compartidos por aula. Depende de
      * los avisos, de los exámenes y las aulas que muestran, y del recuento de
      * alumnado de cada aula.

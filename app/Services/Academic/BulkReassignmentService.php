@@ -321,7 +321,7 @@ class BulkReassignmentService
             ]);
 
         // `student_count` está en el listado de aulas cacheado y este UPDATE no dispara eventos.
-        TenantCache::invalidar(app()->bound('tenant_id') ? app('tenant_id') : null, TenantCache::CATALOGO, TenantCache::AGENDA);
+        TenantCache::invalidar(app()->bound('tenant_id') ? app('tenant_id') : null, TenantCache::CATALOGO, TenantCache::MAPAS, TenantCache::AGENDA);
     }
 
     private function resumenGrupo(

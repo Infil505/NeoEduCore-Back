@@ -6,6 +6,7 @@ use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Exams\Question;
 use Illuminate\Support\Collection;
+use App\Support\TenantCache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -155,26 +156,35 @@ class ExamGradingService
             }
         }
 
-        // Las respuestas van primero: student_answer_options tiene FK contra ellas.
-        foreach (array_chunk($filasRespuestas, config('bulk.insert_batch_size')) as $lote) {
-            DB::table('student_answers')->insert($lote);
-        }
-
-        foreach (array_chunk($filasOpciones, config('bulk.insert_batch_size')) as $lote) {
-            DB::table('student_answer_options')->insert($lote);
-        }
-
-        // Sin `fresh()` después: `update()` ya deja en memoria lo que acaba de
-        // escribir, y releer la fila era una query más en la operación de pico
-        // (O3). El segundo se trunca aquí porque la columna es timestamp(0): así
-        // la respuesta muestra lo mismo que quedó guardado.
-        $attempt->update([
+        // Sin `fresh()` después: la fila queda en memoria con lo que se acaba de escribir (O3). El
+        // segundo se trunca porque la columna es timestamp(0): así la respuesta muestra lo mismo
+        // que quedó guardado.
+        $valores = [
             'score' => round($totalScore, 2),
             'max_score' => round($maxScore, 2),
             'submitted_at' => now()->startOfSecond(),
             // Con respuestas por revisar la nota aún puede subir: queda pendiente.
             'grade_status' => $pendientes > 0 ? 'pending' : 'completed',
-        ]);
+        ];
+
+        if (count($filasRespuestas) + count($filasOpciones) <= (int) config('bulk.insert_batch_size')) {
+            // Respuestas, opciones marcadas y nota del intento en UNA sentencia (CTE): antes eran tres
+            // viajes a la base. La clave foránea de las opciones contra las respuestas se comprueba al
+            // terminar la sentencia, así que pueden insertarse juntas.
+            $this->guardarEnUnaSentencia($attempt, $filasRespuestas, $filasOpciones, $valores);
+        } else {
+            // Lote enorme (más filas que el tope de inserción): por tandas, como siempre.
+            // Las respuestas van primero: student_answer_options tiene FK contra ellas.
+            foreach (array_chunk($filasRespuestas, config('bulk.insert_batch_size')) as $lote) {
+                DB::table('student_answers')->insert($lote);
+            }
+
+            foreach (array_chunk($filasOpciones, config('bulk.insert_batch_size')) as $lote) {
+                DB::table('student_answer_options')->insert($lote);
+            }
+
+            $attempt->update($valores);
+        }
 
         return [
             'attempt'    => $attempt,
@@ -184,6 +194,54 @@ class ExamGradingService
                 'pendiente'   => $fila['review_status'] === 'needs_review',
             ], $filasRespuestas),
         ];
+    }
+
+    /**
+     * Inserta las respuestas y sus opciones y actualiza la nota del intento con UNA sentencia.
+     * Al no pasar por Eloquent no salta el observador que invalida la caché de reportes: se invalida
+     * aquí, y el modelo del intento queda en memoria como tras un `update()`.
+     *
+     * @param  array<int,array<string,mixed>>  $respuestas
+     * @param  array<int,array<string,mixed>>  $opciones
+     * @param  array<string,mixed>  $valores  score, max_score, submitted_at, grade_status
+     */
+    private function guardarEnUnaSentencia(ExamAttempt $attempt, array $respuestas, array $opciones, array $valores): void
+    {
+        $ahora = now();
+        $sql = '';
+        $bindings = [];
+
+        if ($respuestas !== []) {
+            $sql .= 'WITH r AS (INSERT INTO student_answers (id, institution_id, attempt_id, question_id, answer_text, is_correct, points_awarded, correct_answer_snapshot, answered_at, review_status, created_at, updated_at) VALUES '
+                . implode(', ', array_fill(0, count($respuestas), '(?, ?, ?, ?, ?, ?::boolean, ?, ?::jsonb, ?, ?, ?, ?)')) . ' RETURNING 1)';
+            foreach ($respuestas as $f) {
+                array_push(
+                    $bindings, $f['id'], $f['institution_id'], $f['attempt_id'], $f['question_id'], $f['answer_text'],
+                    $f['is_correct'] ? 'true' : 'false', $f['points_awarded'], $f['correct_answer_snapshot'],
+                    $f['answered_at'], $f['review_status'], $f['created_at'], $f['updated_at']
+                );
+            }
+        }
+
+        if ($opciones !== []) {
+            $sql .= ', o AS (INSERT INTO student_answer_options (institution_id, student_answer_id, option_id) VALUES '
+                . implode(', ', array_fill(0, count($opciones), '(?, ?, ?)')) . ' RETURNING 1)';
+            foreach ($opciones as $f) {
+                array_push($bindings, $f['institution_id'], $f['student_answer_id'], $f['option_id']);
+            }
+        }
+
+        $sql = ($sql === '' ? '' : $sql . ' ')
+            . 'UPDATE exam_attempts SET score = ?, max_score = ?, submitted_at = ?, grade_status = ?, updated_at = ? WHERE id = ? AND institution_id = ?';
+        array_push(
+            $bindings, $valores['score'], $valores['max_score'], $valores['submitted_at'], $valores['grade_status'], $ahora,
+            $attempt->id, $attempt->institution_id
+        );
+
+        DB::affectingStatement($sql, $bindings);
+
+        $attempt->forceFill($valores + ['updated_at' => $ahora])->syncOriginal();
+        TenantCache::invalidar($attempt->institution_id, TenantCache::REPORTES);
     }
 
     /**

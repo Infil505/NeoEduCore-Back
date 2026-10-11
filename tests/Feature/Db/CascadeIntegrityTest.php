@@ -132,6 +132,28 @@ class CascadeIntegrityTest extends TestCase
         $this->assertTrue($this->existe('groups', 'id', $e['group']->id));
     }
 
+    public function test_deleting_a_subject_with_ai_recommendations_cascades_them_instead_of_500(): void
+    {
+        $e = $this->escenarioCompleto();
+        $recs = \App\Models\AI\AiRecommendation::factory()->count(2)->create([
+            'institution_id' => $this->inst->id, 'student_user_id' => $e['studentUser']->id,
+            'subject_id' => $e['subject']->id, 'exam_id' => $e['exam']->id,
+        ]);
+        // Otra materia con su propia recomendación: no se toca.
+        $otra = Subject::factory()->create(['institution_id' => $this->inst->id]);
+        $ajena = \App\Models\AI\AiRecommendation::factory()->create([
+            'institution_id' => $this->inst->id, 'student_user_id' => $e['studentUser']->id, 'subject_id' => $otra->id,
+        ]);
+
+        // `ai_recommendations.subject_id` era SET NULL sobre una columna NOT NULL: esto daba 500.
+        $this->deleteJson("/api/subjects/{$e['subject']->id}")->assertNoContent();
+
+        foreach ($recs as $r) {
+            $this->assertFalse($this->existe('ai_recommendations', 'id', $r->id));
+        }
+        $this->assertTrue($this->existe('ai_recommendations', 'id', $ajena->id));
+    }
+
     public function test_deleting_a_group_cascades_memberships_and_targets(): void
     {
         $e = $this->escenarioCompleto();

@@ -227,6 +227,32 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Asistente del docente
+    |--------------------------------------------------------------------------
+    |
+    | Conversa con el docente (o el administrador) sobre los resultados de su
+    | clase: qué pregunta se falló más, dónde reforzar. Mismos criterios de coste
+    | que el tutor, con respuestas más largas porque propone actividades.
+    */
+    'docente' => [
+        'max_tokens'       => (int) env('OPENAI_DOCENTE_MAX_TOKENS', 700),
+        'temperature'      => (float) env('OPENAI_DOCENTE_TEMPERATURE', 0.4),
+        'history_messages' => (int) env('OPENAI_DOCENTE_HISTORY_MESSAGES', 6),
+        // Exámenes recientes con resultados que entran como contexto.
+        'exams'            => (int) env('OPENAI_DOCENTE_EXAMS', 4),
+        'notice' => env(
+            'OPENAI_DOCENTE_NOTICE',
+            'Respuesta generada por IA a partir de los resultados de tu clase. Revísala antes de aplicarla.'
+        ),
+        'injection_reply' => env(
+            'OPENAI_DOCENTE_INJECTION_REPLY',
+            'Esa parte no la puedo hacer: mis instrucciones no se cambian. '
+            . 'Puedo ayudarte a analizar los resultados de tu clase y a planear el refuerzo.'
+        ),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Validación de la salida
     |--------------------------------------------------------------------------
     |

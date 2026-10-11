@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Students;
 
 use App\Http\Controllers\Controller;
+use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
 use App\Models\Exams\Question;
 use App\Support\RelacionesEnLinea;
@@ -48,7 +49,7 @@ class StudentAnswerController extends Controller
      */
     public function review(
         Request $request,
-        StudentAnswer $studentAnswer,
+        string $studentAnswer,
         StudentProgressService $progressService,
         AiRecommendationService $aiService
     ) {
@@ -59,10 +60,20 @@ class StudentAnswerController extends Controller
             return response()->json(['message' => 'No autorizado'], 403);
         }
 
-        $studentAnswer->load(['question', 'attempt.exam']);
+        // La respuesta con su pregunta, y el intento con su examen: DOS consultas (antes el binding y
+        // cuatro relaciones más). Con la base remota cada viaje cuesta ~0,4 s.
+        $studentAnswer = RelacionesEnLinea::unir(StudentAnswer::query(), [
+            'question' => ['questions', 'question_id', Question::COLUMNAS],
+        ])->where('student_answers.id', $studentAnswer)->first() ?? abort(404);
+        RelacionesEnLinea::hidratar([$studentAnswer], ['question' => Question::class]);
+
+        $intento = RelacionesEnLinea::unir(ExamAttempt::query(), [
+            'exam' => ['exams', 'exam_id', Exam::COLUMNAS],
+        ])->where('exam_attempts.id', $studentAnswer->attempt_id)->first() ?? abort(404);
+        RelacionesEnLinea::hidratar([$intento], ['exam' => Exam::class]);
 
         if ($user->user_type->value === 'teacher') {
-            if ($studentAnswer->attempt->exam->created_by_teacher_id !== $user->id) {
+            if ($intento->exam->created_by_teacher_id !== $user->id) {
                 return response()->json(['message' => 'No autorizado'], 403);
             }
         }
@@ -91,6 +102,7 @@ class StudentAnswerController extends Controller
 
         $result = DB::transaction(function () use (
             $studentAnswer,
+            $intento,
             $data,
             $progressService,
             $aiService
@@ -103,14 +115,23 @@ class StudentAnswerController extends Controller
                 'review_status'  => 'reviewed',
             ]);
 
-            // 2) Recalcular attempt (score y max_score)
-            $attempt = $studentAnswer->attempt()->with(['answers.question', 'exam'])->first();
+            // 2) Recalcular attempt (score y max_score): los totales salen de UNA consulta agregada
+            // (antes se cargaban todas las respuestas con su pregunta).
+            $attempt = $intento;
 
-            $total = (float) $attempt->answers->sum('points_awarded');
-            $max   = (float) $attempt->answers->sum(fn ($a) => (float) ($a->question?->points ?? 0));
+            $suma = DB::selectOne(
+                "SELECT COALESCE(SUM(sa.points_awarded), 0) AS total, COALESCE(SUM(q.points), 0) AS maximo,
+                        COALESCE(BOOL_OR(sa.review_status = 'needs_review'), false) AS pendientes
+                   FROM student_answers sa LEFT JOIN questions q ON q.id = sa.question_id
+                  WHERE sa.attempt_id = ? AND sa.institution_id = ?",
+                [$attempt->id, $attempt->institution_id]
+            );
+
+            $total = (float) $suma->total;
+            $max   = (float) $suma->maximo;
 
             // Sigue pendiente mientras quede alguna respuesta sin revisar.
-            $quedanPendientes = $attempt->answers->contains(fn ($a) => ($a->review_status?->value ?? $a->review_status) === 'needs_review');
+            $quedanPendientes = (bool) $suma->pendientes;
 
             $attempt->update([
                 'score' => round($total, 2),
@@ -148,9 +169,14 @@ class StudentAnswerController extends Controller
                 );
             }
 
+            // Sin `fresh()`: `update()` ya deja en memoria lo escrito, y releer eran dos viajes más.
+            // La pregunta y el examen solo sirvieron para decidir; no van en la respuesta.
+            $studentAnswer->unsetRelation('question');
+            $attempt->unsetRelation('exam');
+
             return [
-                'studentAnswer' => $studentAnswer->fresh(),
-                'attempt' => $attempt->fresh(),
+                'studentAnswer' => $studentAnswer,
+                'attempt' => $attempt,
                 'progress' => $progress,
                 'recommendation' => $createdRec,
             ];

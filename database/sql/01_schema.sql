@@ -1615,7 +1615,7 @@ ALTER TABLE ONLY public.ai_recommendations
 --
 
 ALTER TABLE ONLY public.ai_recommendations
-    ADD CONSTRAINT ai_recommendations_subject_id_foreign FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE SET NULL;
+    ADD CONSTRAINT ai_recommendations_subject_id_foreign FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE CASCADE;
 
 
 --

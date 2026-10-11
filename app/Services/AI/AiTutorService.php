@@ -222,8 +222,12 @@ class AiTutorService
         // Si la conversación es sobre un examen ya entregado, el tutor ve qué
         // preguntas falló (sin la respuesta correcta). Va aparte del prompt
         // cacheado porque depende de la sesión, no solo del estudiante.
-        if ($session->exam_id !== null) {
-            $detalle = app(ContextoDeExamenes::class)->detalleDeExamen($studentUserId, $session->institution_id, $session->exam_id);
+        // Sin examen fijado pero con materia: el último examen que entregó de ella.
+        if ($session->exam_id !== null || $session->subject_id !== null) {
+            $contexto = app(ContextoDeExamenes::class);
+            $detalle = $session->exam_id !== null
+                ? $contexto->detalleDeExamen($studentUserId, $session->institution_id, $session->exam_id)
+                : $contexto->detalleDeMateria($studentUserId, $session->institution_id, $session->subject_id);
 
             if ($detalle !== '') {
                 $systemPrompt .= "\n" . $detalle . "\nExplica el concepto y el procedimiento; no resuelvas la pregunta ni des la respuesta correcta.";
@@ -672,13 +676,20 @@ class AiTutorService
         // Cómo le fue en los exámenes: es lo que separa un consejo genérico
         // («practica más») de uno ajustado («en la prueba de fracciones fallaste
         // comparación y equivalentes»). Ver `ContextoDeExamenes`.
-        $examenes = app(ContextoDeExamenes::class)->resumen($student->user_id, $student->institution_id);
+        $contexto = app(ContextoDeExamenes::class);
+        $examenes = $contexto->resumen($student->user_id, $student->institution_id);
+        $puntos   = $contexto->puntosAMejorar($student->user_id);
 
-        if ($examenes !== '') {
-            $parts[] = $examenes;
-            $parts[] = "Cuando el estudiante hable de una materia o de un examen, apóyate en esos resultados: "
-                . "nombra el tema donde falló y propón qué repasar. No des la respuesta correcta de preguntas "
-                . "de un examen: explica el concepto. No inventes resultados que no estén aquí.";
+        if ($examenes !== '' || $puntos !== '') {
+            $parts[] = trim($examenes . "\n" . $puntos);
+            $parts[] = "ANTES de responder, revisa estos resultados: son lo que el estudiante ya hizo. "
+                . "Si pregunta en qué mejorar, qué estudiar o cómo va, parte de ellos: nombra su nota, el tema "
+                . "donde más falló y propón qué repasar primero. Si pregunta por una materia o un examen, "
+                . "apóyate en lo que le salió ahí. No des la respuesta correcta de preguntas de un examen: "
+                . "explica el concepto. No inventes resultados que no estén aquí.";
+        } else {
+            $parts[] = "El estudiante aún no ha entregado ningún examen: no tienes notas suyas. "
+                . "Si pregunta en qué mejorar, dile que primero haga un examen y no inventes resultados.";
         }
 
         // El registro va explícito y no como «adapta el nivel al perfil»: con

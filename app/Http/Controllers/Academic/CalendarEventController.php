@@ -164,8 +164,13 @@ class CalendarEventController extends Controller
             return response()->json(['message' => 'Solo el administrador publica avisos para toda la institución.'], 403);
         }
 
-        if (!empty($data['exam_id']) && !$this->examenVisible($user, $data['exam_id'])) {
-            return response()->json(['message' => 'Examen no encontrado'], 404);
+        // El examen enlazado (id y título), que además sirve para la respuesta.
+        $examen = null;
+        if (!empty($data['exam_id'])) {
+            $examen = $this->examenVisible($user, $data['exam_id']);
+            if ($examen === null) {
+                return response()->json(['message' => 'Examen no encontrado'], 404);
+            }
         }
 
         $campos = fn (?string $grupoId, ?string $audience) => [
@@ -182,10 +187,10 @@ class CalendarEventController extends Controller
 
         // Aviso del centro: un solo evento, sin sección, para el público elegido.
         if (!empty($data['audience'])) {
-            $evento = CalendarEvent::create($campos(null, $data['audience']))->load(['creator:id,full_name', 'group:id,name,grade,section', 'exam:id,title']);
-            NotificarAviso::dispatch([$evento->id]);
+            $eventos = $this->insertarEventos([$campos(null, $data['audience'])], $user, $examen);
+            NotificarAviso::dispatch([$eventos[0]->id]);
 
-            return response()->json(['data' => [$evento]], 201);
+            return response()->json(['data' => $eventos], 201);
         }
 
         $pedidas = $data['group_ids'] ?? (isset($data['group_id']) ? [$data['group_id']] : null);
@@ -203,10 +208,9 @@ class CalendarEventController extends Controller
             return $grupos;
         }
 
-        $eventos = DB::transaction(fn () => array_map(
-            fn (string $grupoId) => CalendarEvent::create($campos($grupoId, null))->load(['creator:id,full_name', 'group:id,name,grade,section', 'exam:id,title']),
-            $grupos
-        ));
+        // Un solo INSERT para todas las aulas (atómico por sí mismo, sin transacción) y la respuesta
+        // armada con lo ya conocido: antes eran un INSERT y tres lecturas por aula.
+        $eventos = $this->insertarEventos(array_map(fn (string $grupoId) => $campos($grupoId, null), $grupos), $user, $examen);
 
         // Los estudiantes de esas secciones reciben el aviso en su campana, repartido
         // en segundo plano por el worker de la cola (la respuesta no espera).
@@ -250,8 +254,11 @@ class CalendarEventController extends Controller
     /**
      * Actualizar evento
      */
-    public function update(Request $request, CalendarEvent $calendarEvent)
+    public function update(Request $request, string $calendarEvent)
     {
+        // El binding de ruta, a mano: una sola consulta con acotado al centro (TenantScoped).
+        $calendarEvent = CalendarEvent::query()->where('calendar_events.id', $calendarEvent)->first() ?? abort(404);
+
         // S6: el evento es de quien lo creó. El admin sí puede ordenar el
         // calendario del centro.
         if (! $this->esSuyoOEsAdmin($request->user(), $calendarEvent->created_by, 'este evento')) {
@@ -290,8 +297,12 @@ class CalendarEventController extends Controller
             ], 422);
         }
 
-        if (!empty($data['exam_id']) && !$this->examenVisible($request->user(), $data['exam_id'])) {
-            return response()->json(['message' => 'Examen no encontrado'], 404);
+        $examen = null;
+        if (!empty($data['exam_id'])) {
+            $examen = $this->examenVisible($request->user(), $data['exam_id']);
+            if ($examen === null) {
+                return response()->json(['message' => 'Examen no encontrado'], 404);
+            }
         }
 
         // Mover el aviso a otra aula exige que sea una de las suyas.
@@ -309,16 +320,20 @@ class CalendarEventController extends Controller
         $calendarEvent->fill($data);
         $calendarEvent->save();
 
+        // Sin `fresh()` ni tres relaciones más: `save()` ya deja el evento en memoria y el creador, el
+        // aula y el examen se arman con lo conocido (ver `conRelaciones`).
         return response()->json([
-            'data' => $calendarEvent->fresh()->load(['creator:id,full_name', 'group:id,name,grade,section', 'exam:id,title']),
+            'data' => $this->conRelaciones($calendarEvent, $request->user(), $examen),
         ]);
     }
 
     /**
      * Eliminar evento
      */
-    public function destroy(Request $request, CalendarEvent $calendarEvent)
+    public function destroy(Request $request, string $calendarEvent)
     {
+        $calendarEvent = CalendarEvent::query()->where('calendar_events.id', $calendarEvent)->first() ?? abort(404);
+
         if (! $this->esSuyoOEsAdmin($request->user(), $calendarEvent->created_by, 'este evento')) {
             return $this->noAutorizadoPorAutoria('este evento');
         }
@@ -333,8 +348,64 @@ class CalendarEventController extends Controller
      * quien crea el aviso (un docente solo enlaza los suyos). Antes el `uuid` se
      * guardaba sin comprobar nada.
      */
-    private function examenVisible(object $user, string $examId): bool
+    private function examenVisible(object $user, string $examId): ?Exam
     {
-        return Exam::query()->whereKey($examId)->visibleTo($user)->exists();
+        return Exam::query()->visibleTo($user)->where('exams.id', $examId)->first(['exams.id', 'exams.title']);
+    }
+
+    /**
+     * Inserta los eventos (uno por aula) con UNA sentencia y los devuelve con `creator`, `group` y
+     * `exam` ya puestos. Pasa por los mismos casts del modelo que `create()` (fechas, tipo), pero no
+     * por sus observadores: la caché de avisos del alumnado se invalida aquí.
+     *
+     * @param  array<int,array<string,mixed>>  $filas
+     * @return array<int,CalendarEvent>
+     */
+    private function insertarEventos(array $filas, object $user, ?Exam $examen): array
+    {
+        $ahora = now();
+        $eventos = [];
+
+        foreach ($filas as $campos) {
+            $eventos[] = (new CalendarEvent())->forceFill($campos + [
+                'id'             => (string) \Illuminate\Support\Str::orderedUuid(),
+                'institution_id' => $user->institution_id,
+                'created_at'     => $ahora,
+                'updated_at'     => $ahora,
+            ]);
+        }
+
+        DB::table('calendar_events')->insert(array_map(fn (CalendarEvent $e) => $e->getAttributes(), $eventos));
+        TenantCache::invalidar($user->institution_id, TenantCache::AGENDA);
+
+        foreach ($eventos as $evento) {
+            $evento->exists = true;
+            $evento->syncOriginal();
+            $this->conRelaciones($evento, $user, $examen);
+        }
+
+        return $eventos;
+    }
+
+    /**
+     * `creator` (id y nombre), `group` (id, nombre, grado y sección) y `exam` (id y título) del
+     * evento, sin consultarlos: quien escribe es el creador casi siempre, el aula sale del catálogo
+     * en caché y el examen suele venir de la comprobación de visibilidad.
+     */
+    private function conRelaciones(CalendarEvent $evento, object $user, ?Exam $examen = null): CalendarEvent
+    {
+        $evento->setRelation('creator', $evento->created_by === $user->id
+            ? (new \App\Models\Admin\User())->newFromBuilder(['id' => $user->id, 'full_name' => $user->full_name])
+            : \App\Models\Admin\User::query()->select('id', 'full_name')->find($evento->created_by));
+
+        $grupo = $evento->group_id ? \App\Support\CatalogoGrupos::delCentro($evento->institution_id)->get($evento->group_id) : null;
+        $evento->setRelation('group', $grupo ? (clone $grupo)->setVisible(['id', 'name', 'grade', 'section']) : null);
+
+        if ($evento->exam_id && ($examen === null || $examen->id !== $evento->exam_id)) {
+            $examen = Exam::query()->select('id', 'title')->find($evento->exam_id);
+        }
+        $evento->setRelation('exam', $evento->exam_id ? $examen : null);
+
+        return $evento;
     }
 }

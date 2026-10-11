@@ -115,6 +115,37 @@ class ContextoDeExamenesTest extends TestCase
         return $peticiones[$indice] ?? '';
     }
 
+    public function test_el_tutor_sabe_cuantas_preguntas_fallo_y_se_le_manda_revisar_primero_los_resultados(): void
+    {
+        $this->fingir();
+
+        $this->postJson('/api/ai/tutor/chat', ['message' => '¿En qué debo mejorar?'])->assertOk();
+
+        $enviado = $this->enviado();
+        $this->assertStringContainsString('Falló 1 de 2 preguntas', $enviado);
+        // La pregunta concreta y lo que contestó, aunque no se abra el examen.
+        $this->assertStringContainsString('Falló: «Compara 1/2 y 1/3»', $enviado);
+        $this->assertStringContainsString('respondió «las dos iguales»', $enviado);
+        $this->assertStringNotContainsString('Suma 0,5 y 0,25', $enviado, 'Decimales estaba bien.');
+        $this->assertStringContainsString('ANTES de responder, revisa estos resultados', $enviado);
+        $this->assertStringNotContainsString(self::SECRETO, $enviado);
+    }
+
+    public function test_al_entrar_por_una_materia_el_tutor_ve_su_ultimo_examen_de_ella(): void
+    {
+        $this->fingir();
+
+        $this->postJson('/api/ai/tutor/chat', [
+            'message'    => 'Ayúdame con mates',
+            'subject_id' => $this->matematicas->id,
+        ])->assertOk();
+
+        $enviado = $this->enviado();
+        $this->assertStringContainsString('Examen sobre el que se conversa', $enviado);
+        $this->assertStringContainsString('Compara 1/2 y 1/3', $enviado);
+        $this->assertStringNotContainsString(self::SECRETO, $enviado);
+    }
+
     public function test_el_tutor_recibe_los_resultados_y_los_temas_donde_fallo(): void
     {
         $this->fingir();

@@ -286,7 +286,7 @@ class RecomendacionesPorExamenTest extends TestCase
         foreach (['Fracciones', 'Fracciones', 'Decimales'] as $i => $tema) {
             $q = Question::factory()->create([
                 'institution_id' => $this->centro->id, 'exam_id' => $examen->id, 'question_type' => 'multiple_choice',
-                'question_text' => "Pregunta {$i}", 'topic' => $tema, 'indicator' => 'Compara fracciones', 'order_index' => $i,
+                'question_text' => "Pregunta {$i}", 'topic' => $tema, 'indicator' => 'Compara fracciones', 'order_index' => $i, 'points' => 1,
             ]);
             $buena = \App\Models\Exams\QuestionOption::create([
                 'institution_id' => $this->centro->id, 'question_id' => $q->id, 'option_index' => 0,

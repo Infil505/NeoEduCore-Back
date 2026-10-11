@@ -173,104 +173,90 @@ class GroupController extends Controller
      * Asignar estudiantes al grupo (alta)
      * body: { "student_user_ids": ["uuid", ...] }
      */
-    public function addStudents(Request $request, Group $group)
+    public function addStudents(Request $request, string $group)
     {
         $data = $request->validate([
             'student_user_ids' => ['required', 'array', 'min:1'],
             'student_user_ids.*' => ['uuid'],
         ]);
 
-        return DB::transaction(function () use ($group, $data) {
-            // Solo estudiantes del tenant (TenantScoped en Student)
-            $students = Student::whereIn('user_id', $data['student_user_ids'])->pluck('user_id')->all();
+        $centro = $request->user()->institution_id;
+        $ids = array_values(array_unique($data['student_user_ids']));
+        $marcas = implode(', ', array_fill(0, count($ids), '?'));
 
-            $now = now()->toDateTimeString();
+        // UNA sentencia atómica (antes: binding, transacción, lectura de alumnos, upsert, recuento
+        // y relectura del aula): activa la matrícula de los alumnos DEL CENTRO (los de otro no
+        // aparecen en `act`), conserva `joined_at` al reactivar y deja `student_count` al día. El
+        // recuento no puede leer lo que inserta esta misma sentencia, así que cuenta las matrículas
+        // activas que no están en `act` y suma las de `act` (todas quedan activas).
+        $fila = DB::selectOne(
+            "WITH act AS (SELECT user_id FROM students WHERE institution_id = ? AND user_id IN ({$marcas})),
+                  ins AS (INSERT INTO group_students (institution_id, group_id, student_user_id, joined_at, left_at)
+                          SELECT ?, ?, a.user_id, ?, NULL FROM act a
+                           WHERE EXISTS (SELECT 1 FROM groups g WHERE g.id = ? AND g.institution_id = ?)
+                          ON CONFLICT (group_id, student_user_id) DO UPDATE SET left_at = NULL
+                          RETURNING student_user_id)
+             UPDATE groups SET updated_at = now(),
+                    student_count = (SELECT COUNT(*) FROM group_students gs
+                                      WHERE gs.group_id = ? AND gs.institution_id = ? AND gs.left_at IS NULL
+                                        AND gs.student_user_id NOT IN (SELECT user_id FROM act))
+                                    + (SELECT COUNT(*) FROM act)
+              WHERE id = ? AND institution_id = ?
+          RETURNING *",
+            array_merge([$centro], $ids, [$centro, $group, now()->toDateTimeString(), $group, $centro, $group, $centro, $group, $centro])
+        );
 
-            // INSERT ... ON CONFLICT (group_id, student_user_id) DO UPDATE SET left_at = NULL
-            // preserva joined_at original para reactivaciones; 1 query en lugar de 2N.
-            $rows = array_map(fn($id) => [
-                // institution_id es NOT NULL sin default: omitirlo revienta el
-                // INSERT. No se notaba porque este método aún no está enrutado.
-                'institution_id'  => $group->institution_id,
-                'group_id'        => $group->id,
-                'student_user_id' => $id,
-                'joined_at'       => $now,
-                'left_at'         => null,
-            ], $students);
-
-            if (!empty($rows)) {
-                DB::table('group_students')->upsert(
-                    $rows,
-                    ['group_id', 'student_user_id'],
-                    ['left_at']  // solo actualiza left_at; joined_at se conserva en conflicto
-                );
-            }
-
-            $this->recountStudents($group);
-
-            return response()->json([
-                'message' => 'Estudiantes asignados',
-                'data' => [
-                    'group' => $group->fresh(),
-                ],
-            ]);
-        });
+        return $this->respuestaDeAula($fila, $centro, 'Estudiantes asignados');
     }
 
     /**
      * Remover estudiantes del grupo (baja lógica)
      * body: { "student_user_ids": ["uuid", ...] }
      */
-    public function removeStudents(Request $request, Group $group)
+    public function removeStudents(Request $request, string $group)
     {
         $data = $request->validate([
             'student_user_ids' => ['required', 'array', 'min:1'],
             'student_user_ids.*' => ['uuid'],
         ]);
 
-        return DB::transaction(function () use ($group, $data) {
-            $now = now();
+        $centro = $request->user()->institution_id;
+        $ids = array_values(array_unique($data['student_user_ids']));
+        $marcas = implode(', ', array_fill(0, count($ids), '?'));
 
-            // El `institution_id` es redundante —`$group` llega por route binding
-            // y `Group` es TenantScoped, así que ya está acotado— pero lo deja
-            // dicho en la consulta en vez de en una cadena de deducciones.
-            DB::table('group_students')
-                ->where('institution_id', $group->institution_id)
-                ->where('group_id', $group->id)
-                ->whereIn('student_user_id', $data['student_user_ids'])
-                ->whereNull('left_at')
-                ->update(['left_at' => $now]);
+        // UNA sentencia atómica: da de baja a los indicados y recalcula `student_count` (las
+        // matrículas activas que no se están dando de baja).
+        $fila = DB::selectOne(
+            "WITH rem AS (UPDATE group_students SET left_at = ?
+                           WHERE institution_id = ? AND group_id = ? AND student_user_id IN ({$marcas}) AND left_at IS NULL
+                       RETURNING student_user_id)
+             UPDATE groups SET updated_at = now(),
+                    student_count = (SELECT COUNT(*) FROM group_students gs
+                                      WHERE gs.group_id = ? AND gs.institution_id = ? AND gs.left_at IS NULL
+                                        AND gs.student_user_id NOT IN (SELECT student_user_id FROM rem))
+              WHERE id = ? AND institution_id = ?
+          RETURNING *",
+            array_merge([now()->toDateTimeString(), $centro, $group], $ids, [$group, $centro, $group, $centro])
+        );
 
-            $this->recountStudents($group);
-
-            return response()->json([
-                'message' => 'Estudiantes removidos',
-                'data' => [
-                    'group' => $group->fresh(),
-                ],
-            ]);
-        });
+        return $this->respuestaDeAula($fila, $centro, 'Estudiantes removidos');
     }
 
-    /**
-     * Recalcular student_count (RN-STU-012)
-     */
-    private function recountStudents(Group $group): void
+    /** La respuesta de `addStudents`/`removeStudents` desde la fila que devolvió la sentencia. */
+    private function respuestaDeAula(?object $fila, string $centro, string $mensaje)
     {
-        // UPDATE con subquery: 1 roundtrip en lugar de COUNT + UPDATE separados.
-        DB::table('groups')
-            ->where('institution_id', $group->institution_id)
-            ->where('id', $group->id)
-            ->update([
-                'student_count' => DB::table('group_students')
-                    ->where('institution_id', $group->institution_id)
-                    ->where('group_id', $group->id)
-                    ->whereNull('left_at')
-                    ->count(),
-                'updated_at' => now(),
-            ]);
+        if ($fila === null) {
+            abort(404);
+        }
 
-        // `student_count` está en el listado de aulas cacheado y este UPDATE no dispara eventos.
-        TenantCache::invalidar($group->institution_id, TenantCache::CATALOGO, TenantCache::AGENDA);
+        // `student_count` está en el listado de aulas cacheado y esto no dispara eventos de Eloquent.
+        TenantCache::invalidar($centro, TenantCache::CATALOGO, TenantCache::MAPAS, TenantCache::AGENDA);
+
+        return response()->json([
+            'message' => $mensaje,
+            'data' => [
+                'group' => (new Group())->newFromBuilder((array) $fila),
+            ],
+        ]);
     }
 }

@@ -244,6 +244,10 @@ Route::middleware(['auth:sanctum', 'activa', 'clave.temporal'])->group(function 
         // También llama a OpenAI → también entra en el presupuesto global de IA
         Route::post('/ai/generate', [AiController::class, 'generate'])
             ->middleware(['throttle:ai-generate', 'throttle:ai-global']);
+        // Asistente del docente: conversa sobre los resultados de su clase (preguntas
+        // más falladas, qué reforzar). Mismo gasto de IA → mismos límites.
+        Route::post('/ai/teacher/chat', [\App\Http\Controllers\AI\AiAsistenteDocenteController::class, 'chat'])
+            ->middleware(['throttle:ai-generate', 'throttle:ai-global']);
         Route::get('/ai-recommendations', [AiRecommendationController::class, 'index']);
         Route::get('/ai-recommendations/{aiRecommendation}', [AiRecommendationController::class, 'show']);
 

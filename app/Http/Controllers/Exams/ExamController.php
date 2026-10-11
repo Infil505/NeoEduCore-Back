@@ -14,7 +14,14 @@ use App\Rules\FechaRazonable;
 use App\Rules\EnlaceDeApoyo;
 use App\Rules\UrlDeVideo;
 use App\Models\Academic\Group;
+use App\Models\Admin\User;
+use App\Rules\MateriaDelCentro;
+use App\Support\AjustesDelCentro;
+use App\Support\CatalogoGrupos;
 use App\Support\PreguntasEnLinea;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Relations\Pivot;
+use Illuminate\Support\Facades\DB;
 use App\Support\RelacionesEnLinea;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -33,12 +40,8 @@ class ExamController extends Controller
      */
     private function limiteDuracion(object $user): int
     {
-        $settings = array_merge(
-            Institution::$defaultSettings,
-            Institution::query()->whereKey($user->institution_id)->value('settings') ?? []
-        );
-
-        return (int) $settings['max_exam_duration'];
+        // Ajustes del centro desde la caché (`AjustesDelCentro`): sin consulta a la base.
+        return (int) AjustesDelCentro::de($user->institution_id)['max_exam_duration'];
     }
 
     /**
@@ -56,8 +59,9 @@ class ExamController extends Controller
      */
     private function resolverGruposDestino(array $groupIds, string $subjectId, object $user)
     {
-        // TenantScoped en Group descarta los de otra institución.
-        $grupos = Group::whereIn('id', $groupIds)->pluck('id')->all();
+        // Existencia desde el catálogo de aulas en caché (solo las del centro del usuario).
+        $catalogo = CatalogoGrupos::delCentro($user->institution_id);
+        $grupos = array_values(array_filter($groupIds, fn ($id) => $catalogo->has($id)));
 
         $fuera = array_diff($groupIds, $grupos);
 
@@ -72,18 +76,20 @@ class ExamController extends Controller
             return $grupos;
         }
 
-        $noAsignados = [];
-
-        foreach ($grupos as $grupoId) {
-            if (!$this->docenteAlcanzaGrupoEnMateria($user, $grupoId, $subjectId)) {
-                $noAsignados[] = $grupoId;
-            }
-        }
+        // Todas las asignaciones del docente en esta materia, en UNA consulta (antes una por aula).
+        $asignados = DB::table('teacher_assignments')
+            ->where('teacher_user_id', $user->id)
+            ->where('subject_id', $subjectId)
+            ->where('institution_id', $user->institution_id)
+            ->whereIn('group_id', $grupos)
+            ->pluck('group_id')
+            ->all();
+        $noAsignados = array_values(array_diff($grupos, $asignados));
 
         $noAsignados = array_merge($noAsignados, array_values($fuera));
 
         if (!empty($noAsignados)) {
-            $nombres = Group::whereIn('id', $noAsignados)->pluck('name')->all();
+            $nombres = $catalogo->only($noAsignados)->pluck('name')->all();
 
             return response()->json([
                 'message' => 'No estás asignado a ' . (empty($nombres)
@@ -94,6 +100,39 @@ class ExamController extends Controller
         }
 
         return $grupos;
+    }
+
+    /**
+     * El examen con `subject`, `teacher` y `groups` listos para la respuesta, sin pedirlos a la base:
+     * la materia y las aulas salen del catálogo en caché y el docente es quien escribe (o, si edita
+     * un administrador, se lee una sola vez). Mismo JSON que `load([...])`: la materia con `id` y
+     * `name`, el docente con `id` y `full_name`, y cada aula con su `pivot`.
+     *
+     * @param  array<int,string>  $idsGrupos
+     */
+    private function conRelaciones(Exam $exam, object $user, array $idsGrupos): Exam
+    {
+        $materia = $exam->subject_id ? $this->materiasDelCentro($exam->institution_id)->get($exam->subject_id) : null;
+        $exam->setRelation('subject', $materia ? (clone $materia)->setVisible(['id', 'name']) : null);
+
+        $docente = $exam->created_by_teacher_id === $user->id
+            ? (new User())->newFromBuilder(['id' => $user->id, 'full_name' => $user->full_name])
+            : User::query()->select('id', 'full_name')->find($exam->created_by_teacher_id);
+        $exam->setRelation('teacher', $docente);
+
+        $catalogo = CatalogoGrupos::delCentro($exam->institution_id);
+        $exam->setRelation('groups', new EloquentCollection(
+            collect($idsGrupos)->map(fn ($id) => $catalogo->get($id))->filter()->map(function ($grupo) use ($exam) {
+                $grupo = clone $grupo;
+                $grupo->setRelation('pivot', Pivot::fromRawAttributes($exam, [
+                    'exam_id' => $exam->id, 'group_id' => $grupo->id, 'institution_id' => $exam->institution_id,
+                ], 'exam_targets', true));
+
+                return $grupo;
+            })->values()->all()
+        ));
+
+        return $exam;
     }
 
     /**
@@ -163,7 +202,7 @@ class ExamController extends Controller
     {
         $data = $request->validate([
             'title' => ['required', 'string', 'min:3', 'max:150'],
-            'subject_id' => ['required', 'uuid', Rule::exists('subjects', 'id')->where('institution_id', $request->user()->institution_id)],
+            'subject_id' => ['required', 'uuid', new MateriaDelCentro($request->user()->institution_id)],
             'grade' => ['required', 'integer', 'between:' . config('academic.grade_min') . ',' . config('academic.grade_max')],
             'instructions' => ['nullable', 'string', 'max:2000'],
             // Opcional: el tutor se lo da al alumnado visual o auditivo.
@@ -228,11 +267,12 @@ class ExamController extends Controller
         ]);
 
         if (!empty($grupos)) {
-            $exam->syncGroups($grupos);
+            // Examen recién creado: no hay aulas previas que comparar, basta insertar.
+            $exam->groups()->attach($grupos, ['institution_id' => $exam->institution_id]);
         }
 
         return response()->json([
-            'data' => $exam->load(['subject:id,name', 'teacher:id,full_name', 'groups']),
+            'data' => $this->conRelaciones($exam, $user, $grupos),
         ], 201);
     }
 
@@ -291,7 +331,7 @@ class ExamController extends Controller
 
         $data = $request->validate([
             'title' => ['sometimes', 'string', 'min:3', 'max:150'],
-            'subject_id' => ['sometimes', 'uuid', Rule::exists('subjects', 'id')->where('institution_id', $request->user()->institution_id)],
+            'subject_id' => ['sometimes', 'uuid', new MateriaDelCentro($request->user()->institution_id)],
             'grade' => ['sometimes', 'integer', 'between:' . config('academic.grade_min') . ',' . config('academic.grade_max')],
             'instructions' => ['nullable', 'string', 'max:2000'],
             // `null` lo quita; omitirlo lo deja como está.
@@ -338,8 +378,9 @@ class ExamController extends Controller
             $exam->syncGroups($grupos);
         }
 
+        // Con aulas en la petición se conocen sin volver a pedirlas; si no, se leen una vez.
         return response()->json([
-            'data' => $exam->load(['subject:id,name', 'teacher:id,full_name', 'groups']),
+            'data' => $this->conRelaciones($exam, $user, $grupos ?? $exam->groups()->pluck('groups.id')->all()),
         ]);
     }
 
@@ -407,9 +448,15 @@ class ExamController extends Controller
          */
         if ($this->esDocente($user)
             && in_array($next, [ExamStatus::Published->value, ExamStatus::Active->value], true)) {
-            $perdidos = $exam->groups()->pluck('groups.id')
-                ->reject(fn ($groupId) => $this->docenteAlcanzaGrupoEnMateria($user, $groupId, $exam->subject_id))
-                ->values();
+            // Aulas destino a las que el docente ya no llega, en UNA consulta (antes una por aula).
+            $perdidos = collect(DB::select(
+                'SELECT et.group_id FROM exam_targets et
+                  WHERE et.exam_id = ? AND et.institution_id = ?
+                    AND NOT EXISTS (SELECT 1 FROM teacher_assignments ta
+                                     WHERE ta.teacher_user_id = ? AND ta.group_id = et.group_id
+                                       AND ta.subject_id = ? AND ta.institution_id = et.institution_id)',
+                [$exam->id, $exam->institution_id, $user->id, $exam->subject_id]
+            ))->pluck('group_id');
 
             if ($perdidos->isNotEmpty()) {
                 return response()->json([

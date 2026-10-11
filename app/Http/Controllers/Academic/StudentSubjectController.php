@@ -7,8 +7,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Academic\Subject;
 use App\Models\Academic\StudentSubject;
 use App\Models\Students\Student;
+use App\Rules\MateriaDelCentro;
 use App\Services\Students\StudentSubjectsService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class StudentSubjectController extends Controller
 {
@@ -76,16 +78,19 @@ class StudentSubjectController extends Controller
      */
     public function enroll(string $studentUserId, Request $request)
     {
-        $data = $request->validate([
-            'subject_id' => ['required', 'uuid', 'exists:subjects,id'],
-        ]);
-
-        $student = Student::where('user_id', $studentUserId)->firstOrFail();
-        $subject = Subject::findOrFail($data['subject_id']);
         $user = $request->user();
 
+        // La materia, contra el catálogo en caché (sin consulta a la base).
+        $data = $request->validate([
+            'subject_id' => ['required', 'uuid', new MateriaDelCentro($user->institution_id)],
+        ]);
+
+        // El alumno y, si inscribe un docente, si lo alcanza: UNA consulta.
+        $student = $this->alumnoConUsuarioVisiblePor($user, $studentUserId) ?? abort(404);
+        $subject = $this->materiasDelCentro($user->institution_id)->get($data['subject_id']) ?? abort(404);
+
         if ($this->esDocente($user)) {
-            if (!$this->docenteAlcanzaEstudiante($user, $studentUserId)) {
+            if ($this->noAlcanzaAlAlumno($user, $student)) {
                 return $this->noAutorizadoPorAsignacion();
             }
 
@@ -100,20 +105,22 @@ class StudentSubjectController extends Controller
             }
         }
 
-        $existing = StudentSubject::where('student_user_id', $studentUserId)
-            ->where('subject_id', $subject->id)
-            ->exists();
+        // Comprobar y escribir en UNA sentencia: si ya estaba inscrito no inserta nada.
+        $insertadas = DB::affectingStatement(
+            'INSERT INTO student_subjects (id, institution_id, student_user_id, subject_id, enrolled_at, created_at, updated_at)
+             SELECT ?, ?, ?, ?, ?, ?, ?
+              WHERE NOT EXISTS (SELECT 1 FROM student_subjects
+                                 WHERE student_user_id = ? AND subject_id = ? AND institution_id = ?)',
+            [
+                (string) \Illuminate\Support\Str::orderedUuid(), $student->institution_id, $studentUserId, $subject->id,
+                now(), now(), now(),
+                $studentUserId, $subject->id, $student->institution_id,
+            ]
+        );
 
-        if ($existing) {
+        if ($insertadas === 0) {
             return response()->json(['message' => 'El estudiante ya está inscrito en esta materia'], 409);
         }
-
-        StudentSubject::create([
-            'institution_id'  => $student->institution_id,
-            'student_user_id' => $studentUserId,
-            'subject_id'      => $subject->id,
-            'enrolled_at'     => now(),
-        ]);
 
         return response()->json([
             'message' => 'Inscripción registrada',

@@ -21,6 +21,10 @@ class Question extends Model
 
     protected $table = 'questions';
 
+    /** Solo las rellena `QuestionController::preguntaConExamen()`: no son columnas ni salen en el JSON. */
+    public bool $tiene_intentos = false;
+    public int $total_preguntas = 0;
+
     /** Todas las columnas de `questions`, para unir la pregunta a otra consulta (`RelacionesEnLinea`). */
     public const COLUMNAS = [
         'id', 'institution_id', 'exam_id', 'question_text', 'question_type', 'points', 'correct_answer_text',

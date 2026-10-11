@@ -46,7 +46,7 @@ class AppServiceProvider extends ServiceProvider
         $parametros = [
             'student_user_id', 'teacherUserId', 'sessionId', 'subject', 'import_id',
             // Detalles que se piden en UNA consulta (ver `PreguntasEnLinea`, `RelacionesEnLinea`).
-            'exam', 'attempt', 'calendar_event', 'study_resource', 'aiRecommendation',
+            'exam', 'attempt', 'calendar_event', 'study_resource', 'aiRecommendation', 'studentAnswer', 'question', 'group',
         ];
 
         foreach ($parametros as $parametro) {
@@ -96,6 +96,12 @@ class AppServiceProvider extends ServiceProvider
         $escuchar(
             ['App\Models\Academic\Subject', 'App\Models\Academic\Group', 'App\Models\Academic\TeacherAssignment', 'App\Models\Exams\Exam'],
             fn (object $modelo) => TenantCache::invalidar($modelo->institution_id ?? null, TenantCache::CATALOGO)
+        );
+
+        // Mapas de materias y aulas (`CatalogoMaterias`, `CatalogoGrupos`): solo cambian con ellas.
+        $escuchar(
+            ['App\Models\Academic\Subject', 'App\Models\Academic\Group'],
+            fn (object $modelo) => TenantCache::invalidar($modelo->institution_id ?? null, TenantCache::MAPAS)
         );
 
         // Los avisos del alumnado (`TenantCache::AGENDA`) muestran el aviso, su

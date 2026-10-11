@@ -100,7 +100,7 @@ class EnrollmentService
                 'updated_at' => now(),
             ]);
 
-        TenantCache::invalidar($institutionId, TenantCache::CATALOGO, TenantCache::AGENDA);
+        TenantCache::invalidar($institutionId, TenantCache::CATALOGO, TenantCache::MAPAS, TenantCache::AGENDA);
     }
 
     /** Recalcula `groups.student_count` con las matrículas abiertas (RN-STU-012). */
@@ -119,6 +119,6 @@ class EnrollmentService
             ]);
 
         // `student_count` está en el listado de aulas cacheado y este UPDATE no dispara eventos.
-        TenantCache::invalidar($institutionId, TenantCache::CATALOGO, TenantCache::AGENDA);
+        TenantCache::invalidar($institutionId, TenantCache::CATALOGO, TenantCache::MAPAS, TenantCache::AGENDA);
     }
 }

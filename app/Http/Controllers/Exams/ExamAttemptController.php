@@ -16,9 +16,11 @@ use App\Services\Exams\ExamAttemptRulesService;
 use App\Services\Exams\ExamGradingService;
 use App\Services\Students\StudentProgressService;
 use App\Models\AI\AiRecommendation;
+use App\Support\PreguntasEnLinea;
 use App\Support\RelacionesEnLinea;
 use App\Support\RespuestasEnLinea;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -29,7 +31,7 @@ class ExamAttemptController extends Controller
      */
     public function start(
         Request $request,
-        Exam $exam,
+        string $exam,
         ExamAttemptRulesService $rules
     ) {
         $user = $request->user();
@@ -43,8 +45,9 @@ class ExamAttemptController extends Controller
         // Solo el examen enviado a un aula donde está matriculado. Sin esto,
         // cualquier estudiante de la institución podía empezar un examen activo
         // de otra aula con solo conocer su id. 404 y no 403: no se confirma que
-        // exista.
-        if (!Exam::query()->whereKey($exam->getKey())->asignadoAlAulaDe($user)->exists()) {
+        // exista. Una consulta hace de binding y de comprobación de aula.
+        $exam = Exam::query()->asignadoAlAulaDe($user)->where('exams.id', $exam)->first();
+        if ($exam === null) {
             return response()->json(['message' => 'No encontrado'], 404);
         }
 
@@ -59,8 +62,9 @@ class ExamAttemptController extends Controller
         // lanza dos requests simultáneos (doble clic, re-submit del navegador)
         try {
             $resultado = DB::transaction(function () use ($exam, $user, $rules, $student) {
-                // Bloquear fila del estudiante → serializa starts concurrentes del mismo usuario
-                Student::where('user_id', $user->id)->lockForUpdate()->firstOrFail();
+                // Bloquear fila del estudiante → serializa starts concurrentes del mismo usuario.
+                // (Se bloquea sin leerla: el perfil ya está en `$student`.)
+                DB::select('SELECT 1 FROM students WHERE user_id = ? AND institution_id = ? FOR UPDATE', [$user->id, $user->institution_id]);
 
                 $intentos = ExamAttempt::where('exam_id', $exam->id)
                     ->where('student_user_id', $user->id)
@@ -134,8 +138,8 @@ class ExamAttemptController extends Controller
      */
     public function submit(
         Request $request,
-        Exam $exam,
-        ExamAttempt $attempt,
+        string $exam,
+        string $attempt,
         ExamAttemptRulesService $rules,
         ExamGradingService $grading,
         StudentProgressService $progressService,
@@ -143,12 +147,35 @@ class ExamAttemptController extends Controller
     ) {
         $user = $request->user();
 
-        // Seguridad: intento del usuario y del examen
-        if ($attempt->exam_id !== $exam->id || $attempt->student_user_id !== $user->id) {
+        // El intento (que sea del alumno y de ese examen) con su examen, el perfil del alumno y
+        // cuántos intentos suyos ya están entregados, en UNA consulta: antes eran el binding del
+        // examen, el del intento, el alumno y el recuento. Con la base remota cada viaje cuesta ~0,4 s.
+        $attempt = RelacionesEnLinea::unir(
+            ExamAttempt::query()
+                ->where('exam_attempts.student_user_id', $user->id)
+                ->where('exam_attempts.exam_id', $exam),
+            [
+                'exam'   => ['exams', 'exam_id', Exam::COLUMNAS],
+                'alumno' => ['students', 'student_user_id', Student::COLUMNAS, null, 'user_id'],
+            ]
+        )
+            ->selectRaw('(SELECT COUNT(*) FROM exam_attempts ea
+                           WHERE ea.exam_id = exam_attempts.exam_id AND ea.student_user_id = exam_attempts.student_user_id
+                             AND ea.submitted_at IS NOT NULL AND ea.institution_id = exam_attempts.institution_id) AS entregados_previos')
+            ->where('exam_attempts.id', $attempt)
+            ->first();
+
+        // Seguridad: intento del usuario y del examen (si no, no sale en la consulta).
+        if ($attempt === null) {
             return response()->json(['message' => 'Intento no válido'], 404);
         }
 
-        $student = Student::where('user_id', $user->id)->first();
+        $entregados = (int) $attempt->getAttribute('entregados_previos');
+        $attempt->setRawAttributes(Arr::except($attempt->getAttributes(), 'entregados_previos'), true);
+        RelacionesEnLinea::hidratar([$attempt], ['exam' => Exam::class, 'alumno' => Student::class]);
+        $exam = $attempt->getRelation('exam');
+        $student = $attempt->getRelation('alumno');
+        $attempt->unsetRelation('alumno');
 
         // RN: intentos submittable (pasa Student para aplicar adecuación curricular)
         try {
@@ -166,11 +193,8 @@ class ExamAttemptController extends Controller
         ]);
 
         // ✅ Validación lógica contra tipos reales del examen (para no depender del trigger)
-        $questions = Question::query()
-            ->where('exam_id', $exam->id)
-            ->with('options')
-            ->get()
-            ->keyBy('id');
+        // Preguntas con sus opciones en UNA consulta (`PreguntasEnLinea`).
+        $questions = PreguntasEnLinea::obtener(Question::query()->where('exam_id', $exam->id))->keyBy('id');
 
         if ($questions->isEmpty()) {
             return response()->json(['message' => 'El examen no tiene preguntas'], 409);
@@ -240,18 +264,15 @@ class ExamAttemptController extends Controller
             $grading,
             $progressService,
             $aiService,
-            $rules
+            $rules,
+            $entregados,
+            $student
         ) {
             // Se vuelve a comprobar el máximo de intentos: `start` ya impide abrir de
             // más (un solo intento en curso, bajo bloqueo), pero esta es la última
-            // puerta antes de que se guarde una nota. Es UNA consulta: no lleva
-            // bloqueo propio porque, con esa regla, un alumno nunca tiene dos
+            // puerta antes de que se guarde una nota. El recuento viene de la misma
+            // consulta que el intento: con esa regla, un alumno nunca tiene dos
             // intentos abiertos que entregar a la vez.
-            $entregados = ExamAttempt::where('exam_id', $exam->id)
-                ->where('student_user_id', $attempt->student_user_id)
-                ->whereNotNull('submitted_at')
-                ->count();
-
             $rules->assertAttemptsAvailable($exam, $entregados);
 
             // 1) Calificar intento + guardar respuestas. Las preguntas viajan ya
@@ -260,7 +281,11 @@ class ExamAttemptController extends Controller
 
             // El examen ya lo resolvió el binding de ruta: las recomendaciones
             // no tienen por qué volver a pedirlo.
+            // La materia sale del catálogo en caché (no de otra consulta al generar las recomendaciones).
+            $exam->setRelation('subject', $exam->subject_id ? $this->materiasDelCentro($exam->institution_id)->get($exam->subject_id) : null);
             $gradedAttempt->setRelation('exam', $exam);
+            // El perfil del alumno ya está cargado (grado y estilo deciden las recomendaciones).
+            $gradedAttempt->setRelation('student', $student);
 
             // 2) Recalcular progreso (promedio por materia) si el examen tiene subject_id
             $progress = null;
@@ -352,11 +377,25 @@ class ExamAttemptController extends Controller
         ]);
     }
 
-    public function pause(Request $request, Exam $exam, ExamAttempt $attempt)
+    /**
+     * El intento del alumno en ese examen, en UNA consulta (antes: el binding del examen y el del
+     * intento). `null` si no existe, no es suyo o es de otro examen.
+     */
+    private function intentoPropio(object $user, string $exam, string $attempt): ?ExamAttempt
+    {
+        return ExamAttempt::query()
+            ->where('exam_attempts.student_user_id', $user->id)
+            ->where('exam_attempts.exam_id', $exam)
+            ->where('exam_attempts.id', $attempt)
+            ->first();
+    }
+
+    public function pause(Request $request, string $exam, string $attempt)
     {
         $user = $request->user();
 
-        if ($attempt->exam_id !== $exam->id || $attempt->student_user_id !== $user->id) {
+        $attempt = $this->intentoPropio($user, $exam, $attempt);
+        if ($attempt === null) {
             return response()->json(['message' => 'Intento no válido'], 404);
         }
 
@@ -372,16 +411,19 @@ class ExamAttemptController extends Controller
             return response()->json(['message' => 'Ya agotaste el tiempo de pausa permitido para este intento'], 409);
         }
 
-        $attempt->update(['paused_at' => now()]);
+        // Sin `fresh()`: `update()` ya deja en memoria lo escrito (el segundo se trunca porque la
+        // columna es timestamp(0)) y releer la fila era un viaje más a la base.
+        $attempt->update(['paused_at' => now()->startOfSecond()]);
 
-        return response()->json(['data' => $attempt->fresh()]);
+        return response()->json(['data' => $attempt]);
     }
 
-    public function resume(Request $request, Exam $exam, ExamAttempt $attempt, ExamAttemptRulesService $rules)
+    public function resume(Request $request, string $exam, string $attempt, ExamAttemptRulesService $rules)
     {
         $user = $request->user();
 
-        if ($attempt->exam_id !== $exam->id || $attempt->student_user_id !== $user->id) {
+        $attempt = $this->intentoPropio($user, $exam, $attempt);
+        if ($attempt === null) {
             return response()->json(['message' => 'Intento no válido'], 404);
         }
 
@@ -400,7 +442,7 @@ class ExamAttemptController extends Controller
             'paused_at'            => null,
         ]);
 
-        return response()->json(['data' => $attempt->fresh()]);
+        return response()->json(['data' => $attempt]);
     }
 
     /**
@@ -481,10 +523,18 @@ class ExamAttemptController extends Controller
 
     public function regenerateRecommendations(
         Request $request,
-        ExamAttempt $attempt,
+        string $attempt,
         AiRecommendationService $aiService
     ) {
         $user = $request->user();
+
+        // El intento con su examen y el perfil del alumno en UNA consulta (antes: binding, examen
+        // y alumno por separado); el servicio ya no los vuelve a pedir.
+        $attempt = RelacionesEnLinea::unir(ExamAttempt::query(), [
+            'exam'    => ['exams', 'exam_id', Exam::COLUMNAS],
+            'student' => ['students', 'student_user_id', Student::COLUMNAS, null, 'user_id'],
+        ])->where('exam_attempts.id', $attempt)->first() ?? abort(404);
+        RelacionesEnLinea::hidratar([$attempt], ['exam' => Exam::class, 'student' => Student::class]);
 
         // Solo el estudiante dueño del intento puede regenerar
         if ($attempt->student_user_id !== $user->id) {
@@ -497,7 +547,6 @@ class ExamAttemptController extends Controller
         }
 
         // Necesitamos subject_id para guardar recomendaciones
-        $attempt->load(['exam']);
         $subjectId = $attempt->exam?->subject_id;
 
         if (!$subjectId) {

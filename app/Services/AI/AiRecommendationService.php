@@ -267,13 +267,20 @@ class AiRecommendationService
         string $requesterUserId = '',
         bool $conReserva = true
     ): array {
-        $attempt->load([
-            'exam.subject',
-            // El grado decide el registro con el que se le escribe (RegistroPorGrado).
-            'student',
-            'answers.question.options',
-            'answers.selectedOptions',
-        ]);
+        // Solo lo que falte (si quien llama ya trae el intento con su examen y su alumno, no se
+        // vuelve a pedir). El grado del alumno decide el registro con el que se le escribe
+        // (RegistroPorGrado). La materia sale del catálogo en caché y las respuestas con su
+        // pregunta y opciones, en UNA consulta (`RespuestasEnLinea`): antes eran siete viajes.
+        $attempt->loadMissing(['exam', 'student']);
+        if ($attempt->exam && ! $attempt->exam->relationLoaded('subject')) {
+            $attempt->exam->setRelation(
+                'subject',
+                $attempt->exam->subject_id ? \App\Support\CatalogoMaterias::delCentro($attempt->institution_id)->get($attempt->exam->subject_id) : null
+            );
+        }
+        if (! $attempt->relationLoaded('answers')) {
+            $attempt->setRelation('answers', \App\Support\RespuestasEnLinea::delIntento($attempt->id));
+        }
 
         $studentUserId = $attempt->student_user_id;
         $subjectId = $attempt->exam?->subject_id;
@@ -442,10 +449,11 @@ class AiRecommendationService
 
         $ia = AiGenerationSource::Ai->value;
 
+        // Las cuatro tarjetas se inserten juntas al final (un INSERT, no uno por tarjeta).
         $created = [];
-        $created[] = $this->create($studentUserId, $subjectId, $examId, 'strength', $strengthText, null, $attempt->id, $ia);
-        $created[] = $this->create($studentUserId, $subjectId, $examId, 'weakness', $weaknessText, null, $attempt->id, $ia);
-        $created[] = $this->create($studentUserId, $subjectId, $examId, 'action', $actionText, null, $attempt->id, $ia);
+        $created[] = $this->nueva($studentUserId, $subjectId, $examId, 'strength', $strengthText, null, $attempt->id, $ia);
+        $created[] = $this->nueva($studentUserId, $subjectId, $examId, 'weakness', $weaknessText, null, $attempt->id, $ia);
+        $created[] = $this->nueva($studentUserId, $subjectId, $examId, 'action', $actionText, null, $attempt->id, $ia);
 
         // El material que el docente dejó en el examen manda sobre lo que proponga
         // el modelo y sobre el catálogo: lo eligió una persona, no la IA.
@@ -477,9 +485,9 @@ class AiRecommendationService
             }
         }
 
-        $created[] = $this->create($studentUserId, $subjectId, $examId, 'resource', $resourceText, $resourceJson, $attempt->id, $ia);
+        $created[] = $this->nueva($studentUserId, $subjectId, $examId, 'resource', $resourceText, $resourceJson, $attempt->id, $ia);
 
-        return $created;
+        return $this->guardarEnLote($created, $attempt->institution_id);
     }
 
     /**

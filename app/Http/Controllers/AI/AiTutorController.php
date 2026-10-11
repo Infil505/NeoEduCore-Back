@@ -37,7 +37,8 @@ class AiTutorController extends Controller
         // La materia debe existir y pertenecer a la institución del estudiante.
         // Subject es TenantScoped, así que exists() ya filtra por tenant y evita
         // guardar en la sesión una referencia cruzada a otra institución.
-        if (!empty($data['subject_id']) && !Subject::whereKey($data['subject_id'])->exists()) {
+        // Contra el catálogo de materias en caché: sin consulta a la base.
+        if (!empty($data['subject_id']) && !$this->materiasDelCentro($user->institution_id)->has($data['subject_id'])) {
             return response()->json(['message' => 'Materia no encontrada'], 422);
         }
 

@@ -9,6 +9,7 @@ use App\Models\Academic\Group;
 use App\Models\Academic\Subject;
 use App\Models\Academic\TeacherAssignment;
 use App\Models\Admin\User;
+use App\Support\RelacionesEnLinea;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -104,8 +105,12 @@ class TeacherAssignmentController extends Controller
 
         // Group y Subject sí son TenantScoped: un id de otra institución no
         // resuelve y se queda fuera del pluck.
-        $grupos   = Group::whereIn('id', $data['group_ids'])->pluck('id')->all();
-        $materias = Subject::whereIn('id', $data['subject_ids'])->pluck('id')->all();
+        // Se comprueban contra los catálogos en caché del centro (sin consultas a la base).
+        $centro   = $request->user()->institution_id;
+        $catGrupos   = \App\Support\CatalogoGrupos::delCentro($centro);
+        $catMaterias = \App\Support\CatalogoMaterias::delCentro($centro);
+        $grupos   = array_values(array_filter(array_unique($data['group_ids']), fn ($id) => $catGrupos->has($id)));
+        $materias = array_values(array_filter(array_unique($data['subject_ids']), fn ($id) => $catMaterias->has($id)));
 
         if (empty($grupos) || empty($materias)) {
             return response()->json([
@@ -143,11 +148,25 @@ class TeacherAssignmentController extends Controller
                 'grupos'          => count($grupos),
                 'materias'        => count($materias),
                 'filas_enviadas'  => count($filas),
-                'asignaciones'    => TeacherAssignment::where('teacher_user_id', $docente->id)
-                    ->with(['group:id,name,grade,section', 'subject:id,name'])
-                    ->get(),
+                // Aula y materia unidas en la misma consulta (`RelacionesEnLinea`), no dos más.
+                'asignaciones'    => $this->asignacionesDe($docente->id),
             ],
         ], 201);
+    }
+
+    /**
+     * Las asignaciones de un docente con su aula (`id`, `name`, `grade`, `section`) y su materia
+     * (`id`, `name`), en UNA consulta.
+     */
+    private function asignacionesDe(string $docenteId)
+    {
+        $filas = RelacionesEnLinea::unir(TeacherAssignment::query()->where('teacher_assignments.teacher_user_id', $docenteId), [
+            'group'   => ['groups', 'group_id', ['id', 'name', 'grade', 'section']],
+            'subject' => ['subjects', 'subject_id', ['id', 'name']],
+        ])->get();
+        RelacionesEnLinea::hidratar($filas, ['group' => Group::class, 'subject' => Subject::class]);
+
+        return $filas;
     }
 
     /**

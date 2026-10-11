@@ -118,7 +118,8 @@ class StudentController extends Controller
             });
         }
 
-        $pagina = $this->paginar($query, $request);
+        // Total en la misma consulta: el `count` aparte era un segundo viaje a la base.
+        $pagina = $this->paginar($query, $request, null, true);
         RelacionesEnLinea::hidratar($pagina->getCollection(), ['user' => \App\Models\Admin\User::class]);
 
         return response()->json([
@@ -142,9 +143,10 @@ class StudentController extends Controller
 
     public function update(Request $request, string $student_user_id)
     {
-        $student = Student::where('user_id', $student_user_id)->firstOrFail();
+        // El alumno con su usuario y, si edita un docente, si lo alcanza: UNA consulta.
+        $student = $this->alumnoConUsuarioVisiblePor($request->user(), $student_user_id) ?? abort(404);
 
-        if ($this->esDocente($request->user()) && !$this->docenteAlcanzaEstudiante($request->user(), $student_user_id)) {
+        if ($this->noAlcanzaAlAlumno($request->user(), $student)) {
             return $this->noAutorizadoPorAsignacion();
         }
 
@@ -204,8 +206,9 @@ class StudentController extends Controller
         $student->fill($data);
         $student->save();
 
+        // Sin `fresh()` ni la lectura del usuario: `save()` deja la ficha en memoria y el usuario ya venía.
         return response()->json([
-            'data' => $student->fresh()->load('user'),
+            'data' => $student,
         ]);
     }
 

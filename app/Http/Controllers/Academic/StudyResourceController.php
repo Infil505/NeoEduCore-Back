@@ -10,6 +10,7 @@ use App\Enums\ResourceType;
 use App\Enums\UserType;
 use App\Models\Academic\StudyResource;
 use App\Services\AI\AiOutputValidator;
+use App\Rules\MateriaDelCentro;
 use App\Support\RelacionesEnLinea;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -127,8 +128,7 @@ class StudyResourceController extends Controller
             // un `exists` a secas se podría referenciar la materia de otro centro,
             // porque `Rule::exists` va por el query builder y no pasa por el
             // scope de tenant de Eloquent.
-            'subject_id' => ['nullable', 'uuid', Rule::exists('subjects', 'id')
-                ->where('institution_id', $request->user()->institution_id)],
+            'subject_id' => ['nullable', 'uuid', new MateriaDelCentro($request->user()->institution_id)],
 
             'estimated_duration' => ['nullable', 'integer', 'between:1,999'],
             'difficulty' => ['nullable', Rule::in(Difficulty::values())],
@@ -164,11 +164,45 @@ class StudyResourceController extends Controller
             'created_by' => $user->id,
         ]);
 
-        $resource->syncGroups($grupos);
+        // Recurso recién creado: no hay aulas previas que comparar, basta insertar.
+        if (!empty($grupos)) {
+            $resource->groups()->attach($grupos, ['institution_id' => $resource->institution_id]);
+        }
 
         return response()->json([
-            'data' => $resource->load(['creator:id,full_name', 'subject:id,name', 'groups']),
+            'data' => $this->conRelaciones($resource, $user, $grupos),
         ], 201);
+    }
+
+    /**
+     * `creator`, `subject` y `groups` del recurso para la respuesta, sin consultarlos: quien escribe
+     * es el autor casi siempre, la materia y las aulas salen del catálogo en caché. Mismo JSON que
+     * `load(['creator:id,full_name', 'subject:id,name', 'groups'])`.
+     *
+     * @param  array<int,string>  $idsGrupos
+     */
+    private function conRelaciones(StudyResource $recurso, object $user, array $idsGrupos): StudyResource
+    {
+        $recurso->setRelation('creator', $recurso->created_by === $user->id
+            ? (new \App\Models\Admin\User())->newFromBuilder(['id' => $user->id, 'full_name' => $user->full_name])
+            : \App\Models\Admin\User::query()->select('id', 'full_name')->find($recurso->created_by));
+
+        $materia = $recurso->subject_id ? \App\Support\CatalogoMaterias::delCentro($recurso->institution_id)->get($recurso->subject_id) : null;
+        $recurso->setRelation('subject', $materia ? (clone $materia)->setVisible(['id', 'name']) : null);
+
+        $catalogo = \App\Support\CatalogoGrupos::delCentro($recurso->institution_id);
+        $recurso->setRelation('groups', new \Illuminate\Database\Eloquent\Collection(
+            collect($idsGrupos)->map(fn ($id) => $catalogo->get($id))->filter()->map(function ($grupo) use ($recurso) {
+                $grupo = clone $grupo;
+                $grupo->setRelation('pivot', \Illuminate\Database\Eloquent\Relations\Pivot::fromRawAttributes($recurso, [
+                    'study_resource_id' => $recurso->id, 'group_id' => $grupo->id, 'institution_id' => $recurso->institution_id,
+                ], 'study_resource_groups', true));
+
+                return $grupo;
+            })->values()->all()
+        ));
+
+        return $recurso;
     }
 
     /**
@@ -206,8 +240,11 @@ class StudyResourceController extends Controller
     /**
      * Actualizar recurso
      */
-    public function update(Request $request, StudyResource $studyResource)
+    public function update(Request $request, string $studyResource)
     {
+        // El binding de ruta, a mano (una consulta acotada al centro por TenantScoped).
+        $studyResource = StudyResource::query()->where('study_resources.id', $studyResource)->first() ?? abort(404);
+
         // S6: el recurso es de quien lo subió. La biblioteca se lee entre todos,
         // pero no se reescribe el material ajeno.
         if (! $this->esSuyoOEsAdmin($request->user(), $studyResource->created_by, 'este recurso')) {
@@ -233,8 +270,7 @@ class StudyResourceController extends Controller
             // un `exists` a secas se podría referenciar la materia de otro centro,
             // porque `Rule::exists` va por el query builder y no pasa por el
             // scope de tenant de Eloquent.
-            'subject_id' => ['nullable', 'uuid', Rule::exists('subjects', 'id')
-                ->where('institution_id', $request->user()->institution_id)],
+            'subject_id' => ['nullable', 'uuid', new MateriaDelCentro($request->user()->institution_id)],
 
             'estimated_duration' => ['nullable', 'integer', 'between:1,999'],
             'difficulty' => ['nullable', Rule::in(Difficulty::values())],
@@ -255,9 +291,10 @@ class StudyResourceController extends Controller
         // Las aulas se revalidan si cambian ellas o cambia la materia: mover un
         // recurso a otra materia no puede dejarlo en aulas donde no se imparte.
         $grupos = null;
+        $idsActuales = null;
         if (array_key_exists('group_ids', $data) || array_key_exists('subject_id', $data)) {
             $materia = array_key_exists('subject_id', $data) ? $data['subject_id'] : $studyResource->subject_id;
-            $pedidas = $data['group_ids'] ?? $studyResource->groups()->pluck('groups.id')->all();
+            $pedidas = $data['group_ids'] ?? ($idsActuales = $studyResource->groups()->pluck('groups.id')->all());
 
             // Sin aulas ni antes ni ahora no hay nada que revalidar.
             if (!empty($pedidas)) {
@@ -277,16 +314,24 @@ class StudyResourceController extends Controller
             $studyResource->syncGroups($grupos);
         }
 
+        // Sin `fresh()` ni tres relaciones más: `save()` deja el recurso en memoria y las aulas son
+        // las nuevas, las que acaban de resolverse o, si nada las tocó, una lectura.
         return response()->json([
-            'data' => $studyResource->fresh()->load(['creator:id,full_name', 'subject:id,name', 'groups']),
+            'data' => $this->conRelaciones(
+                $studyResource,
+                $request->user(),
+                $grupos ?? $idsActuales ?? $studyResource->groups()->pluck('groups.id')->all()
+            ),
         ]);
     }
 
     /**
      * Eliminar recurso
      */
-    public function destroy(Request $request, StudyResource $studyResource)
+    public function destroy(Request $request, string $studyResource)
     {
+        $studyResource = StudyResource::query()->where('study_resources.id', $studyResource)->first() ?? abort(404);
+
         if (! $this->esSuyoOEsAdmin($request->user(), $studyResource->created_by, 'este recurso')) {
             return $this->noAutorizadoPorAutoria('este recurso');
         }

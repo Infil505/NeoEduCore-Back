@@ -152,8 +152,9 @@ class SubjectController extends Controller
         $subject->name = trim($data['name']);
         $subject->save();
 
+        // Sin `fresh()`: `save()` deja la materia en memoria y releerla era un viaje más a la base.
         return response()->json([
-            'data' => $subject->fresh(),
+            'data' => $subject,
         ]);
     }
 

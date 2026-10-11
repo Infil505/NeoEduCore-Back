@@ -38,8 +38,9 @@ trait ResuelveAulasDestino
         $pedidas = array_values(array_unique($pedidas ?? []));
 
         if ($user->user_type !== UserType::Teacher) {
-            $existentes = Group::whereIn('id', $pedidas)->pluck('id')->all();
-            $fuera = array_diff($pedidas, $existentes);
+            // Contra el catálogo de aulas en caché: sin consulta a la base.
+            $catalogo = \App\Support\CatalogoGrupos::delCentro($user->institution_id);
+            $fuera = array_values(array_filter($pedidas, fn ($id) => ! $catalogo->has($id)));
 
             if (!empty($fuera)) {
                 return response()->json([

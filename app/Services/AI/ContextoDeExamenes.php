@@ -42,6 +42,12 @@ class ContextoDeExamenes
     /** Pendientes que se nombran. */
     private const PENDIENTES = 3;
 
+    /** Preguntas falladas que se nombran por cada examen reciente. */
+    private const PREGUNTAS_POR_EXAMEN = 3;
+
+    /** Temas flojos (de todos sus exámenes) que se nombran. */
+    private const PUNTOS_A_MEJORAR = 4;
+
     /** Preguntas falladas que se detallan al hablar de un examen concreto. */
     private const PREGUNTAS_DETALLADAS = 6;
 
@@ -105,22 +111,39 @@ class ContextoDeExamenes
         $recientes = $this->ultimosIntentos($studentUserId, $institutionId);
 
         if ($recientes->isNotEmpty()) {
-            $fallos = $this->temasFalladosPorIntento($institutionId, $recientes->pluck('attempt_id')->all());
+            $ids = $recientes->pluck('attempt_id')->all();
+            $fallos = $this->temasFalladosPorIntento($institutionId, $ids);
+            $conteos = $this->conteoPorIntento($institutionId, $ids);
+            $preguntas = $this->preguntasFalladasPorIntento($institutionId, $ids);
 
-            $lineas[] = 'Exámenes recientes:';
+            $lineas[] = 'Exámenes recientes (nota, preguntas falladas y dónde):';
             foreach ($recientes as $e) {
                 $temas = ($fallos->get($e->attempt_id) ?? collect())
                     ->sortByDesc('fallos')->take(self::TEMAS_POR_EXAMEN)
                     ->map(fn ($t) => $this->limpio($t->topic, 60))->filter()->implode(', ');
 
+                $c = $conteos->get($e->attempt_id);
+
                 $lineas[] = sprintf(
-                    '- %s, «%s»: %s %%%s%s',
+                    '- %s, «%s»: %s %%%s%s%s',
                     $this->limpio($e->subject, 40) ?: 'Materia',
                     $this->limpio($e->title, 70) ?: 'Examen',
                     $this->porcentaje($e),
                     $e->grade_status === 'graded' || $e->grade_status === 'completed' ? '' : ' (nota provisional)',
+                    $c !== null && (int) $c->fallos > 0 ? ". Falló {$c->fallos} de {$c->total} preguntas" : '',
                     $temas !== '' ? ". Fallos en: {$temas}" : ''
                 );
+
+                // Qué preguntas concretas falló y qué contestó (nunca la correcta).
+                foreach (($preguntas->get($e->attempt_id) ?? collect())->take(self::PREGUNTAS_POR_EXAMEN) as $f) {
+                    $respondio = $f->answer_text !== null && trim($f->answer_text) !== ''
+                        ? ' → respondió «' . $this->limpio($f->answer_text, 60) . '»'
+                        : ' → sin respuesta';
+
+                    $lineas[] = '    · Falló: «' . $this->limpio($f->question_text, 110) . '»'
+                        . ($f->topic ? ' (tema ' . $this->limpio($f->topic, 40) . ')' : '')
+                        . $respondio;
+                }
             }
         }
 
@@ -215,11 +238,105 @@ class ContextoDeExamenes
             ->where('sa.institution_id', $institutionId)
             ->whereIn('sa.attempt_id', $intentos)
             ->where('sa.is_correct', false)
-            ->whereNotNull('q.topic_normalized')
-            ->selectRaw('sa.attempt_id, MIN(q.topic) AS topic, COUNT(*) AS fallos')
-            ->groupBy('sa.attempt_id', 'q.topic_normalized')
+            // Sin tema etiquetado, el indicador de logro dice igualmente dónde falló.
+            ->whereRaw('COALESCE(q.topic_normalized, NULLIF(TRIM(q.indicator), \'\')) IS NOT NULL')
+            ->selectRaw('sa.attempt_id, MIN(COALESCE(q.topic, q.indicator)) AS topic, COUNT(*) AS fallos')
+            ->groupByRaw('sa.attempt_id, COALESCE(q.topic_normalized, LOWER(TRIM(q.indicator)))')
             ->get()
             ->groupBy('attempt_id');
+    }
+
+    /**
+     * Las preguntas falladas de cada intento (enunciado y lo que contestó el
+     * alumno). La respuesta correcta NO se selecciona.
+     *
+     * @return Collection<string,Collection<int,object>> attempt_id => preguntas
+     */
+    private function preguntasFalladasPorIntento(string $institutionId, array $intentos): Collection
+    {
+        $marcadores = implode(',', array_fill(0, count($intentos), '?'));
+
+        // Las primeras N de CADA intento (ventana), no las N primeras de todos.
+        $filas = DB::select(
+            "SELECT attempt_id, question_text, topic, answer_text FROM (
+                SELECT sa.attempt_id, q.question_text, q.topic, sa.answer_text,
+                       ROW_NUMBER() OVER (PARTITION BY sa.attempt_id ORDER BY q.order_index) AS n
+                  FROM student_answers sa
+                  JOIN questions q ON q.id = sa.question_id
+                 WHERE sa.institution_id = ? AND sa.is_correct = false AND sa.attempt_id IN ({$marcadores})
+             ) t WHERE n <= ?",
+            [$institutionId, ...$intentos, self::PREGUNTAS_POR_EXAMEN]
+        );
+
+        return collect($filas)->groupBy('attempt_id');
+    }
+
+    /** @return Collection<string,object> attempt_id => {total, fallos} (respuestas ya corregidas) */
+    private function conteoPorIntento(string $institutionId, array $intentos): Collection
+    {
+        return DB::table('student_answers as sa')
+            ->where('sa.institution_id', $institutionId)
+            ->whereIn('sa.attempt_id', $intentos)
+            ->whereNotNull('sa.is_correct')
+            ->selectRaw('sa.attempt_id, COUNT(*) AS total, COUNT(*) FILTER (WHERE NOT sa.is_correct) AS fallos')
+            ->groupBy('sa.attempt_id')
+            ->get()
+            ->keyBy('attempt_id');
+    }
+
+    /**
+     * Los temas más flojos del estudiante en TODOS sus exámenes (con evidencia
+     * suficiente, ver `TopicMasteryService::MINIMO_RESPUESTAS`). Es la respuesta
+     * a «¿en qué debo mejorar?» cuando no pregunta por un examen concreto.
+     */
+    public function puntosAMejorar(string $studentUserId): string
+    {
+        return Cache::remember(
+            $this->clave($studentUserId, 'puntos'),
+            (int) config('openai.tutor.context_ttl', 300),
+            function () use ($studentUserId) {
+                $flojos = app(\App\Services\Academic\TopicMasteryService::class)
+                    ->porEstudiante($studentUserId, self::PUNTOS_A_MEJORAR)
+                    ->filter(fn (array $t) => $t['percentage'] < \App\Services\Academic\TopicMasteryService::UMBRAL_REFUERZO);
+
+                if ($flojos->isEmpty()) {
+                    return '';
+                }
+
+                return "Puntos a mejorar (temas con más fallos en todos sus exámenes):\n"
+                    . $flojos->map(fn (array $t) => sprintf(
+                        '- %s: %s %% (%d de %d correctas)',
+                        $this->limpio($t['topic'], 60) ?: 'Tema',
+                        round($t['percentage']),
+                        $t['correctas'],
+                        $t['total']
+                    ))->implode("\n");
+            }
+        );
+    }
+
+    /**
+     * Detalle del examen más reciente que el estudiante entregó de una materia:
+     * para cuando el chat se abre desde una materia y no desde un examen.
+     */
+    public function detalleDeMateria(string $studentUserId, string $institutionId, string $subjectId): string
+    {
+        return Cache::remember(
+            $this->clave($studentUserId, "materia:{$subjectId}"),
+            (int) config('openai.tutor.context_ttl', 300),
+            function () use ($studentUserId, $institutionId, $subjectId) {
+                $examId = DB::table('exam_attempts as ea')
+                    ->join('exams as e', 'e.id', '=', 'ea.exam_id')
+                    ->where('ea.institution_id', $institutionId)
+                    ->where('ea.student_user_id', $studentUserId)
+                    ->where('e.subject_id', $subjectId)
+                    ->whereNotNull('ea.submitted_at')
+                    ->orderByDesc('ea.submitted_at')
+                    ->value('ea.exam_id');
+
+                return $examId === null ? '' : $this->construirDetalle($studentUserId, $institutionId, $examId);
+            }
+        );
     }
 
     /** @return Collection<int,object> exámenes activos de sus aulas que aún puede presentar */

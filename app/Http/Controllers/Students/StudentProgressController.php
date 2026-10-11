@@ -113,7 +113,7 @@ class StudentProgressController extends Controller
      * Nota: en un sistema real, esto se calcula desde intentos y resultados.
      * Aquí dejamos endpoint para actualizar/recalcular según tu lógica.
      */
-    public function upsert(Request $request)
+    public function upsert(Request $request, \App\Services\Students\StudentProgressService $progressService)
     {
         $user = $request->user();
 
@@ -123,14 +123,15 @@ class StudentProgressController extends Controller
             'mastery_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
         ]);
 
-        // Verificar que existan (y pertenezcan al tenant) vía scopes
-        Student::where('user_id', $data['student_user_id'])->firstOrFail();
-        Subject::where('id', $data['subject_id'])->firstOrFail();
+        // Verificar que existan (y pertenezcan al tenant): el alumno con su usuario y, si mira un
+        // docente, si lo alcanza, en UNA consulta; la materia, del catálogo en caché.
+        $alumno = $this->alumnoConUsuarioVisiblePor($user, $data['student_user_id']) ?? abort(404);
+        $materia = $this->materiasDelCentro($user->institution_id)->get($data['subject_id']) ?? abort(404);
 
         // Docente: solo estudiantes de los grupos que tiene asignados.
         // Antes esto se derivaba de la autoría del examen, lo que permitía
         // ampliarse el alcance creando un borrador dirigido a cualquier grupo.
-        if ($this->esDocente($user) && !$this->docenteAlcanzaEstudiante($user, $data['student_user_id'])) {
+        if ($this->noAlcanzaAlAlumno($user, $alumno)) {
             return $this->noAutorizadoPorAsignacion();
         }
 
@@ -140,19 +141,15 @@ class StudentProgressController extends Controller
             return $this->noAutorizadoPorMateria();
         }
 
-        $progress = StudentProgress::updateOrCreate(
-            [
-                'student_user_id' => $data['student_user_id'],
-                'subject_id' => $data['subject_id'],
-            ],
-            [
-                'mastery_percentage' => round((float)$data['mastery_percentage'], 2),
-                'updated_at' => now(),
-            ]
-        );
+        // Una sola sentencia (`INSERT … ON CONFLICT`) en vez de leer y luego escribir.
+        $progress = $progressService->upsertProgress($data['student_user_id'], $data['subject_id'], (float) $data['mastery_percentage']);
+
+        // Alumno (con su usuario) y materia ya conocidos: sin tres lecturas más para la respuesta.
+        $progress->setRelation('student', $alumno);
+        $progress->setRelation('subject', $materia);
 
         return response()->json([
-            'data' => $progress->load(['student.user', 'subject']),
+            'data' => $progress,
         ], 201);
     }
 
