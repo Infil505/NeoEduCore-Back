@@ -445,6 +445,49 @@ class ContextoDeExamenes
         );
     }
 
+    /**
+     * Los temas que el estudiante falló en el examen de referencia, los que más fallos tienen primero: el del examen
+     * fijado en la conversación o, sin él, el último que entregó de la materia. Sirven de tema cuando no escribió uno.
+     * Vacío si no hay examen entregado o no falló ninguna pregunta con tema o indicador.
+     *
+     * @return string[] temas saneados (datos, no órdenes)
+     */
+    public function temasAReforzar(string $studentUserId, string $institutionId, ?string $examId, ?string $subjectId): array
+    {
+        if ($examId === null && $subjectId === null) {
+            return [];
+        }
+
+        return Cache::remember(
+            $this->clave($studentUserId, 'refuerzo:' . ($examId ?? "materia:{$subjectId}")),
+            (int) config('openai.tutor.context_ttl', 300),
+            function () use ($studentUserId, $institutionId, $examId, $subjectId) {
+                $intento = DB::table('exam_attempts as ea')
+                    ->join('exams as e', 'e.id', '=', 'ea.exam_id')
+                    ->where('ea.institution_id', $institutionId)
+                    ->where('ea.student_user_id', $studentUserId)
+                    ->whereNotNull('ea.submitted_at')
+                    ->when($examId !== null, fn ($q) => $q->where('ea.exam_id', $examId), fn ($q) => $q->where('e.subject_id', $subjectId))
+                    ->orderByDesc('ea.submitted_at')
+                    ->value('ea.id');
+
+                if ($intento === null) {
+                    return [];
+                }
+
+                return $this->temasFalladosPorIntento($institutionId, [$intento])
+                    ->get($intento, collect())
+                    ->sortByDesc('fallos')
+                    ->map(fn ($t) => $this->limpio($t->topic, 80))
+                    ->filter()
+                    ->unique()
+                    ->take(self::PUNTOS_A_MEJORAR)
+                    ->values()
+                    ->all();
+            }
+        );
+    }
+
     /** @return Collection<int,object> exámenes activos de sus aulas que aún puede presentar */
     private function examenesPendientes(string $studentUserId, string $institutionId): Collection
     {
