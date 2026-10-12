@@ -32,6 +32,11 @@ RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-in
 # 2) Código de la app
 COPY . .
 
+# Carpetas que Laravel necesita escribir y que git no versiona (están vacías o con
+# archivos ignorados): sin ellas `artisan` falla con «bootstrap/cache must be present and writable».
+RUN mkdir -p bootstrap/cache storage/logs storage/framework/cache/data storage/framework/sessions storage/framework/views \
+    && chmod -R ug+rwX bootstrap/cache storage
+
 # 3) Autoload optimizado + opcache
 RUN composer dump-autoload --optimize --no-dev --no-interaction \
     && cp -n .env.example .env || true
