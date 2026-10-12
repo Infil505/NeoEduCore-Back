@@ -32,6 +32,10 @@ la misma imagen y otro comando, independiente de la API y del worker:
 php artisan reverb:start --host=0.0.0.0 --port=8180 --no-interaction
 ```
 
+- **Si tu Coolify no tiene campo de comando** (recurso Dockerfile): pon la variable
+  `CONTAINER_ROLE=websocket` (Worker: `CONTAINER_ROLE=worker`; App: nada). El entrypoint sustituye el
+  comando por el de arriba. Además, en ese recurso: *Ports Exposes* `8180`, vaciar *Pre/Post-deployment*
+  (las migraciones solo en la App) y quitar las *Custom Docker options* de ejemplo.
 - **Puerto interno:** 8180. Coolify lo reinicia si cae; la API y el worker no se enteran.
 - **Si Reverb está caído no se cae nada.** El aviso en vivo se pierde y el alumno ve el examen al
   recargar o en su notificación.

@@ -8,11 +8,30 @@
 #   websocket  php artisan reverb:start ...     WebSocket (aviso «examen activado»)
 #   worker     php artisan queue:work ...       correos, carga masiva, difusión
 #
+# El rol se puede fijar con CONTAINER_ROLE=websocket|worker|app en vez de cambiar el comando.
+#
 # Este script solo prepara lo común (caché de configuración) y, en la API, el
 # puerto y los workers de Octane. Ya no levanta Reverb: es su propia instancia, de
 # modo que si cae no se lleva la API y puede reiniciarse o escalarse por separado.
 
 set -u
+
+# Rol por variable de entorno, para paneles (Coolify) que no dejan cambiar el comando.
+# Si CONTAINER_ROLE está definida, sustituye al comando de la imagen:
+#   websocket → reverb:start    worker → queue:work    app (o vacía) → el CMD por defecto
+case "${CONTAINER_ROLE:-}" in
+    websocket)
+        set -- php artisan reverb:start --host=0.0.0.0 --port="${REVERB_SERVER_PORT:-8180}" --no-interaction
+        ;;
+    worker)
+        set -- php artisan queue:work --queue=default,correos --tries=3 --max-time=3600 --max-jobs=500 --memory=128
+        ;;
+    app|"") ;;
+    *)
+        echo "[entrypoint] CONTAINER_ROLE desconocido: ${CONTAINER_ROLE} (app, websocket, worker)" >&2
+        exit 1
+        ;;
+esac
 
 servidor_http() {
     [ "${1:-}" = "php" ] && [ "${2:-}" = "artisan" ] && [ "${3:-}" = "octane:start" ]
