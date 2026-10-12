@@ -24,6 +24,36 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class RegistraPeticionesLentas
 {
+    /** Consultas de la petición en curso. Un worker atiende una petición a la vez. */
+    private static array $consultas = [];
+
+    /** Despachador al que ya se enganchó el oyente (débil: no lo mantiene vivo). */
+    private static ?\WeakReference $despachador = null;
+
+    /**
+     * El oyente se registra UNA vez por despachador, no en cada petición.
+     *
+     * Con Octane el despachador de eventos vive tanto como el worker, y
+     * `DB::listen` no tiene «quitar»: registrar uno por petición dejaba hasta 500
+     * oyentes vivos por worker, y cada uno seguía acumulando las consultas de TODAS
+     * las peticiones siguientes. La memoria crecía de forma cuadrática hasta agotar
+     * los 128 MB y el worker moría con un 500 (prueba de carga del 12/10/2026).
+     */
+    private function escuchar(): void
+    {
+        $despachador = DB::connection()->getEventDispatcher();
+
+        if (self::$despachador?->get() === $despachador) {
+            return;
+        }
+
+        self::$despachador = \WeakReference::create($despachador);
+
+        DB::listen(function ($consulta) {
+            self::$consultas[] = ['ms' => round($consulta->time, 1), 'sql' => mb_substr(preg_replace('/\s+/', ' ', $consulta->sql), 0, 110)];
+        });
+    }
+
     public function handle(Request $request, Closure $next): Response
     {
         $umbral = (int) config('app.slow_request_ms');
@@ -32,12 +62,15 @@ class RegistraPeticionesLentas
             return $next($request);
         }
 
-        $consultas = [];
-        DB::listen(function ($consulta) use (&$consultas) {
-            $consultas[] = ['ms' => round($consulta->time, 1), 'sql' => mb_substr(preg_replace('/\s+/', ' ', $consulta->sql), 0, 110)];
-        });
+        $this->escuchar();
+        self::$consultas = [];
 
-        $respuesta = $next($request);
+        try {
+            $respuesta = $next($request);
+        } finally {
+            $consultas = self::$consultas;
+            self::$consultas = []; // no se arrastra nada a la siguiente petición
+        }
 
         $inicio = $request->server('REQUEST_TIME_FLOAT') ?: (defined('LARAVEL_START') ? LARAVEL_START : microtime(true));
         $totalMs = (microtime(true) - (float) $inicio) * 1000;
