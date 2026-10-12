@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 
 /**
  * Administradores de institución, vistos desde el superadmin.
@@ -181,13 +182,42 @@ class InstitutionAdminController extends Controller
     /**
      * PATCH /api/institution-admins/{institutionAdmin}/reset-password
      *
-     * Manda el enlace de definición de contraseña; no devuelve ninguna
-     * credencial. Es la vía de recuperación cuando el administrador de un
-     * centro pierde el acceso y no puede recuperarlo él solo.
+     * Vía de recuperación cuando el administrador de un centro pierde el acceso
+     * y no puede recuperarlo él solo. Dos modos:
+     *
+     * - **Sin `password`**: manda el enlace de definición de contraseña; nadie
+     *   más que su dueño llega a conocerla. Es la vía preferida.
+     * - **Con `password`**: la asigna como temporal y obliga a cambiarla en el
+     *   primer acceso, igual que `PATCH /users/{user}/reset-password` del admin
+     *   de centro (12/10/2026). Existe para cuando el correo no sale: sin ella,
+     *   un centro cuyo único admin perdió la clave quedaba sin gestión. Como en
+     *   esa ruta, no activa la cuenta (decisión D6).
      */
-    public function resetPassword(User $institutionAdmin, PasswordSetupService $passwordSetup)
+    public function resetPassword(Request $request, User $institutionAdmin, PasswordSetupService $passwordSetup)
     {
         $this->assertEsAdminDeInstitucion($institutionAdmin);
+
+        if ($request->filled('password')) {
+            $data = $request->validate([
+                'password' => ['required', Password::min(8)->mixedCase()->numbers(), 'confirmed'],
+            ]);
+
+            $institutionAdmin->password_hash = Hash::make($data['password']);
+            $institutionAdmin->must_change_password = true;
+            $institutionAdmin->save();
+
+            // La clave anterior pudo estar comprometida: fuera las sesiones abiertas.
+            $institutionAdmin->tokens()->delete();
+
+            $activa = $institutionAdmin->status === UserStatus::Active;
+
+            return response()->json([
+                'message' => $activa
+                    ? 'Contraseña temporal asignada. Deberá cambiarla al iniciar sesión.'
+                    : 'Contraseña temporal asignada, pero la cuenta no está activa: no podrá iniciar sesión hasta activarla.',
+                'data'    => ['modo' => 'temporal', 'cuenta_activa' => $activa],
+            ]);
+        }
 
         $enviado = $passwordSetup->sendSetupLink($institutionAdmin);
 
