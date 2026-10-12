@@ -9,7 +9,7 @@
 # `docker/entrypoint.sh` lo arranca dentro de este mismo contenedor cuando el
 # comando es el servidor HTTP, y lo reinicia si cae.
 
-FROM dunglas/frankenphp:1-php8.3
+FROM dunglas/frankenphp:1-php8.4
 
 # Extensiones PHP que usa el proyecto
 RUN install-php-extensions \
