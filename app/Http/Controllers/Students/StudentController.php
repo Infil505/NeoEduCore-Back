@@ -464,17 +464,29 @@ class StudentController extends Controller
      */
     public function myAttempts(Request $request)
     {
-        $attempts = ExamAttempt::query()
-            ->where('student_user_id', $request->user()->id)
-            ->whereNotNull('submitted_at')
-            ->with(['exam:id,title,subject_id,allow_review_after_submission', 'exam.subject:id,name'])
-            ->orderByDesc('submitted_at')
-            ->get()
+        $user = $request->user();
+
+        // El examen va unido en la misma consulta y la materia sale del catálogo
+        // cacheado del centro: antes eran tres viajes a la base (intentos, exámenes
+        // y materias) por cada carga de esta pantalla.
+        $attempts = RelacionesEnLinea::unir(
+            ExamAttempt::query()
+                ->where('exam_attempts.student_user_id', $user->id)
+                ->whereNotNull('exam_attempts.submitted_at'),
+            ['exam' => ['exams', 'exam_id', ['id', 'title', 'subject_id', 'allow_review_after_submission']]]
+        )
+            ->orderByDesc('exam_attempts.submitted_at')
+            ->get();
+        RelacionesEnLinea::hidratar($attempts, ['exam' => Exam::class]);
+
+        $materias = $this->materiasDelCentro($user->institution_id);
+
+        $attempts = $attempts
             ->map(fn (ExamAttempt $a) => [
                 'id'               => $a->id,
                 'exam_id'          => $a->exam_id,
                 'exam_title'       => $a->exam?->title,
-                'subject'          => $a->exam?->subject?->name,
+                'subject'          => $materias->get($a->exam?->subject_id)?->name,
                 'attempt_number'   => $a->attempt_number,
                 'submitted_at'     => $a->submitted_at,
                 'score'            => (float) $a->score,
