@@ -197,3 +197,5 @@ DELETE FROM users WHERE id IN (SELECT id FROM _ids);
 | Tras el `ROLLBACK` | idéntico al «antes» | idéntico al «antes» |
 
 La institución `EULOGIO2026` y los usuarios sin institución quedaron intactos en las dos bases. Si el borrado se hiciera sin el paso de los usuarios, habría 202 huérfanos (comprobado en la misma simulación).
+
+**Ejecutado el 12/10/2026** en las dos bases, por orden expresa, con la transacción confirmada solo si el resultado coincidía con lo esperado (sin huérfanos nuevos y con `EULOGIO2026` intacta). Estado final: DigitalOcean 2 usuarios (1 de `EULOGIO2026` + 1 superadmin) y Supabase 3 (1 + 2 superadmins); `LOAD001` ya no existe en ninguna. Para repetir una prueba de carga hay que volver a sembrar con `LoadTestSeeder`.
