@@ -18,7 +18,8 @@ RUN install-php-extensions \
     zip \
     gd \
     opcache \
-    pcntl
+    pcntl \
+    redis
 
 # Composer (binario oficial)
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
