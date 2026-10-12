@@ -44,7 +44,7 @@ php artisan reverb:start --host=0.0.0.0 --port=8180 --no-interaction
 
 ### Cómo trabajan juntas
 ```
- navegador ──wss://ws.tu-dominio.com──▶ [WebSocket :8180]
+ navegador ──wss://ws.neoeducore.eduregistro.com──▶ [WebSocket :8180]
                                               ▲
  docente activa examen ─▶ [App :8100] ─cola─▶ [Worker] ──HTTP interno──┘  (publica el evento)
 ```
@@ -52,7 +52,7 @@ La App encola el evento, el Worker lo publica en Reverb y Reverb lo reparte a lo
 
 ### Exponerlo (dominio del recurso WebSocket)
 El navegador se conecta **directo** al WebSocket, y desde una página `https` solo admite `wss://`.
-En el recurso WebSocket, en **Domains**: `https://ws.tu-dominio.com:8180`. Coolify (Traefik) pone el
+En el recurso WebSocket, en **Domains**: `https://ws.neoeducore.eduregistro.com:8180`. Coolify (Traefik) pone el
 TLS; el contenedor escucha en claro.
 
 ### Variables (en Coolify, no en el repo; iguales en los tres recursos)
@@ -61,12 +61,12 @@ BROADCAST_CONNECTION=reverb
 REVERB_APP_ID=neoeducore
 REVERB_APP_KEY=<cadena larga y aleatoria>      # el frontend la usa para conectarse
 REVERB_APP_SECRET=<cadena larga y aleatoria>   # SOLO en el servidor, nunca en el frontend
-REVERB_HOST=ws.tu-dominio.com                  # dominio público (lo que usa el navegador)
+REVERB_HOST=ws.neoeducore.eduregistro.com                  # dominio público (lo que usa el navegador)
 REVERB_PORT=443
 REVERB_SCHEME=https
 REVERB_SERVER_HOST=0.0.0.0                     # dónde escucha el proceso (dentro del contenedor)
 REVERB_SERVER_PORT=8180
-FRONTEND_URL=https://<dominio del frontend>    # Reverb solo acepta conexiones desde este host
+FRONTEND_URL=https://neoeducore.eduregistro.com    # Reverb solo acepta conexiones desde este host
 
 # Opcional pero recomendado en App y Worker: publicar por la red interna de Docker en vez de
 # salir al dominio público y volver a entrar por Traefik. <nombre> es el nombre interno del recurso
@@ -258,10 +258,10 @@ cambia el comando. En este orden:
 1. **Redesplegar la App** (el entrypoint ya no arranca Reverb; solo cachea la configuración).
 2. **Crear el recurso WebSocket**: mismo repositorio y Dockerfile, comando
    `php artisan reverb:start --host=0.0.0.0 --port=8180 --no-interaction`, dominio
-   `https://ws.tu-dominio.com:8180` (crear antes el registro DNS hacia el droplet).
+   `https://ws.neoeducore.eduregistro.com:8180` (crear antes el registro DNS hacia el droplet).
 3. **Variables `REVERB_*`, `APP_KEY`, `FRONTEND_URL` y conexión a la BD/Redis en los tres recursos**
    (§3b). Reiniciar los tres después.
-4. **Pasarle al frontend** `REVERB_APP_KEY`, `ws.tu-dominio.com`, puerto 443 y esquema https (la
+4. **Pasarle al frontend** `REVERB_APP_KEY`, `ws.neoeducore.eduregistro.com`, puerto 443 y esquema https (la
    `REVERB_APP_SECRET` **no** va al frontend). Es la tarea F21 de la checklist.
 5. **Probar de punta a punta**: un alumno con la página abierta y un docente activando un examen; el
    aviso debe llegar sin recargar. Si no llega, ver «Comprobar que funciona» en §3b.
