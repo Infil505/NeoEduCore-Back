@@ -51,8 +51,8 @@
 > base remota, y `schema:check-drift` sin diferencias.
 >
 > **En desarrollo hay un proceso más que levantar: `php artisan reverb:start`** (además de
-> `queue:work`). **En producción no**: Reverb arranca solo dentro del contenedor de la App
-> (`docker/entrypoint.sh`). En ningún caso es imprescindible: sin él nada se rompe, el aviso en
+> `queue:work`). **En producción** Reverb es su propia instancia (recurso WebSocket, junto a App y
+> Worker; `DEPLOY_COOLIFY.md` §3b). En ningún caso es imprescindible: sin él nada se rompe, el aviso en
 > vivo se pierde y el alumno ve el examen al recargar o en su notificación.
 >
 > ⚠️ **`composer.lock` cambió bastante.** Instalar Reverb obligó a resolver una desincronización
@@ -743,7 +743,7 @@ Cuando el docente activa un examen (`PATCH /api/exams/{exam}/status` → `active
 que puede presentarlo lo recibe **al instante, sin recargar la página**.
 
 - **Servidor:** Laravel **Reverb** (`laravel/reverb`), WebSocket propio, sin servicio de terceros.
-  Es un **proceso aparte**: `php artisan reverb:start` (escucha en `REVERB_SERVER_PORT`, 8080).
+  Es un **proceso aparte**: `php artisan reverb:start` (escucha en `REVERB_SERVER_PORT`, 8180).
   Si no está levantado **no se rompe nada**: el evento viaja por la cola y el aviso en vivo
   simplemente se pierde; el alumno ve el examen al recargar o en su notificación (O1).
   `BROADCAST_CONNECTION=log` lo apaga del todo.
@@ -773,12 +773,10 @@ que puede presentarlo lo recibe **al instante, sin recargar la página**.
 - **Tests:** `Notifications/ExamenActivadoEnVivoTest` (9): a quién se emite y a quién no (salió
   del grupo, suspendido, otra aula), ventana aún cerrada, payload mínimo y quién puede o no
   suscribirse al canal (propio sí; ajeno, docente, suspendido y sin token no).
-- **Producción (P9):** **no es un recurso aparte**. `docker/entrypoint.sh` lo arranca dentro del
-  contenedor de la App cuando el comando es `octane:start` (el worker de cola y el scheduler, que
-  usan la misma imagen, no lo arrancan) y lo reinicia con espera creciente si cae. Si no puede
-  arrancar, la API sigue. Lo único que se configura en Coolify es un segundo dominio hacia el
-  puerto 8080 (`https://ws.…:8080`) y las variables `REVERB_*`, también en el worker. Una sola
-  réplica de la App. Ver `DEPLOY_COOLIFY.md` §3b.
+- **Producción (P9):** tres instancias independientes con la misma imagen: App (`octane:start`), WebSocket
+  (`reverb:start`, puerto 8180, dominio `https://ws.…:8180`) y Worker (`queue:work`). Las variables `REVERB_*`
+  van en las tres; App y Worker publican por `REVERB_PUBLISH_*` (red interna). Una sola réplica del
+  WebSocket. Ver `DEPLOY_COOLIFY.md` §3b.
 
 ---
 
