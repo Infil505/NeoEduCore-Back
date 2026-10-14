@@ -116,10 +116,14 @@ anterior**: el código nuevo no llega a producción aunque el build termine bien
 |---|---|---|
 | **App** | Sí | Método GET · Puerto **8100** · Ruta **`/api/ping`** · la imagen trae `curl` y `wget` |
 | **WebSocket** | Opcional | Si se activa: Puerto **8180**, ruta `/`. Si da problemas, desactivarlo |
-| **Worker** | **No** (desactivar) | No escucha ningún puerto: `queue:work` y el scheduler no son HTTP, así que no puede responder y Coolify lo daría por caído |
+| **Worker** | Da igual | `queue:work` y el scheduler no son HTTP, pero el entrypoint levanta un mini servidor que responde `200 OK` en el puerto **3000** (`docker/health.php`, `HEALTH_PORT`), así que pasa tanto con el healthcheck activado como desactivado |
 
-Coolify propone por defecto `http://localhost:3000/`: en un recurso sin *Ports Exposes* no hay nada
-en ese puerto. En el Worker: pestaña **Healthcheck → desactivar**.
+Coolify propone por defecto `http://localhost:3000/` en un recurso sin *Ports Exposes*. Para el Worker
+lo ideal es desactivar el healthcheck (pestaña **Healthcheck → Disable**, guardar y comprobar que el
+panel «Configuration changes» ya no lista `Health check enabled`), pero la casilla no siempre queda
+aplicada: tres despliegues se revirtieron el 14/10/2026 con el healthcheck «desactivado» en la
+interfaz. Por eso el Worker responde solo en el 3000 y el despliegue no depende de esa casilla.
+`HEALTH_PORT=0` apaga ese servidor.
 
 ## 5. Paso de despliegue: migraciones
 - En Coolify, comando **post-deploy** (o "pre-start"):

@@ -61,5 +61,14 @@ if [ "${CONTAINER_ROLE:-}" = "worker" ] && [ "${RUN_SCHEDULER:-true}" = "true" ]
     ( while true; do php artisan schedule:work --no-interaction; sleep 5; done ) &
 fi
 
+# Healthcheck del Worker. Coolify comprueba cada recurso con una petición HTTP (por defecto a
+# localhost:3000) y, si no contesta, REVIERTE el despliegue al contenedor anterior. El Worker no es
+# un servidor HTTP, así que se levanta un mini servidor que solo responde «OK» (`docker/health.php`).
+# Lo normal es desactivar el healthcheck del Worker en Coolify; esto evita perder despliegues si se
+# queda activo. Puerto con HEALTH_PORT; HEALTH_PORT=0 lo desactiva.
+if [ "${CONTAINER_ROLE:-}" = "worker" ] && [ "${HEALTH_PORT:-3000}" != "0" ]; then
+    ( while true; do php -S "0.0.0.0:${HEALTH_PORT:-3000}" docker/health.php >/dev/null 2>&1; sleep 2; done ) &
+fi
+
 # exec: el comando pasa a ser PID 1 y recibe las señales de parada.
 exec "$@"
