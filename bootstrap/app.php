@@ -9,7 +9,16 @@ return Application::configure(basePath: dirname(__DIR__))
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
-        health: '/up',
+        // Salud: `GET /up` responde el texto «OK» (lo exige el healthcheck de Coolify,
+        // que compara el cuerpo). Sustituye a la página HTML del framework, que además
+        // cargaba fuentes y Tailwind desde CDN externos. No toca la base de datos.
+        then: function (): void {
+            \Illuminate\Support\Facades\Route::get('/up', function () {
+                \Illuminate\Support\Facades\Event::dispatch(new \Illuminate\Foundation\Events\DiagnosingHealth);
+
+                return response('OK', 200, ['Content-Type' => 'text/plain; charset=utf-8', 'Cache-Control' => 'no-store']);
+            });
+        },
     )
     // Autenticación de canales privados (WebSocket): POST /api/broadcasting/auth
     // con el mismo token Bearer de la API.

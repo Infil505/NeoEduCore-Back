@@ -10,67 +10,87 @@ Guía para desplegar NeoEduCore (Laravel + Octane + FrankenPHP) y aguantar picos
 
 ## 2. Recurso "App" (servidor HTTP)
 - Tipo: **Dockerfile** (Coolify lo detecta; usa el `Dockerfile` del repo).
-- Puerto interno: **8000**.
+- Puerto interno: **8100** (no el 8000: lo usa el panel de Coolify). Se cambia con `OCTANE_PORT`; si lo
+  cambias, el puerto del recurso en Coolify y el de **Domains** tienen que coincidir.
 - Octane sobre FrankenPHP mantiene la app en memoria → alta concurrencia con pocas conexiones a BD.
 
 ## 3. Recurso "Worker" (cola de correos)
 - Otro recurso en Coolify con **la misma imagen**, pero comando:
   ```
-  php artisan queue:work --queue=default,correos --tries=3 --max-time=3600
+  php artisan queue:work --queue=default,correos --tries=3 --max-time=3600 --max-jobs=500 --memory=128
   ```
 - Mantiene el envío de correos (reset, alta masiva) en segundo plano. Coolify lo reinicia si cae.
+- `--max-jobs` y `--memory` reciclan el proceso antes de que acumule memoria; Coolify lo vuelve a levantar.
+- Variable `OCTANE_WORKERS` en el recurso App: número de workers de la API (vacío = uno por núcleo).
+  Ver `.env.example`.
 
-## 3b. WebSocket (Reverb) — va DENTRO del recurso App, no es un recurso aparte
-El aviso «examen activado» sin recargar usa Laravel Reverb. **No hace falta crear otro recurso en
-Coolify**: el `Dockerfile` arranca Reverb junto al servidor HTTP (`docker/entrypoint.sh`) y lo
-reinicia solo si cae (espera 2 s → 4 → 8… hasta 30 s; vuelve a 2 s si vivió más de un minuto).
+## 3b. Recurso "WebSocket" (Reverb) — instancia propia
+El aviso «examen activado» sin recargar usa Laravel Reverb. Es un **tercer recurso en Coolify**, con
+la misma imagen y otro comando, independiente de la API y del worker:
 
-- **Cuándo arranca:** solo en el contenedor del servidor HTTP (`octane:start`) y solo si
-  `BROADCAST_CONNECTION=reverb` y están `REVERB_APP_KEY` y `REVERB_APP_SECRET`. El worker de cola y
-  el scheduler usan la misma imagen con otro comando y **no** abren un segundo WebSocket.
-- **Apagarlo:** `REVERB_EMBEDDED=false` (p. ej. si algún día pasa a un recurso propio).
-- **Si Reverb no puede arrancar no se cae la API.** El aviso en vivo se pierde y el alumno ve el
-  examen al recargar o en su notificación. El log del contenedor dice qué pasó (`[entrypoint] …`).
+```
+php artisan reverb:start --host=0.0.0.0 --port=8180 --no-interaction
+```
 
-### Exponerlo (lo único que se configura en Coolify)
+- **Si tu Coolify no tiene campo de comando** (recurso Dockerfile): pon la variable
+  `CONTAINER_ROLE=websocket` (Worker: `CONTAINER_ROLE=worker`; App: nada). El entrypoint sustituye el
+  comando por el de arriba. Además, en ese recurso: *Ports Exposes* `8180`, vaciar *Pre/Post-deployment*
+  (las migraciones solo en la App) y quitar las *Custom Docker options* de ejemplo.
+- **Puerto interno:** 8180. Coolify lo reinicia si cae; la API y el worker no se enteran.
+- **Si Reverb está caído no se cae nada.** El aviso en vivo se pierde y el alumno ve el examen al
+  recargar o en su notificación.
+- Las **tres instancias** (App, Worker, WebSocket) son la misma imagen y comparten el mismo conjunto de
+  variables `REVERB_*`, `APP_KEY` y `FRONTEND_URL`.
+
+### Cómo trabajan juntas
+```
+ navegador ──wss://ws.neoeducore.eduregistro.com──▶ [WebSocket :8180]
+                                              ▲
+ docente activa examen ─▶ [App :8100] ─cola─▶ [Worker] ──HTTP interno──┘  (publica el evento)
+```
+La App encola el evento, el Worker lo publica en Reverb y Reverb lo reparte a los navegadores.
+
+### Exponerlo (dominio del recurso WebSocket)
 El navegador se conecta **directo** al WebSocket, y desde una página `https` solo admite `wss://`.
-En el recurso App, en **Domains**, añadir un segundo dominio apuntando al puerto 8080:
+En el recurso WebSocket, en **Domains**: `https://ws.neoeducore.eduregistro.com:8180`. Coolify (Traefik) pone el
+TLS; el contenedor escucha en claro.
 
-```
-https://api.tu-dominio.com:8000,https://ws.tu-dominio.com:8080
-```
-
-Coolify (Traefik) pone el TLS y los certificados; el contenedor escucha en claro en 8080.
-
-### Variables (en Coolify, no en el repo)
+### Variables (en Coolify, no en el repo; iguales en los tres recursos)
 ```
 BROADCAST_CONNECTION=reverb
 REVERB_APP_ID=neoeducore
 REVERB_APP_KEY=<cadena larga y aleatoria>      # el frontend la usa para conectarse
 REVERB_APP_SECRET=<cadena larga y aleatoria>   # SOLO en el servidor, nunca en el frontend
-REVERB_HOST=ws.tu-dominio.com                  # dominio público del WebSocket
+REVERB_HOST=ws.neoeducore.eduregistro.com                  # dominio público (lo que usa el navegador)
 REVERB_PORT=443
 REVERB_SCHEME=https
 REVERB_SERVER_HOST=0.0.0.0                     # dónde escucha el proceso (dentro del contenedor)
-REVERB_SERVER_PORT=8080
-FRONTEND_URL=https://<dominio del frontend>    # Reverb solo acepta conexiones desde este host
+REVERB_SERVER_PORT=8180
+FRONTEND_URL=https://neoeducore.eduregistro.com    # Reverb solo acepta conexiones desde este host
+
+# Opcional pero recomendado en App y Worker: publicar por la red interna de Docker en vez de
+# salir al dominio público y volver a entrar por Traefik. <nombre> es el nombre interno del recurso
+# WebSocket en Coolify (aparece en su pestaña de red/UUID).
+REVERB_PUBLISH_HOST=<nombre-interno-del-recurso-websocket>
+REVERB_PUBLISH_PORT=8180
+REVERB_PUBLISH_SCHEME=http
 ```
-Generar las dos claves: `php -r "echo bin2hex(random_bytes(24));"`. **El worker de cola necesita
-las mismas variables** (es quien publica el evento hacia Reverb), así que van en los dos recursos.
+Generar las dos claves: `php -r "echo bin2hex(random_bytes(24));"`. Sin `REVERB_PUBLISH_*` el
+Worker publica por `REVERB_HOST` (el dominio público): funciona igual, con un salto más.
 
 ### Comprobar que funciona
-1. En el log de la App, al arrancar: `[entrypoint] Arrancando Reverb en 0.0.0.0:8080`.
+1. Log del recurso WebSocket: `Starting server on 0.0.0.0:8180`.
 2. Activar un examen con una cuenta de docente y ver `examen.activado` llegar a un alumno con la
    página abierta, sin recargar.
-3. Si no llega: ¿el worker corre (`queue:work`)? ¿`REVERB_HOST` es el dominio público y no
-   `localhost`? ¿`FRONTEND_URL` coincide con el origen del frontend?
+3. Si no llega: ¿el Worker corre (`queue:work`)? ¿`REVERB_HOST` es el dominio público y no
+   `localhost`? ¿`FRONTEND_URL` coincide con el origen del frontend? ¿`REVERB_PUBLISH_HOST` resuelve
+   desde el Worker?
 
 ### Límites
-- **Una sola réplica de la App.** Con varias, cada una tendría su propio Reverb y un alumno
-  conectado a una no recibiría lo publicado en otra. Para escalar hay que activar el escalado de
-  Reverb con Redis (`REVERB_SCALING_ENABLED=true`) o sacarlo a un recurso propio.
-- Comparte CPU y memoria con Octane. Para el piloto (~200 alumnos) sobra; si se nota, es el primer
-  candidato a separarse.
+- **Una sola réplica del WebSocket.** Con varias, un alumno conectado a una no recibiría lo
+  publicado en otra. Para escalar hay que activar `REVERB_SCALING_ENABLED=true` (necesita Redis, que
+  de todos modos ya se usa para `CACHE_STORE`).
+- La App sí puede tener varias réplicas: no abre ningún WebSocket.
 
 ## 4. Scheduled task (scheduler de Laravel)
 - En Coolify → Scheduled Tasks, cada minuto:
@@ -230,24 +250,18 @@ El paso 2 no es opcional ni cosmético: sin él, el paso 1 deja el sistema peor 
 antes.
 
 
-## 10. Pendiente en Coolify: poner en marcha el WebSocket (anotado el 08/10/2026)
+## 10. Pendiente en Coolify: poner en marcha las tres instancias (actualizado el 11/10/2026)
 
-El código ya está hecho. **No hace falta copiar el proyecto ni crear otro recurso**: es el mismo
-repositorio y la misma imagen, y Reverb arranca dentro del recurso App (§3b). Lo que falta es solo
-configuración, en este orden:
+El código ya está hecho. Es el mismo repositorio y la misma imagen para los tres recursos; solo
+cambia el comando. En este orden:
 
-1. **Redesplegar la App** para que construya la imagen con `docker/entrypoint.sh` (es lo que arranca
-   Reverb). Mirar el log al arrancar: debe aparecer `[entrypoint] Arrancando Reverb en 0.0.0.0:8080`.
-   Si aparece `Reverb no se arranca…`, falta alguna variable del paso 3.
-2. **Segundo dominio en el recurso App**, en Domains, hacia el puerto 8080:
-   `https://api.tu-dominio.com:8000,https://ws.tu-dominio.com:8080`. Crear antes el registro DNS de
-   `ws.tu-dominio.com` hacia el mismo droplet. Coolify pone el TLS.
-3. **Variables en la App Y en el recurso Worker** (el worker es quien publica el evento):
-   `BROADCAST_CONNECTION=reverb`, `REVERB_APP_ID=neoeducore`, `REVERB_APP_KEY` y `REVERB_APP_SECRET`
-   (largas y aleatorias: `php -r "echo bin2hex(random_bytes(24));"`), `REVERB_HOST=ws.tu-dominio.com`,
-   `REVERB_PORT=443`, `REVERB_SCHEME=https`, `REVERB_SERVER_HOST=0.0.0.0`, `REVERB_SERVER_PORT=8080` y
-   `FRONTEND_URL` con el dominio real del frontend. Reiniciar App y Worker después.
-4. **Pasarle al frontend** `REVERB_APP_KEY`, `ws.tu-dominio.com`, puerto 443 y esquema https (la
+1. **Redesplegar la App** (el entrypoint ya no arranca Reverb; solo cachea la configuración).
+2. **Crear el recurso WebSocket**: mismo repositorio y Dockerfile, comando
+   `php artisan reverb:start --host=0.0.0.0 --port=8180 --no-interaction`, dominio
+   `https://ws.neoeducore.eduregistro.com:8180` (crear antes el registro DNS hacia el droplet).
+3. **Variables `REVERB_*`, `APP_KEY`, `FRONTEND_URL` y conexión a la BD/Redis en los tres recursos**
+   (§3b). Reiniciar los tres después.
+4. **Pasarle al frontend** `REVERB_APP_KEY`, `ws.neoeducore.eduregistro.com`, puerto 443 y esquema https (la
    `REVERB_APP_SECRET` **no** va al frontend). Es la tarea F21 de la checklist.
 5. **Probar de punta a punta**: un alumno con la página abierta y un docente activando un examen; el
    aviso debe llegar sin recargar. Si no llega, ver «Comprobar que funciona» en §3b.
@@ -267,11 +281,11 @@ docker compose up --build
 docker compose exec app php artisan migrate --force   # solo la primera vez
 ```
 
-- **Servicios**: `app` (API en `localhost:8000`), `queue` (`queue:work --queue=default,correos`, necesario
-  para correos y carga masiva) y `db` (Postgres 16 local, volumen `dbdata`).
+- **Servicios**: `app` (API en `localhost:8100`), `websocket` (Reverb en `localhost:8180`), `queue`
+  (`queue:work --queue=default,correos`, necesario para correos, carga masiva y difusión) y `db` (Postgres 16 local, volumen `dbdata`).
 - **No usa la Supabase del `.env`**: la base es local y vacía. Del `.env` solo lee `APP_KEY` (obligatoria) y,
   si existe, `OPENAI_API_KEY`.
-- Correo en `log` (no envía nada) y `BROADCAST_CONNECTION=null` (Reverb apagado en local).
+- Correo en `log` (no envía nada) y Reverb encendido con claves de desarrollo (`local-dev-key`).
 - Apagar: `docker compose down`; con `-v` también se borra la base.
 - Estado: el archivo se validó con `docker compose config`, pero **no se probó levantándolo** (Docker estaba
   bloqueado en la máquina de desarrollo). Ojo: `migrate` a secas ejecuta la migración que borra

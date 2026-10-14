@@ -2,7 +2,8 @@
 #
 #     docker compose up --build
 #
-# Levanta Postgres + la API (puerto 8000) + el worker de cola, usando el
+# Levanta Postgres + las TRES instancias de producción: API (8100), WebSocket (8180)
+# y worker de cola, usando el
 # Dockerfile existente. NO toca la Supabase del .env: la base es local y propia.
 # Lo único que se lee del .env de la raíz es APP_KEY (y opcionalmente OPENAI_API_KEY).
 #
@@ -17,7 +18,7 @@ x-app: &app
     APP_ENV: local
     APP_DEBUG: "true"
     APP_KEY: ${APP_KEY:?define APP_KEY en el .env (php artisan key:generate --show)}
-    APP_URL: http://localhost:8000
+    APP_URL: http://localhost:8100
     DB_CONNECTION: pgsql
     DB_HOST: db
     DB_PORT: 5432
@@ -28,7 +29,21 @@ x-app: &app
     CACHE_STORE: file
     SESSION_DRIVER: database
     MAIL_MAILER: log
-    BROADCAST_CONNECTION: "null"
+    # Reverb: las claves son solo de desarrollo. Los navegadores se conectan a
+    # localhost:8180; app y worker publican por la red interna (websocket:8180).
+    BROADCAST_CONNECTION: reverb
+    REVERB_APP_ID: neoeducore
+    REVERB_APP_KEY: ${REVERB_APP_KEY:-local-dev-key}
+    REVERB_APP_SECRET: ${REVERB_APP_SECRET:-local-dev-secret}
+    REVERB_HOST: localhost
+    REVERB_PORT: 8180
+    REVERB_SCHEME: http
+    REVERB_SERVER_HOST: 0.0.0.0
+    REVERB_SERVER_PORT: 8180
+    REVERB_PUBLISH_HOST: websocket
+    REVERB_PUBLISH_PORT: 8180
+    REVERB_PUBLISH_SCHEME: http
+    FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   depends_on:
     db:
@@ -38,9 +53,16 @@ services:
   app:
     <<: *app
     ports:
-      - "8000:8000"
+      - "8100:8100"
 
-  # Mismo código, otro comando: manda correos y procesa la carga masiva.
+  # Instancia 2: WebSocket (Laravel Reverb). Mismo código, otro comando.
+  websocket:
+    <<: *app
+    command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8180", "--no-interaction"]
+    ports:
+      - "8180:8180"
+
+  # Instancia 3: worker. Manda correos, procesa la carga masiva y publica los eventos.
   queue:
     <<: *app
     command: ["php", "artisan", "queue:work", "--queue=default,correos", "--tries=3"]

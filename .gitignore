@@ -30,3 +30,6 @@ CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx
 
 # Caché en archivos de Laravel: se regenera sola y cambia a cada petición
 /storage/framework/cache/data/
+
+# Variables reales de cada instancia en Coolify (con secretos): nunca al repositorio
+/deploy/coolify/*.env

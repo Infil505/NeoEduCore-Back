@@ -2,14 +2,13 @@
 # Pensada para DigitalOcean + Coolify. Un solo contenedor sirve HTTP con alta
 # concurrencia (Octane mantiene la app en memoria → pocas conexiones a Supabase).
 #
-# El worker de cola y el scheduler se despliegan como recursos APARTE en Coolify
-# (misma imagen, otros comandos) — ver DEPLOY_COOLIFY.md.
-#
-# El WebSocket (Laravel Reverb, aviso «examen activado») NO es un recurso aparte:
-# `docker/entrypoint.sh` lo arranca dentro de este mismo contenedor cuando el
-# comando es el servidor HTTP, y lo reinicia si cae.
+# Una sola imagen, TRES instancias independientes (cada una es un recurso en
+# Coolify con su comando; ver DEPLOY_COOLIFY.md):
+#   app        octane:start   API HTTP (CMD por defecto, puerto 8100)
+#   websocket  reverb:start   WebSocket del aviso «examen activado» (puerto 8180)
+#   worker     queue:work     correos, carga masiva y difusión de eventos
 
-FROM dunglas/frankenphp:1-php8.3
+FROM dunglas/frankenphp:1-php8.4
 
 # Extensiones PHP que usa el proyecto
 RUN install-php-extensions \
@@ -19,7 +18,14 @@ RUN install-php-extensions \
     zip \
     gd \
     opcache \
-    pcntl
+    pcntl \
+    redis
+
+# curl: el healthcheck de Coolify lo ejecuta DENTRO del contenedor. Sin él (o sin wget)
+# el recurso queda «Unhealthy» aunque la app funcione, y Traefik deja de enrutarlo.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Composer (binario oficial)
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
@@ -33,6 +39,11 @@ RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-in
 # 2) Código de la app
 COPY . .
 
+# Carpetas que Laravel necesita escribir y que git no versiona (están vacías o con
+# archivos ignorados): sin ellas `artisan` falla con «bootstrap/cache must be present and writable».
+RUN mkdir -p bootstrap/cache storage/logs storage/framework/cache/data storage/framework/sessions storage/framework/views \
+    && chmod -R ug+rwX bootstrap/cache storage
+
 # 3) Autoload optimizado + opcache
 RUN composer dump-autoload --optimize --no-dev --no-interaction \
     && cp -n .env.example .env || true
@@ -41,24 +52,27 @@ RUN composer dump-autoload --optimize --no-dev --no-interaction \
 RUN { \
     echo "opcache.enable=1"; \
     echo "opcache.enable_cli=1"; \
-    echo "opcache.memory_consumption=256"; \
+    echo "opcache.memory_consumption=128"; \
+    echo "opcache.interned_strings_buffer=16"; \
     echo "opcache.max_accelerated_files=20000"; \
     echo "opcache.validate_timestamps=0"; \
-    echo "opcache.jit=1255"; \
-    echo "opcache.jit_buffer_size=128M"; \
+    echo "opcache.jit=0"; \
+    echo "opcache.jit_buffer_size=0"; \
   } > /usr/local/etc/php/conf.d/opcache.ini
 
 ENV APP_ENV=production
 ENV APP_DEBUG=false
 
-# Entrypoint: levanta Reverb junto al servidor HTTP (ver docker/entrypoint.sh).
+# Entrypoint común: cachea la configuración y ajusta Octane (ver docker/entrypoint.sh).
 # `sed` quita los retornos de carro por si el archivo llegó con saltos de línea de Windows.
 COPY docker/entrypoint.sh /usr/local/bin/neoeducore-entrypoint
 RUN sed -i 's/\r$//' /usr/local/bin/neoeducore-entrypoint \
     && chmod +x /usr/local/bin/neoeducore-entrypoint
 
-# 8000 = API (Octane). 8080 = WebSocket (Reverb), solo si BROADCAST_CONNECTION=reverb.
-EXPOSE 8000 8080
+# 8100 = API (Octane; no usa 8000 porque es el del panel de Coolify). El puerto se
+# fija en docker/entrypoint.sh y se cambia con OCTANE_PORT.
+# 8180 = WebSocket (Reverb): lo escucha solo la instancia `websocket`.
+EXPOSE 8100 8180
 
 ENTRYPOINT ["neoeducore-entrypoint"]
 
@@ -70,4 +84,4 @@ ENTRYPOINT ["neoeducore-entrypoint"]
 # cada 500 peticiones acota ese arrastre a cambio de un arranque en frío
 # ocasional. Es además la contramedida barata frente a una petición maliciosa que
 # deje un worker en mal estado: se recicla solo.
-CMD ["php", "artisan", "octane:start", "--server=frankenphp", "--host=0.0.0.0", "--port=8000", "--max-requests=500"]
+CMD ["php", "artisan", "octane:start", "--server=frankenphp", "--host=0.0.0.0", "--max-requests=500"]

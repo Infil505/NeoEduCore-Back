@@ -313,6 +313,7 @@ Route::middleware(['auth:sanctum', 'activa', 'clave.temporal'])->group(function 
         Route::post('/study-resources', [StudyResourceController::class, 'store']);
     });
 
+    
     /*
     |--------------------------------------------------------------------------
     | SOLO SUPERADMIN — el operador de la plataforma, externo a las instituciones

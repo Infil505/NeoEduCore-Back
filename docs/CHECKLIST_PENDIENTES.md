@@ -248,13 +248,13 @@ Primero decidir, después ejecutar. Al tomar la decisión, anotar **qué se elig
 - [ ] 🟠 **P6 · Backups cifrados de la base de datos** — no hay script ni documentación (RNF de seguridad)
 - [ ] 🟠 **P7 · Monitoreo y alertas de caída** — Sentry o equivalente (RNF de disponibilidad)
 - [ ] **P8 · Documentar HTTPS/TLS** en `DEPLOY_COOLIFY.md` (lo resuelve Coolify, pero debe quedar escrito)
-- [ ] 🔴 **P9 · WebSocket (Reverb) en producción** — el código ya está hecho: **no es un recurso aparte**, `docker/entrypoint.sh` lo arranca dentro de la App. Falta configurarlo en Coolify
-  - [x] Entrypoint + `Dockerfile` (`EXPOSE 8080`): solo con `octane:start`, reinicio con espera creciente, no tumba la API; probado el script con las cuatro ramas (08/10/2026)
-  - [ ] Segundo dominio en el recurso App hacia el puerto 8080: `https://api.…:8000,https://ws.…:8080`
-  - [ ] Variables en la App **y en el worker**: `BROADCAST_CONNECTION=reverb`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET` (largas y aleatorias; el secret solo en el servidor), `REVERB_HOST=ws.…`, `REVERB_PORT=443`, `REVERB_SCHEME=https`, `REVERB_SERVER_HOST=0.0.0.0`, `REVERB_SERVER_PORT=8080`, `FRONTEND_URL`
-  - [ ] Construir la imagen y comprobar en el log `[entrypoint] Arrancando Reverb…` (no se pudo probar el build: el daemon de Docker no estaba arrancado)
+- [ ] 🔴 **P9 · WebSocket (Reverb) en producción** — el código ya está hecho: desde el 11/10/2026 son **tres instancias** (App, WebSocket, Worker: misma imagen, distinto comando). Falta crearlas y configurarlas en Coolify
+  - [x] Separado en tres instancias (11/10/2026): el entrypoint ya no arranca Reverb; `docker-compose.yml` levanta `app`, `websocket` y `queue`; app y worker publican por `REVERB_PUBLISH_*` (red interna)
+  - [ ] Crear el recurso WebSocket (`php artisan reverb:start --host=0.0.0.0 --port=8180 --no-interaction`) con dominio `https://ws.…:8180`
+  - [ ] Variables en los **tres recursos** (más `REVERB_PUBLISH_HOST/PORT/SCHEME` en App y Worker): `BROADCAST_CONNECTION=reverb`, `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET` (largas y aleatorias; el secret solo en el servidor), `REVERB_HOST=ws.…`, `REVERB_PORT=443`, `REVERB_SCHEME=https`, `REVERB_SERVER_HOST=0.0.0.0`, `REVERB_SERVER_PORT=8180`, `FRONTEND_URL`
+  - [ ] Construir la imagen y levantar `docker compose up --build` (no se pudo probar: el daemon de Docker no estaba arrancado)
   - [ ] Probar de punta a punta: activar un examen y verlo llegar a un alumno sin recargar
-  - Una sola réplica de la App; para escalar, Redis (`REVERB_SCALING_ENABLED`). Sin Reverb nada se rompe
+  - Una sola réplica del WebSocket; para escalar, Redis (`REVERB_SCALING_ENABLED`). Sin Reverb nada se rompe
   - Fuente: `DEPLOY_COOLIFY.md` §3b y §10 (pasos en orden)
 
 ---

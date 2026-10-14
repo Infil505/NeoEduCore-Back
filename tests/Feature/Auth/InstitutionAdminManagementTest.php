@@ -140,6 +140,35 @@ class InstitutionAdminManagementTest extends TestCase
         Mail::assertQueued(PasswordSetupMail::class, fn ($m) => $m->hasTo($admin->email));
     }
 
+    public function test_reset_password_with_a_password_sets_it_as_temporary(): void
+    {
+        Mail::fake();
+        $this->signInSuperAdmin();
+
+        $admin = User::factory()->admin()->create([
+            'institution_id' => Institution::factory()->create()->id,
+            'status'         => 'active',
+        ]);
+        $admin->createToken('sesion-previa');
+
+        // Débil: mismas reglas que el reset del admin de centro.
+        $this->patchJson("/api/institution-admins/{$admin->id}/reset-password", [
+            'password' => 'abcdefgh', 'password_confirmation' => 'abcdefgh',
+        ])->assertStatus(422);
+
+        $this->patchJson("/api/institution-admins/{$admin->id}/reset-password", [
+            'password' => 'Temporal123', 'password_confirmation' => 'Temporal123',
+        ])->assertOk()->assertJsonPath('data.modo', 'temporal');
+
+        $admin->refresh();
+        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('Temporal123', $admin->password_hash));
+        $this->assertTrue($admin->must_change_password);
+        $this->assertSame(0, $admin->tokens()->count());
+
+        // Con contraseña no se manda enlace.
+        Mail::assertNothingQueued();
+    }
+
     public function test_reset_password_does_not_work_on_a_non_admin(): void
     {
         Mail::fake();

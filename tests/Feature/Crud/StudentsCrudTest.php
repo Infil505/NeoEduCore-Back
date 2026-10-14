@@ -283,4 +283,57 @@ class StudentsCrudTest extends TestCase
             ->assertJsonPath('data.0.exam_title', 'Parcial 1')
             ->assertJsonPath('data.0.percentage', 80);
     }
+
+    /**
+     * Regresión del 13/10/2026: la lista unió examen y materia en la consulta de los
+     * intentos (antes eran 3 viajes a la base). Tiene que seguir dando la materia, no
+     * mezclar un examen de OTRO centro aunque comparta el id de materia, y no volver a
+     * las consultas extra (con la base remota cada una son ~0,5 s de un worker).
+     */
+    public function test_my_attempts_returns_subject_in_two_queries_without_leaking_other_centers(): void
+    {
+        $institution = Institution::factory()->create();
+        $yo = User::factory()->student()->create(['institution_id' => $institution->id]);
+        Student::factory()->create(['user_id' => $yo->id, 'institution_id' => $institution->id]);
+
+        $subject = \App\Models\Academic\Subject::factory()->create(['institution_id' => $institution->id, 'name' => 'Matemática']);
+        $exam = \App\Models\Exams\Exam::factory()->create([
+            'institution_id' => $institution->id, 'title' => 'Parcial 1', 'subject_id' => $subject->id,
+        ]);
+        \App\Models\Exams\ExamAttempt::factory()->submitted()->create([
+            'institution_id' => $institution->id, 'exam_id' => $exam->id, 'student_user_id' => $yo->id,
+        ]);
+
+        // Otro centro con un examen distinto: jamás debe aparecer en la lista de este alumno.
+        $otroCentro = Institution::factory()->create();
+        $ajeno = User::factory()->student()->create(['institution_id' => $otroCentro->id]);
+        Student::factory()->create(['user_id' => $ajeno->id, 'institution_id' => $otroCentro->id]);
+        $examAjeno = \App\Models\Exams\Exam::factory()->create(['institution_id' => $otroCentro->id, 'title' => 'Examen ajeno']);
+        \App\Models\Exams\ExamAttempt::factory()->submitted()->create([
+            'institution_id' => $otroCentro->id, 'exam_id' => $examAjeno->id, 'student_user_id' => $ajeno->id,
+        ]);
+
+        $this->actingAs($yo, 'sanctum');
+
+        \Illuminate\Support\Facades\DB::enableQueryLog();
+        $res = $this->getJson('/api/students/me/attempts');
+        $consultas = count(\Illuminate\Support\Facades\DB::getQueryLog());
+
+        $res->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.exam_title', 'Parcial 1')
+            ->assertJsonPath('data.0.subject', 'Matemática');
+        $this->assertStringNotContainsString('Examen ajeno', $res->getContent());
+        // Con las cachés en frío (el test): centro activo + lista + catálogo de materias.
+        // En producción las dos de caché no llegan a la base. Antes eran 4 (exámenes y
+        // materias por separado), así que volver a `with()` rompe este tope.
+        $this->assertLessThanOrEqual(
+            3,
+            $consultas,
+            "attempts hizo {$consultas} consultas: " . json_encode(array_map(
+                fn ($q) => substr($q['query'], 0, 90),
+                \Illuminate\Support\Facades\DB::getQueryLog()
+            ))
+        );
+    }
 }
