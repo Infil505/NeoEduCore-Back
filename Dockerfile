@@ -21,10 +21,11 @@ RUN install-php-extensions \
     pcntl \
     redis
 
-# curl: el healthcheck de Coolify lo ejecuta DENTRO del contenedor. Sin él (o sin wget)
-# el recurso queda «Unhealthy» aunque la app funcione, y Traefik deja de enrutarlo.
+# curl y wget: el healthcheck de Coolify lo ejecuta DENTRO del contenedor y, según cómo esté
+# configurado el recurso, usa una u otra (el 14/10 falló con «wget: not found»). Sin ellas el
+# recurso queda «Unhealthy» aunque la app funcione y Coolify revierte el despliegue.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Composer (binario oficial)

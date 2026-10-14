@@ -107,6 +107,20 @@ cada minuto) y limpia los tokens caducados. Sin él, el docente tiene que abrir 
 - Comprobar que corre: `php artisan schedule:list` y, tras la hora de apertura de un examen de
   prueba, que pasa a `active` en un minuto.
 
+### Healthcheck de Coolify (si falla, el despliegue se REVIERTE sin avisar del motivo)
+Coolify arranca el contenedor nuevo, le pasa un healthcheck y, si no responde, **vuelve al contenedor
+anterior**: el código nuevo no llega a producción aunque el build termine bien. Síntoma en el log:
+`Healthcheck logs: wget: not found` · `New container is unhealthy, rolling back`.
+
+| Recurso | Healthcheck | Configuración |
+|---|---|---|
+| **App** | Sí | Método GET · Puerto **8100** · Ruta **`/api/ping`** · la imagen trae `curl` y `wget` |
+| **WebSocket** | Opcional | Si se activa: Puerto **8180**, ruta `/`. Si da problemas, desactivarlo |
+| **Worker** | **No** (desactivar) | No escucha ningún puerto: `queue:work` y el scheduler no son HTTP, así que no puede responder y Coolify lo daría por caído |
+
+Coolify propone por defecto `http://localhost:3000/`: en un recurso sin *Ports Exposes* no hay nada
+en ese puerto. En el Worker: pestaña **Healthcheck → desactivar**.
+
 ## 5. Paso de despliegue: migraciones
 - En Coolify, comando **post-deploy** (o "pre-start"):
   ```
