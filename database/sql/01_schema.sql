@@ -310,7 +310,9 @@ CREATE TABLE public.exam_attempts (
     updated_at timestamp(0) without time zone,
     paused_at timestamp(0) without time zone,
     total_paused_seconds integer DEFAULT 0 NOT NULL,
-    ai_recommendations_status public.ai_recommendations_status
+    ai_recommendations_status public.ai_recommendations_status,
+    draft_answers jsonb,
+    draft_saved_at timestamp(0) without time zone
 );
 
 

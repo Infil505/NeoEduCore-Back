@@ -39,9 +39,17 @@ class ExamAttempt extends Model
         'grade_status',
 
         'ai_recommendations_status',
+
+        'draft_answers',
+        'draft_saved_at',
     ];
 
+    // El borrador solo se sirve por su endpoint propio: no debe viajar en cada JSON del intento.
+    protected $hidden = ['draft_answers'];
+
     protected $casts = [
+        'draft_answers'  => 'array',
+        'draft_saved_at' => 'datetime',
         'attempt_number'       => 'integer',
         'started_at'           => 'datetime',
         'submitted_at'         => 'datetime',

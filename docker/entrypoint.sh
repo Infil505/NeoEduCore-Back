@@ -54,5 +54,12 @@ if servidor_http "$@"; then
     fi
 fi
 
+# El scheduler (abrir y cerrar exámenes por fecha, limpiar tokens) corre dentro del Worker: así no
+# depende de una «Scheduled Task» de Coolify que alguien tiene que acordarse de crear. Si cae, se
+# relanza. Desactivable con RUN_SCHEDULER=false (p. ej. si ya lo ejecuta otro sitio).
+if [ "${CONTAINER_ROLE:-}" = "worker" ] && [ "${RUN_SCHEDULER:-true}" = "true" ]; then
+    ( while true; do php artisan schedule:work --no-interaction; sleep 5; done ) &
+fi
+
 # exec: el comando pasa a ser PID 1 y recibe las señales de parada.
 exec "$@"

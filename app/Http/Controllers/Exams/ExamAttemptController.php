@@ -122,11 +122,11 @@ class ExamAttemptController extends Controller
         if (!$resultado['nuevo']) {
             return response()->json([
                 'message' => 'Ya tienes un intento en curso de este examen: retómalo.',
-                'data'    => $resultado['intento'],
+                'data'    => $this->conPlazo($resultado['intento'], $exam, $student),
             ], 409);
         }
 
-        return response()->json(['data' => $resultado['intento']], 201);
+        return response()->json(['data' => $this->conPlazo($resultado['intento'], $exam, $student)], 201);
     }
 
     /**
@@ -378,16 +378,119 @@ class ExamAttemptController extends Controller
     }
 
     /**
+     * Añade al intento cuándo se le acaba el tiempo (`deadline_at`, ISO 8601, SIN la gracia de red) y la
+     * hora del servidor (`server_time`). El frontend no puede calcular el plazo por su cuenta: depende de
+     * la adecuación del alumno y de las pausas acreditadas. Con `server_time` corrige el desfase de su
+     * reloj. `deadline_at` es `null` si el examen no tiene límite de tiempo.
+     */
+    private function conPlazo(ExamAttempt $attempt, ?Exam $exam = null, ?Student $student = null): ExamAttempt
+    {
+        // Del intento cargado por `intentoPropio` salen sin consulta; luego se quitan para no engordar el JSON.
+        $exam ??= $attempt->exam;
+        $student ??= $attempt->relationLoaded('alumno') ? $attempt->getRelation('alumno') : Student::where('user_id', $attempt->student_user_id)->first();
+
+        $plazo = $exam ? app(ExamAttemptRulesService::class)->plazoDeEntrega($exam, $attempt, $student) : null;
+
+        $attempt->setAttribute('deadline_at', $plazo?->copy()->subSeconds((int) config('academic.exam.grace_seconds'))->toISOString());
+        $attempt->setAttribute('server_time', now()->toISOString());
+        $attempt->unsetRelation('exam')->unsetRelation('alumno');
+
+        return $attempt;
+    }
+
+    /**
      * El intento del alumno en ese examen, en UNA consulta (antes: el binding del examen y el del
      * intento). `null` si no existe, no es suyo o es de otro examen.
      */
     private function intentoPropio(object $user, string $exam, string $attempt): ?ExamAttempt
     {
-        return ExamAttempt::query()
+        // Con su examen y el perfil del alumno ya unidos: el plazo (`conPlazo`) los necesita y así no
+        // cuestan consultas aparte en pausar, reanudar y guardar el borrador.
+        $intento = RelacionesEnLinea::unir(ExamAttempt::query(), [
+            'exam'   => ['exams', 'exam_id', Exam::COLUMNAS],
+            'alumno' => ['students', 'student_user_id', Student::COLUMNAS, null, 'user_id'],
+        ])
             ->where('exam_attempts.student_user_id', $user->id)
             ->where('exam_attempts.exam_id', $exam)
             ->where('exam_attempts.id', $attempt)
             ->first();
+
+        if ($intento) {
+            RelacionesEnLinea::hidratar([$intento], ['exam' => Exam::class, 'alumno' => Student::class]);
+        }
+
+        return $intento;
+    }
+
+    /**
+     * Guarda el borrador de respuestas del intento (autoguardado del frontend).
+     *
+     * Sustituye el borrador anterior entero: el cliente manda todo lo que tiene marcado. No califica ni
+     * comprueba que cada respuesta tenga sentido —eso lo hace la entrega—, solo acota el tamaño. Si el
+     * tiempo se agota y el alumno no llegó a enviar, el servidor entrega esto (`ExamAutoSubmitService`).
+     */
+    public function saveDraft(Request $request, string $exam, string $attempt, ExamAttemptRulesService $rules)
+    {
+        $user = $request->user();
+
+        $intento = $this->intentoPropio($user, $exam, $attempt);
+        if ($intento === null) {
+            return response()->json(['message' => 'Intento no válido'], 404);
+        }
+
+        $data = $request->validate([
+            'answers' => ['present', 'array', 'max:300'],
+            'answers.*.question_id' => ['required', 'uuid'],
+            'answers.*.answer_text' => ['nullable', 'string', 'max:4000'],
+            'answers.*.selected_option_ids' => ['nullable', 'array', 'max:10'],
+            'answers.*.selected_option_ids.*' => ['integer'],
+        ]);
+
+        try {
+            $rules->assertAttemptIsSubmittable($intento->exam, $intento, $intento->getRelation('alumno'));
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
+        }
+
+        $limpio = collect($data['answers'])->map(fn (array $a) => [
+            'question_id'         => $a['question_id'],
+            'answer_text'         => $a['answer_text'] ?? null,
+            'selected_option_ids' => array_values($a['selected_option_ids'] ?? []),
+        ])->values()->all();
+
+        // Condicionado a «no entregado»: si la entrega se cruza con el autoguardado, no resucita el borrador.
+        $guardado = ExamAttempt::query()
+            ->whereKey($intento->id)
+            ->whereNull('submitted_at')
+            ->update([
+                'draft_answers'  => json_encode($limpio, JSON_UNESCAPED_UNICODE),
+                'draft_saved_at' => now()->startOfSecond(),
+            ]);
+
+        if ($guardado === 0) {
+            return response()->json(['message' => 'Este intento ya fue enviado'], 409);
+        }
+
+        return response()->json(['data' => ['saved_at' => now()->startOfSecond()->toISOString(), 'answers' => count($limpio)]]);
+    }
+
+    /** El borrador guardado, para retomar el intento tras recargar o volver a entrar. */
+    public function showDraft(Request $request, string $exam, string $attempt)
+    {
+        $intento = $this->intentoPropio($request->user(), $exam, $attempt);
+
+        if ($intento === null) {
+            return response()->json(['message' => 'Intento no válido'], 404);
+        }
+
+        $plazo = $this->conPlazo($intento);
+
+        return response()->json(['data' => [
+            'answers'     => $intento->makeVisible('draft_answers')->draft_answers ?? [],
+            'saved_at'    => $intento->draft_saved_at?->toISOString(),
+            'deadline_at' => $plazo->getAttribute('deadline_at'),
+            'server_time' => $plazo->getAttribute('server_time'),
+        ]]);
     }
 
     public function pause(Request $request, string $exam, string $attempt)
@@ -415,7 +518,7 @@ class ExamAttemptController extends Controller
         // columna es timestamp(0)) y releer la fila era un viaje más a la base.
         $attempt->update(['paused_at' => now()->startOfSecond()]);
 
-        return response()->json(['data' => $attempt]);
+        return response()->json(['data' => $this->conPlazo($attempt)]);
     }
 
     public function resume(Request $request, string $exam, string $attempt, ExamAttemptRulesService $rules)
@@ -442,7 +545,7 @@ class ExamAttemptController extends Controller
             'paused_at'            => null,
         ]);
 
-        return response()->json(['data' => $attempt]);
+        return response()->json(['data' => $this->conPlazo($attempt)]);
     }
 
     /**

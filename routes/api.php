@@ -105,7 +105,11 @@ Route::middleware(['auth:sanctum', 'activa', 'clave.temporal'])->group(function 
         Route::get('/dashboard/student-overview', [OverviewController::class, 'studentOverview']);
         Route::post('/exams/{exam}/attempts/start', [ExamAttemptController::class, 'start']);
         Route::post('/exams/{exam}/attempts/{attempt}/submit', [ExamAttemptController::class, 'submit']);
-        Route::patch('/exams/{exam}/attempts/{attempt}/pause', [ExamAttemptController::class, 'pause']);
+        Route::put('/exams/{exam}/attempts/{attempt}/draft', [ExamAttemptController::class, 'saveDraft'])
+            ->whereUuid(['exam', 'attempt']);
+        Route::get('/exams/{exam}/attempts/{attempt}/draft', [ExamAttemptController::class, 'showDraft'])
+            ->whereUuid(['exam', 'attempt']);
+        Route::patch('/exams/{exam}/attempts/{attempt}/pause',[ExamAttemptController::class, 'pause']);
         Route::patch('/exams/{exam}/attempts/{attempt}/resume', [ExamAttemptController::class, 'resume']);
         Route::get('/exams/{exam}/attempts/{attempt}', [ExamAttemptController::class, 'show']);
         // Resultados del intento. Es lo que abre el alumno al terminar, y la

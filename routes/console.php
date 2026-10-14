@@ -22,6 +22,18 @@ Schedule::command('exams:sincronizar-estados')
 
 /*
 |--------------------------------------------------------------------------
+| Entrega automática de intentos vencidos
+|--------------------------------------------------------------------------
+| Si al alumno se le acaba el tiempo y no envía (pestaña cerrada, sin conexión),
+| el servidor entrega su último borrador autoguardado pasado el plazo más
+| `EXAM_AUTO_SUBMIT_DELAY_SECONDS`. También antes de la cola.
+*/
+Schedule::command('exams:cerrar-intentos-vencidos')
+    ->everyMinute()
+    ->withoutOverlapping();
+
+/*
+|--------------------------------------------------------------------------
 | Drenado de la cola (correos en segundo plano) — opción para hosting gratuito
 |--------------------------------------------------------------------------
 | Muchos hosting gratuitos/baratos ofrecen cron pero no procesos daemon, así

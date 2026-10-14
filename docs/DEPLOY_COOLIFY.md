@@ -92,12 +92,20 @@ Worker publica por `REVERB_HOST` (el dominio público): funciona igual, con un s
   de todos modos ya se usa para `CACHE_STORE`).
 - La App sí puede tener varias réplicas: no abre ningún WebSocket.
 
-## 4. Scheduled task (scheduler de Laravel)
-- En Coolify → Scheduled Tasks, cada minuto:
-  ```
-  php artisan schedule:run
-  ```
-- Si NO querés el worker dedicado del paso 3, el scheduler ya drena la cola cada minuto (definido en `routes/console.php`). Con worker dedicado, este task queda para futuras tareas programadas.
+## 4. Scheduler de Laravel
+**Es imprescindible**: es lo que abre y cierra los exámenes por fecha (`exams:sincronizar-estados`,
+cada minuto) y limpia los tokens caducados. Sin él, el docente tiene que abrir cada examen a mano.
+
+- **Ya corre solo dentro del Worker** (`CONTAINER_ROLE=worker`): el entrypoint lanza
+  `php artisan schedule:work` en segundo plano y lo relanza si cae. No hace falta crear nada en
+  Coolify. Se desactiva con `RUN_SCHEDULER=false` si se prefiere ejecutarlo en otro sitio.
+- ⚠️ Si el Worker se configuró con un **comando personalizado** en vez de `CONTAINER_ROLE=worker`,
+  el entrypoint no se entera y el scheduler NO arranca: usar `CONTAINER_ROLE=worker`, o crear en
+  Coolify → Scheduled Tasks (cada minuto) `php artisan schedule:run`.
+- Con un solo Worker no hay solapes. Con varios, dejar `RUN_SCHEDULER=true` solo en uno (el
+  comando es idempotente, pero el aviso a los alumnos no debe duplicarse).
+- Comprobar que corre: `php artisan schedule:list` y, tras la hora de apertura de un examen de
+  prueba, que pasa a `active` en un minuto.
 
 ## 5. Paso de despliegue: migraciones
 - En Coolify, comando **post-deploy** (o "pre-start"):
@@ -144,14 +152,16 @@ QUEUE_CONNECTION=database
 CACHE_STORE=redis
 SESSION_DRIVER=database
 
-# Correo (Gmail u otro SMTP)
-MAIL_MAILER=smtp
-MAIL_HOST=smtp.gmail.com
-MAIL_PORT=587
-MAIL_USERNAME=...
-MAIL_PASSWORD=...
-MAIL_ENCRYPTION=tls
-MAIL_FROM_ADDRESS=...
+# Correo. ⚠️ DigitalOcean bloquea la salida por los puertos SMTP 25, 465 y 587
+# (comprobado: `fsockopen smtp.gmail.com:587` → timed out), así que Gmail por SMTP
+# NO funciona desde el droplet. Usar un proveedor por API HTTPS (Resend, con
+# `composer require resend/resend-php`):
+MAIL_MAILER=resend
+RESEND_KEY=...
+MAIL_FROM_ADDRESS=no-reply@neoeducore.eduregistro.com   # dominio verificado en Resend
+# Si se usa SMTP en otro host/puerto abierto: MAIL_MAILER=smtp, MAIL_HOST, MAIL_PORT,
+# MAIL_USERNAME, MAIL_PASSWORD (y MAIL_TIMEOUT, 15 s por defecto). `MAIL_ENCRYPTION`
+# ya no existe en Laravel 11+: es `MAIL_SCHEME` (smtp o smtps).
 
 OPENAI_API_KEY=...
 OPENAI_REQUEST_TIMEOUT=15     # sin esto rige el default de 30 s y un worker
@@ -160,6 +170,21 @@ OPENAI_REQUEST_TIMEOUT=15     # sin esto rige el default de 30 s y un worker
 # Para el pico de logins simultáneos: bcrypt más barato (sigue seguro)
 BCRYPT_ROUNDS=10
 ```
+
+### Variables que deben ser IGUALES en varias instancias
+Las plantillas por instancia están en `deploy/coolify/*.env.example` (los `.env` reales de esa
+carpeta están en `.gitignore`). Lo que se repite, y por qué:
+
+| Variables | App | Worker | WebSocket | Por qué |
+|---|:-:|:-:|:-:|---|
+| `APP_KEY`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST/PORT/SCHEME`, `FRONTEND_URL` | ✔ | ✔ | ✔ | Firman y publican los mismos eventos; si difieren, el WebSocket rechaza o no entrega |
+| `DB_*`, `REDIS_*`, `CACHE_STORE=redis` | ✔ | ✔ | — | Misma base y misma caché compartida |
+| `MAIL_MAILER=resend`, `RESEND_KEY`, `MAIL_FROM_ADDRESS`, `MAIL_TIMEOUT` | ✔ | ✔ | — | El Worker envía; la App también puede enviar |
+| `EXAM_GRACE_SECONDS`, `EXAM_MAX_PAUSE_SECONDS`, `EXAM_ADECUACION_*`, `EXAM_AUTO_SUBMIT_DELAY_SECONDS` | ✔ | ✔ | — | La App calcula el plazo al enviar; el Worker (scheduler) entrega solo los intentos vencidos con **el mismo cálculo**. Si difieren, el servidor entregaría antes o después de lo que ve el alumno |
+| `OPENAI_*` (modelo, topes, límites diarios), `AI_LINK_CHECK` | ✔ | ✔ | — | El tutor asíncrono y el análisis de IA corren en el Worker |
+| `RUN_SCHEDULER=true` | — | ✔ (uno solo) | — | Abre/cierra exámenes y entrega intentos vencidos |
+
+Solo en la App: `OCTANE_*`, `RATE_LIMIT_*`, `SANCTUM_*`, `SESSION_LIFETIME`, `TRUSTED_PROXIES`, `PAGINATION_*`.
 
 ### Opcionales — todas tienen un valor por defecto sensato
 
