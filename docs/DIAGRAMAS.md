@@ -801,7 +801,7 @@ flowchart TB
     PG[("PostgreSQL gestionado<br/><i>DigitalOcean · cola, datos y tokens</i>")]
     REDIS[("Redis<br/><i>caché y contadores de límites</i>")]
     OPENAI["OpenAI"]
-    SMTP["SMTP"]
+    RESEND["Resend<br/><i>API HTTPS · único canal de correo</i>"]
 
     CLIENT -->|"HTTPS · JSON + Bearer"| TRAEFIK
     TRAEFIK --> OCTANE
@@ -816,7 +816,7 @@ flowchart TB
     WORKER -->|"lee jobs"| PG
     WORKER --> REDIS
     WORKER -->|"tutor, análisis y verificación de clave"| OPENAI
-    WORKER --> SMTP
+    WORKER -->|"correo"| RESEND
     WORKER -->|"avisos a la campana"| PG
 
     style PG stroke-width:3px
@@ -946,7 +946,7 @@ sequenceDiagram
 - **El tiempo de `/password/forgot` no puede delatar qué correos están dados de alta.** Por eso
   la petición solo valida y encola `EnviarEnlaceRecuperacion`, exista la cuenta o no: el
   trabajo que depende de la cuenta ocurre en el worker, donde nadie lo cronometra.
-- **El hash bcrypt y el SMTP van a la cola.** Generar la clave cuesta ~180 ms; una carga de
+- **El hash bcrypt y el envío por Resend van a la cola.** Generar la clave cuesta ~180 ms; una carga de
   300 cuentas tardaba casi un minuto solo en eso.
 - **El administrador no ve ni elige la clave temporal.** La recibe solo el titular de la cuenta.
 - Una cuenta `suspended` no entra ni recupera la contraseña: la bloqueó un administrador a

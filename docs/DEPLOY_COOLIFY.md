@@ -152,16 +152,13 @@ QUEUE_CONNECTION=database
 CACHE_STORE=redis
 SESSION_DRIVER=database
 
-# Correo. ⚠️ DigitalOcean bloquea la salida por los puertos SMTP 25, 465 y 587
-# (comprobado: `fsockopen smtp.gmail.com:587` → timed out), así que Gmail por SMTP
-# NO funciona desde el droplet. Usar un proveedor por API HTTPS (Resend, con
-# `composer require resend/resend-php`):
+# Correo: SOLO Resend (API HTTPS). No hay SMTP ni se puede activar: `MAIL_MAILER=smtp` da
+# «Mailer [smtp] is not defined». DigitalOcean bloquea los puertos 25/465/587 (comprobado:
+# `fsockopen smtp.gmail.com:587` → timed out) y un SMTP bloqueado cuelga al worker.
 MAIL_MAILER=resend
 RESEND_KEY=...
 MAIL_FROM_ADDRESS=no-reply@neoeducore.eduregistro.com   # dominio verificado en Resend
-# Si se usa SMTP en otro host/puerto abierto: MAIL_MAILER=smtp, MAIL_HOST, MAIL_PORT,
-# MAIL_USERNAME, MAIL_PASSWORD (y MAIL_TIMEOUT, 15 s por defecto). `MAIL_ENCRYPTION`
-# ya no existe en Laravel 11+: es `MAIL_SCHEME` (smtp o smtps).
+# Si falta RESEND_KEY o el mailer no es resend, al arrancar se escribe un `critical` en el log.
 
 OPENAI_API_KEY=...
 OPENAI_REQUEST_TIMEOUT=15     # sin esto rige el default de 30 s y un worker
@@ -179,7 +176,7 @@ carpeta están en `.gitignore`). Lo que se repite, y por qué:
 |---|:-:|:-:|:-:|---|
 | `APP_KEY`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST/PORT/SCHEME`, `FRONTEND_URL` | ✔ | ✔ | ✔ | Firman y publican los mismos eventos; si difieren, el WebSocket rechaza o no entrega |
 | `DB_*`, `REDIS_*`, `CACHE_STORE=redis` | ✔ | ✔ | — | Misma base y misma caché compartida |
-| `MAIL_MAILER=resend`, `RESEND_KEY`, `MAIL_FROM_ADDRESS`, `MAIL_TIMEOUT` | ✔ | ✔ | — | El Worker envía; la App también puede enviar |
+| `MAIL_MAILER=resend`, `RESEND_KEY`, `MAIL_FROM_ADDRESS` | ✔ | ✔ | — | El Worker envía; la App también puede enviar |
 | `EXAM_GRACE_SECONDS`, `EXAM_MAX_PAUSE_SECONDS`, `EXAM_ADECUACION_*`, `EXAM_AUTO_SUBMIT_DELAY_SECONDS` | ✔ | ✔ | — | La App calcula el plazo al enviar; el Worker (scheduler) entrega solo los intentos vencidos con **el mismo cálculo**. Si difieren, el servidor entregaría antes o después de lo que ve el alumno |
 | `OPENAI_*` (modelo, topes, límites diarios), `AI_LINK_CHECK` | ✔ | ✔ | — | El tutor asíncrono y el análisis de IA corren en el Worker |
 | `RUN_SCHEDULER=true` | — | ✔ (uno solo) | — | Abre/cierra exámenes y entrega intentos vencidos |

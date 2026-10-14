@@ -63,6 +63,8 @@ class AppServiceProvider extends ServiceProvider
         $this->registrarPatronesDeRuta();
         $this->registrarLimitadores();
         $this->avisarSiLaCacheAnulaLosLimites();
+        $this->dejarSoloLosMailersPermitidos();
+        $this->avisarSiElCorreoNoSaldra();
         $this->limitarDuracionDeConsultas();
         $this->caducarSesionesInactivas();
         $this->invalidarCachesDelCatalogo();
@@ -285,6 +287,38 @@ class AppServiceProvider extends ServiceProvider
             . 'así que los límites de peticiones quedan multiplicados por el número de workers. '
             . 'Usar database, file o redis.'
         );
+    }
+
+    /**
+     * Solo existen los mailers `resend`, `log` y `array`.
+     *
+     * No basta con no definir `smtp` en `config/mail.php`: desde Laravel 12 la configuración
+     * de la app se FUSIONA con la del framework (`LoadConfiguration::mergeableOptions`), que
+     * trae `smtp`, `ses`, `postmark`, `sendmail`, `failover` y `roundrobin`. Se filtran aquí
+     * para que `MAIL_MAILER=smtp` sea un error («Mailer [smtp] is not defined») y no un
+     * envío por un puerto que DigitalOcean bloquea y que cuelga al worker.
+     */
+    private function dejarSoloLosMailersPermitidos(): void
+    {
+        config(['mail.mailers' => array_intersect_key(config('mail.mailers'), array_flip(['resend', 'log', 'array']))]);
+    }
+
+    /**
+     * En producción todo el correo sale por Resend. Si el mailer no es `resend` o falta
+     * `RESEND_KEY`, los correos (clave temporal, recuperación) fallan en la cola sin que nadie
+     * lo vea desde la API, así que se deja constancia en el log al arrancar.
+     */
+    private function avisarSiElCorreoNoSaldra(): void
+    {
+        if ($this->app->runningUnitTests() || !$this->app->environment('production')) {
+            return;
+        }
+
+        if (config('mail.default') !== 'resend') {
+            Log::critical('MAIL_MAILER=' . config('mail.default') . ': en producción el correo solo sale por Resend (MAIL_MAILER=resend).');
+        } elseif (blank(config('services.resend.key'))) {
+            Log::critical('RESEND_KEY vacía: ningún correo (clave temporal, recuperación de contraseña) llegará a nadie.');
+        }
     }
 
     /**

@@ -1077,7 +1077,7 @@ API, y cada pieza se reinicia o escala por separado.</p>
     PG[(&quot;PostgreSQL gestionado&lt;br/&gt;&lt;i&gt;DigitalOcean · cola, datos y tokens&lt;/i&gt;&quot;)]
     REDIS[(&quot;Redis&lt;br/&gt;&lt;i&gt;caché y contadores de límites&lt;/i&gt;&quot;)]
     OPENAI[&quot;OpenAI&quot;]
-    SMTP[&quot;SMTP&quot;]
+    RESEND[&quot;Resend&lt;br/&gt;&lt;i&gt;API HTTPS · único canal de correo&lt;/i&gt;&quot;]
 
     CLIENT --&gt;|&quot;HTTPS · JSON + Bearer&quot;| TRAEFIK
     TRAEFIK --&gt; OCTANE
@@ -1092,7 +1092,7 @@ API, y cada pieza se reinicia o escala por separado.</p>
     WORKER --&gt;|&quot;lee jobs&quot;| PG
     WORKER --&gt; REDIS
     WORKER --&gt;|&quot;tutor, análisis y verificación de clave&quot;| OPENAI
-    WORKER --&gt; SMTP
+    WORKER --&gt;|&quot;correo&quot;| RESEND
     WORKER --&gt;|&quot;avisos a la campana&quot;| PG
 
     style PG stroke-width:3px
@@ -1234,7 +1234,7 @@ correo y que debe cambiarse en el primer acceso. Hay tres puertas de alta y toda
 <li><strong>El tiempo de <code>/password/forgot</code> no puede delatar qué correos están dados de alta.</strong> Por eso
 la petición solo valida y encola <code>EnviarEnlaceRecuperacion</code>, exista la cuenta o no: el
 trabajo que depende de la cuenta ocurre en el worker, donde nadie lo cronometra.</li>
-<li><strong>El hash bcrypt y el SMTP van a la cola.</strong> Generar la clave cuesta ~180 ms; una carga de
+<li><strong>El hash bcrypt y el envío por Resend van a la cola.</strong> Generar la clave cuesta ~180 ms; una carga de
 300 cuentas tardaba casi un minuto solo en eso.</li>
 <li><strong>El administrador no ve ni elige la clave temporal.</strong> La recibe solo el titular de la cuenta.</li>
 <li>Una cuenta <code>suspended</code> no entra ni recupera la contraseña: la bloqueó un administrador a
