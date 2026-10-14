@@ -39,6 +39,91 @@ class StudentAnswerController extends Controller
     }
 
     /**
+     * Cuántas respuestas short_answer siguen sin calificar, por examen —
+     * para el badge de la tabla de Exámenes del docente. Sin esto habría que
+     * pedir el detalle de cada examen uno por uno (N+1).
+     */
+    public function pendingSummary(Request $request)
+    {
+        $user = $request->user();
+
+        $examIds = Exam::query()->visibleTo($user)->pluck('exams.id');
+
+        if ($examIds->isEmpty()) {
+            return response()->json(['data' => []]);
+        }
+
+        $conteos = DB::table('student_answers as sa')
+            ->join('exam_attempts as ea', 'ea.id', '=', 'sa.attempt_id')
+            ->where('sa.institution_id', $user->institution_id)
+            ->whereIn('ea.exam_id', $examIds)
+            ->where('sa.review_status', 'needs_review')
+            ->selectRaw('ea.exam_id, COUNT(*) AS total')
+            ->groupBy('ea.exam_id')
+            ->get();
+
+        return response()->json([
+            'data' => $conteos->map(fn ($fila) => [
+                'exam_id' => $fila->exam_id,
+                'total' => (int) $fila->total,
+            ]),
+        ]);
+    }
+
+    /**
+     * TODAS las respuestas short_answer de UN examen (pendientes y ya
+     * calificadas), para el modal que reemplaza la revisión mezclada con
+     * Analíticas. No solo las pendientes: el docente tiene que poder corregir
+     * una calificación si se equivocó, no solo calificar una vez. Las
+     * pendientes salen primero.
+     */
+    public function pendingForExam(Request $request, Exam $exam)
+    {
+        $user = $request->user();
+
+        if ($user->user_type->value === 'teacher' && $exam->created_by_teacher_id !== $user->id) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
+
+        // El docente puede permitir más de un intento por examen (`exams.max_attempts`): sin el número
+        // de intento, dos respuestas del mismo alumno a la misma pregunta (una por intento) se verían
+        // idénticas en la lista y no se sabría cuál se está calificando.
+        $filas = DB::table('student_answers as sa')
+            ->join('exam_attempts as ea', 'ea.id', '=', 'sa.attempt_id')
+            ->join('questions as q', 'q.id', '=', 'sa.question_id')
+            ->join('users as u', 'u.id', '=', 'ea.student_user_id')
+            ->where('sa.institution_id', $exam->institution_id)
+            ->where('ea.exam_id', $exam->id)
+            ->where('q.question_type', 'short_answer')
+            ->orderByRaw("CASE WHEN sa.review_status = 'needs_review' THEN 0 ELSE 1 END")
+            ->orderBy('u.full_name')
+            ->orderBy('ea.attempt_number')
+            ->get([
+                'sa.id as answer_id',
+                'sa.attempt_id',
+                'sa.answer_text',
+                'sa.review_status',
+                'sa.is_correct',
+                'sa.points_awarded',
+                'sa.explanation',
+                'q.id as question_id',
+                'q.question_text',
+                'q.points as max_points',
+                'ea.student_user_id',
+                'ea.attempt_number',
+                'ea.submitted_at',
+                'u.full_name as student_name',
+            ]);
+
+        return response()->json([
+            'data' => [
+                'max_attempts' => $exam->max_attempts,
+                'answers' => $filas,
+            ],
+        ]);
+    }
+
+    /**
      * Revisar/calificar manualmente una respuesta (short_answer)
      * - Solo teacher/admin
      * - Solo aplica a preguntas short_answer

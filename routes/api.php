@@ -228,6 +228,11 @@ Route::middleware(['auth:sanctum', 'activa', 'clave.temporal'])->group(function 
         // Revisión de respuestas (corrección manual por docente)
         Route::get('/exam-attempts/{attempt}/answers', [StudentAnswerController::class, 'index']);
         Route::patch('/student-answers/{studentAnswer}/review', [StudentAnswerController::class, 'review']);
+        // Pendientes de calificar por examen (acción propia en la tabla de Exámenes,
+        // separada de Analíticas). La ruta agregada va antes de la de un examen
+        // puntual porque ambas tienen la misma profundidad bajo /reports/exams/.
+        Route::get('/reports/exams/pending-reviews', [StudentAnswerController::class, 'pendingSummary']);
+        Route::get('/reports/exams/{exam}/pending-reviews', [StudentAnswerController::class, 'pendingForExam']);
 
         // Progreso de estudiantes (vista completa)
         Route::get('/student-progress', [StudentProgressController::class, 'index']);
