@@ -156,6 +156,12 @@ class CacheDelCatalogoTest extends TestCase
         $this->actingAs($this->docente, 'sanctum');
         $this->assertCount(1, $this->getJson('/api/groups')->json('data.data'));
 
+        // El escenario le deja un examen en su aula, y con examen la asignación no se retira (409):
+        // aquí se prueba la caché, así que se le quitan antes los destinos.
+        DB::table('exam_targets')
+            ->whereIn('exam_id', DB::table('exams')->select('id')->where('created_by_teacher_id', $this->docente->id))
+            ->delete();
+
         $this->actingAs($this->admin, 'sanctum');
         $this->deleteJson('/api/teacher-assignments/bulk', ['teacher_user_id' => $this->docente->id])->assertOk();
 
