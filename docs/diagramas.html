@@ -179,7 +179,7 @@ body.hay-ampliada { overflow: hidden; }
 <header class="cabecera">
   <p class="eyebrow">Documentación técnica · derivada del código</p>
   <h1>NeoEduCore — Diagramas del sistema</h1>
-  <p class="cabecera__sub">16 diagramas · rama <code>Darwin</code> · 8 de agosto de 2026</p>
+  <p class="cabecera__sub">19 diagramas · rama <code>Darwin</code> · 8 de agosto de 2026</p>
   <p class="aviso aviso--nota">
     Generado con <code>php artisan diagramas:html</code> desde
     <code>docs/DIAGRAMAS.md</code>. Para cambiar un diagrama se edita el Markdown,
@@ -188,15 +188,18 @@ body.hay-ampliada { overflow: hidden; }
 </header>
 
 <main class="prosa">
-<p><strong>Generado el 8 de agosto de 2026, desde el código de la rama <code>Darwin</code>.</strong></p>
+<p><strong>Rehechos desde cero el 13 de octubre de 2026, desde el código de la rama <code>Darwin</code>.</strong></p>
 <blockquote>
 <p>Estos diagramas describen el <strong>sistema construido</strong>, no el diseño previsto. Se derivan de
-<code>database/sql/01_schema.sql</code> (artefacto de <code>pg_dump</code> contra producción), <code>routes/api.php</code>,
-<code>app/Models/</code>, <code>app/Services/</code> y <code>app/Http/Controllers/</code>. Cuando el informe del TFG y esto
-no coincidan, manda esto: las divergencias están inventariadas en
-<a href="ANALISIS_MODELO_DATOS_TFG.md"><code>ANALISIS_MODELO_DATOS_TFG.md</code></a> §10.</p>
-<p><strong>Para el informe.</strong> Cubren las figuras 2 a 10 del índice de figuras y añaden el modelo
-entidad-relación, que el documento no tiene (§9.2 de aquel análisis).</p>
+<code>database/sql/01_schema.sql</code> (artefacto de <code>pg_dump</code>), <code>routes/api.php</code>, <code>routes/console.php</code>,
+<code>bootstrap/app.php</code>, <code>app/Models/</code>, <code>app/Services/</code>, <code>app/Jobs/</code> y <code>docker/entrypoint.sh</code>.
+Cuando el informe del TFG y esto no coincidan, manda esto: las divergencias están
+inventariadas en <a href="ANALISIS_MODELO_DATOS_TFG.md"><code>ANALISIS_MODELO_DATOS_TFG.md</code></a> §10.</p>
+<p><strong>Qué cambió respecto a la versión del 8 de agosto.</strong> El esquema pasó de 27 a 29 tablas
+(<code>study_resource_groups</code>, <code>exam_analysis_narratives</code>), el tutor y el análisis de IA salieron
+de la petición y van por <strong>cola</strong>, hay <strong>WebSocket</strong> y <strong>notificaciones</strong>, las cuentas nuevas
+nacen <strong>activas con contraseña temporal</strong> (ya no «inactivas»), los exámenes se <strong>abren y
+cierran solos</strong>, y el despliegue son <strong>tres instancias</strong> de la misma imagen.</p>
 </blockquote>
 <h2>Cómo se trabaja con este documento</h2>
 <p><strong>Este <code>.md</code> es la fuente.</strong> Los diagramas se escriben aquí una sola vez, en Mermaid.</p>
@@ -204,51 +207,46 @@ entidad-relación, que el documento no tiene (§9.2 de aquel análisis).</p>
 pantalla completa:</p>
 <pre><code class="language-bash">php artisan diagramas:html      # genera docs/diagramas.html
 </code></pre>
-<p><code>docs/diagramas.html</code> es un <strong>artefacto derivado</strong>, igual que <code>api-docs.json</code> o la colección
-de Postman: si se edita a mano, se pierde en la siguiente ejecución. Existe porque en la
-columna de texto Mermaid encoge el SVG para que quepa, y un ERD o un diagrama de clases se
-vuelve ilegible; la página los saca del flujo y les da desplazamiento y zoom.</p>
+<p><code>docs/diagramas.html</code> es un <strong>artefacto derivado</strong>: si se edita a mano, se pierde en la
+siguiente ejecución.</p>
 <p><strong>Validación.</strong> Los diagramas se comprueban con el parser real de Mermaid, sin navegador:</p>
-<pre><code class="language-bash">npm install                    # mermaid + jsdom, las unicas dependencias node del repo
+<pre><code class="language-bash">npm install                    # mermaid + jsdom, las únicas dependencias node del repo
 npm run validar-diagramas      # scripts/validar-diagramas.mjs
 </code></pre>
-<blockquote>
-<p>En Node 24 <code>globalThis.navigator</code> solo tiene <em>getter</em>, así que el JSDOM se inyecta con
-<code>Object.defineProperty</code>, no con una asignación directa.</p>
-</blockquote>
 <p>Si cambia el esquema, las cifras de la §1 se recomprueban con:</p>
-<pre><code class="language-bash">grep -c &quot;ADD CONSTRAINT .* FOREIGN KEY&quot; database/sql/01_schema.sql   # 57 (56 dominio + 1 notifications)
-grep -c &quot;^CREATE TABLE public\.&quot;        database/sql/01_schema.sql   # 27 (21 dominio + 6 framework)
+<pre><code class="language-bash">grep -c &quot;FOREIGN KEY&quot;            database/sql/01_schema.sql   # 62 (61 de dominio + 1 notifications)
+grep -c &quot;^CREATE TABLE public\.&quot; database/sql/01_schema.sql   # 29 (23 de dominio + 6 de framework)
 </code></pre>
 <hr />
 <h2>Índice</h2>
 <ol>
-<li><a href="#1-modelo-entidad-relaci%C3%B3n">Modelo entidad-relación</a> — <a href="#11-mapa-de-relaciones">mapa</a> · <a href="#12-personas-y-estructura-acad%C3%A9mica">personas</a> · <a href="#13-evaluaci%C3%B3n">evaluación</a> · <a href="#14-seguimiento-tutor-ia-y-apoyo">seguimiento</a></li>
+<li><a href="#1-modelo-entidad-relaci%C3%B3n">Modelo entidad-relación</a> — <a href="#11-mapa-de-relaciones">mapa</a> · <a href="#12-personas-y-estructura-acad%C3%A9mica">personas</a> · <a href="#13-evaluaci%C3%B3n">evaluación</a> · <a href="#14-seguimiento-ia-y-apoyo">seguimiento, IA y apoyo</a></li>
 <li><a href="#2-aislamiento-multi-tenant">Aislamiento multi-tenant</a></li>
 <li><a href="#3-diagrama-de-clases">Diagrama de clases</a> — <a href="#31-personas-estructura-y-los-traits-de-seguridad">personas y traits</a> · <a href="#32-evaluaci%C3%B3n">evaluación</a> · <a href="#33-seguimiento-ia-y-apoyo">seguimiento e IA</a></li>
-<li><a href="#4-arquitectura-del-backend">Arquitectura del backend</a></li>
+<li><a href="#4-arquitectura">Arquitectura</a> — <a href="#41-despliegue-tres-instancias">despliegue</a> · <a href="#42-cadena-de-middleware">cadena de middleware</a></li>
 <li><a href="#5-flujo-de-autenticaci%C3%B3n">Flujo de autenticación</a></li>
-<li><a href="#6-flujo-de-examen">Flujo de examen</a></li>
+<li><a href="#6-flujo-de-examen">Flujo de examen</a> — <a href="#61-estados-del-examen">estados</a> · <a href="#62-ciclo-de-vida-del-intento">intento</a> · <a href="#63-despu%C3%A9s-de-entregar-el-an%C3%A1lisis-de-ia">después de entregar</a></li>
 <li><a href="#7-flujo-del-tutor-ia">Flujo del tutor IA</a></li>
-<li><a href="#8-diagrama-de-casos-de-uso">Diagrama de casos de uso</a></li>
-<li><a href="#9-diagrama-de-proceso-el-ciclo-acad%C3%A9mico">Diagrama de proceso: el ciclo académico</a></li>
+<li><a href="#8-trabajo-en-segundo-plano">Trabajo en segundo plano</a></li>
+<li><a href="#9-diagrama-de-casos-de-uso">Diagrama de casos de uso</a></li>
+<li><a href="#10-diagrama-de-proceso-el-ciclo-acad%C3%A9mico">Diagrama de proceso: el ciclo académico</a></li>
 </ol>
 <hr />
 <h2>1. Modelo entidad-relación</h2>
-<p><strong>21 tablas de dominio</strong> — 17 entidades y 4 pivotes — con <strong>56 claves foráneas</strong>. Aparte
-quedan 6 tablas de framework (<code>migrations</code>, <code>jobs</code>, <code>failed_jobs</code>, <code>password_reset_tokens</code>,
-<code>personal_access_tokens</code> y <code>notifications</code>), que no son del dominio; <code>notifications</code> aporta
-la 57.ª FK (<code>notifiable_id → users</code>).</p>
-<p>Va en <strong>cuatro vistas</strong>, y no por capricho de maquetación: un ERD de 21 tablas con todos
-sus atributos es ilegible a cualquier tamaño. La §1.1 da la forma completa del modelo; las
-§1.2 a §1.4 entran al detalle por área. Entre las tres detalladas están las 21 tablas, sin
-repetir ninguna.</p>
+<p><strong>23 tablas de dominio</strong> —17 entidades y 6 pivotes— con <strong>61 claves foráneas</strong>. Aparte quedan
+6 tablas de framework (<code>migrations</code>, <code>jobs</code>, <code>failed_jobs</code>, <code>password_reset_tokens</code>,
+<code>personal_access_tokens</code> y <code>notifications</code>); <code>notifications</code> aporta la 62.ª FK
+(<code>notifiable_id → users</code>).</p>
+<p>Los 6 pivotes son <code>group_students</code>, <code>student_subjects</code>, <code>teacher_assignments</code>, <code>exam_targets</code>,
+<code>student_answer_options</code> y <code>study_resource_groups</code>.</p>
+<p>Va en <strong>cuatro vistas</strong>: un ERD de 23 tablas con todos sus atributos es ilegible a cualquier
+tamaño. La §1.1 da la forma completa del modelo; las §1.2 a §1.4 entran al detalle por área, y
+entre las tres están las 23 tablas sin repetir ninguna.</p>
 <p>En las cuatro <strong>se omiten las aristas de <code>institution_id</code></strong>: las lleva <em>toda</em> tabla de dominio
-y saturarían la figura. Van en la <a href="#2-aislamiento-multi-tenant">§2</a>, que es donde además
-significan algo.</p>
+y saturarían la figura. Van en la <a href="#2-aislamiento-multi-tenant">§2</a>, donde además significan
+algo. En los atributos solo figuran las columnas que cuentan una decisión.</p>
 <h3>1.1 Mapa de relaciones</h3>
-<p>La forma completa del modelo, sin atributos. Es la figura para el informe cuando hace falta
-enseñar el conjunto de un vistazo.</p>
+<p>La forma completa del modelo, sin atributos. Es la figura para enseñar el conjunto de un vistazo.</p>
 <figure class="figura" id="figura-1">
   <div class="figura__barra">
     <span class="figura__n">Diagrama 1</span>
@@ -264,9 +262,9 @@ enseñar el conjunto de un vistazo.</p>
     <pre class="mermaid">erDiagram
     institutions ||--o{ users : &quot;&quot;
     users ||--o| students : &quot;perfil académico&quot;
-    users ||--o{ exams : &quot;crea, SET NULL&quot;
+    users ||--o{ exams : &quot;autoría, SET NULL&quot;
     users ||--o{ study_resources : &quot;publica, SET NULL&quot;
-    users ||--o{ calendar_events : &quot;SET NULL&quot;
+    users ||--o{ calendar_events : &quot;crea, SET NULL&quot;
 
     students ||--o{ group_students : &quot;&quot;
     groups ||--o{ group_students : &quot;&quot;
@@ -274,47 +272,44 @@ enseñar el conjunto de un vistazo.</p>
     subjects ||--o{ student_subjects : &quot;&quot;
 
     users ||--o{ teacher_assignments : &quot;imparte&quot;
-    groups ||--o{ teacher_assignments : &quot;CASCADE&quot;
-    subjects ||--o{ teacher_assignments : &quot;CASCADE&quot;
+    groups ||--o{ teacher_assignments : &quot;&quot;
+    subjects ||--o{ teacher_assignments : &quot;&quot;
 
     subjects ||--o{ exams : &quot;CASCADE&quot;
-    exams ||--o{ questions : &quot;CASCADE&quot;
-    questions ||--o{ question_options : &quot;CASCADE&quot;
-    exams ||--o{ exam_targets : &quot;CASCADE&quot;
-    groups ||--o{ exam_targets : &quot;CASCADE&quot;
+    exams ||--o{ questions : &quot;&quot;
+    questions ||--o{ question_options : &quot;&quot;
+    exams ||--o{ exam_targets : &quot;&quot;
+    groups ||--o{ exam_targets : &quot;&quot;
+    exams ||--o{ exam_analysis_narratives : &quot;&quot;
 
     students ||--o{ exam_attempts : &quot;presenta&quot;
-    exams ||--o{ exam_attempts : &quot;CASCADE&quot;
-    exam_attempts ||--o{ student_answers : &quot;CASCADE&quot;
+    exams ||--o{ exam_attempts : &quot;&quot;
+    exam_attempts ||--o{ student_answers : &quot;&quot;
     questions ||--o{ student_answers : &quot;&quot;
-    student_answers ||--o{ student_answer_options : &quot;CASCADE&quot;
+    student_answers ||--o{ student_answer_options : &quot;&quot;
     question_options ||--o{ student_answer_options : &quot;&quot;
 
     students ||--o{ student_progress : &quot;domina&quot;
     subjects ||--o{ student_progress : &quot;&quot;
     students ||--o{ ai_recommendations : &quot;recibe&quot;
+    exam_attempts ||--o{ ai_recommendations : &quot;origina&quot;
     students ||--o{ ai_chat_sessions : &quot;conversa&quot;
-    exams ||--o{ ai_recommendations : &quot;SET NULL&quot;
-    exams ||--o{ ai_chat_sessions : &quot;SET NULL&quot;
-    exams ||--o{ calendar_events : &quot;SET NULL&quot;
-    groups ||--o{ calendar_events : &quot;SET NULL&quot;
-
-    exam_attempts ||--o{ ai_recommendations : &quot;origina, CASCADE&quot;
-    subjects ||--o{ study_resources : &quot;SET NULL&quot;
     ai_chat_sessions ||--o{ ai_tutor_incidents : &quot;SET NULL&quot;
-    users ||--o{ ai_tutor_incidents : &quot;SET NULL&quot;</pre>
+
+    study_resources ||--o{ study_resource_groups : &quot;&quot;
+    groups ||--o{ study_resource_groups : &quot;&quot;
+    subjects ||--o{ study_resources : &quot;SET NULL&quot;
+    exams ||--o{ calendar_events : &quot;SET NULL&quot;
+    groups ||--o{ calendar_events : &quot;SET NULL&quot;</pre>
   </div>
 </figure>
 <h3>1.2 Personas y estructura académica</h3>
 <p>Quién es quién y cómo se agrupa. Las <strong>tres</strong> tablas pivote de aquí sostienen el ciclo
-académico: la pertenencia a un grupo, la matrícula en materias y —desde el 08/08/2026— la
-asignación del profesorado.</p>
+académico: la pertenencia a un aula, la matrícula en materias y la asignación del profesorado.</p>
 <blockquote>
 <p><strong><code>teacher_assignments</code> es la pieza que hay que leer con atención.</strong> Es la única fuente de
-la relación docente↔estudiante: «mis estudiantes» son los de los grupos que tengo
-asignados, y solo en las materias que imparto. Antes esa relación <strong>no existía en el
-modelo</strong> y el sistema la inferían de quién había creado cada examen, lo que permitía a un
-docente ampliarse el alcance solo. Ver §1.3 y la nota de decisiones al final de la §1.</p>
+la relación docente↔estudiante: «mis estudiantes» son los de las aulas que tengo asignadas, y
+solo en las materias que imparto. No se deduce de qué exámenes creó el docente.</p>
 </blockquote>
 <figure class="figura" id="figura-2">
   <div class="figura__barra">
@@ -341,45 +336,42 @@ docente ampliarse el alcance solo. Ver §1.3 y la nota de decisiones al final de
 
     institutions {
         uuid id PK
-        string name
         string code UK
-        jsonb settings &quot;incl. passing_percentage&quot;
-        bool is_active
+        string name
+        jsonb settings &quot;porcentaje de aprobado, límites, IA&quot;
+        bool is_active &quot;false = centro dado de baja&quot;
     }
     users {
         uuid id PK
         uuid institution_id FK &quot;SET NULL, NULL solo en superadmin&quot;
-        string full_name
         string email UK
         string password_hash &quot;bcrypt&quot;
         enum user_type &quot;superadmin admin teacher student&quot;
         enum status &quot;active inactive suspended&quot;
+        bool must_change_password &quot;true con clave temporal&quot;
     }
     students {
         uuid user_id PK, FK &quot;PK y FK a users a la vez&quot;
         string student_code &quot;único por institución&quot;
         int grade &quot;derivado del aula&quot;
         string section &quot;derivado del aula&quot;
-        int year
-        enum status &quot;active inactive suspended&quot;
         enum learning_style &quot;visual auditivo lector&quot;
         enum adecuacion_type &quot;acceso contenido evaluacion&quot;
         numeric overall_average
         int exams_completed_count
-        timestamp last_activity_at
     }
     groups {
         uuid id PK
         string name
         int grade
-        string section &quot;A-D&quot;
-        string group_code &quot;el «aula» de la carga masiva&quot;
-        int year &quot;7A-2026 y 7A-2027 son filas distintas&quot;
+        string section
+        string group_code &quot;el aula de la carga masiva&quot;
+        string year &quot;7A-2026 y 7A-2027 son filas distintas&quot;
         int student_count &quot;recalculado en cada alta y baja&quot;
     }
     subjects {
         uuid id PK
-        string name &quot;único por institución, ignora mayúsculas&quot;
+        string name &quot;único por institución&quot;
     }
     group_students {
         uuid id PK
@@ -397,21 +389,20 @@ docente ampliarse el alcance solo. Ver §1.3 y la nota de decisiones al final de
     teacher_assignments {
         uuid id PK
         uuid teacher_user_id FK &quot;users, no students&quot;
-        uuid group_id FK &quot;CASCADE&quot;
-        uuid subject_id FK &quot;CASCADE&quot;
+        uuid group_id FK
+        uuid subject_id FK
         timestamp assigned_at
     }</pre>
   </div>
 </figure>
 <h3>1.3 Evaluación</h3>
-<p>Del examen a la opción marcada. Es la cadena que cascadea entera al borrar una materia.</p>
+<p>Del examen a la opción marcada, más la lectura de IA del grupo. Es la cadena que cascadea
+entera al borrar una materia.</p>
 <blockquote>
 <p><strong><code>created_by_teacher_id</code> es autoría, no permisos.</strong> Registra quién redactó el examen y
-sirve para conservarlo cuando el docente se va (<code>SET NULL</code>). <strong>No</strong> decide a qué
-estudiantes ve ese docente: eso sale de <code>teacher_assignments</code> (§1.2). Hasta el 08/08/2026
-ambas cosas eran la misma, y era un problema — bastaba dirigir un borrador a un grupo
-ajeno para ganar acceso a su alumnado. Hoy <code>exam_targets</code> solo acepta grupos donde el
-autor tenga asignación <strong>en la materia del examen</strong>.</p>
+sirve para conservarlo cuando el docente se va (<code>SET NULL</code>). <strong>No</strong> decide qué estudiantes
+ve ese docente: eso sale de <code>teacher_assignments</code> (§1.2). <code>exam_targets</code> solo acepta aulas
+donde el autor tenga asignación <strong>en la materia del examen</strong>.</p>
 </blockquote>
 <figure class="figura" id="figura-3">
   <div class="figura__barra">
@@ -427,11 +418,12 @@ autor tenga asignación <strong>en la materia del examen</strong>.</p>
   <div class="figura__lienzo">
     <pre class="mermaid">erDiagram
     subjects ||--o{ exams : &quot;CASCADE&quot;
-    users ||--o{ exams : &quot;autoría: created_by_teacher_id, SET NULL&quot;
+    users ||--o{ exams : &quot;autoría, SET NULL&quot;
     exams ||--o{ questions : &quot;CASCADE&quot;
     questions ||--o{ question_options : &quot;CASCADE&quot;
     exams ||--o{ exam_targets : &quot;CASCADE&quot;
     groups ||--o{ exam_targets : &quot;CASCADE&quot;
+    exams ||--o{ exam_analysis_narratives : &quot;CASCADE&quot;
     exams ||--o{ exam_attempts : &quot;CASCADE&quot;
     students ||--o{ exam_attempts : &quot;presenta&quot;
     exam_attempts ||--o{ student_answers : &quot;CASCADE&quot;
@@ -444,27 +436,29 @@ autor tenga asignación <strong>en la materia del examen</strong>.</p>
         uuid subject_id FK &quot;CASCADE&quot;
         uuid created_by_teacher_id FK &quot;nullable, SET NULL&quot;
         string title
-        int grade
         enum status &quot;draft published active completed&quot;
         int duration_minutes
         int max_attempts
         bool randomize_questions
         bool show_results_immediately
         bool allow_review_after_submission
-        timestamp available_from
-        timestamp available_until
+        timestamp available_from &quot;apertura automática&quot;
+        timestamp available_until &quot;cierre automático&quot;
+        string video_url &quot;apoyo para estilo visual o auditivo&quot;
+        jsonb support_resources &quot;enlaces de apoyo del docente&quot;
     }
     questions {
         uuid id PK
         uuid exam_id FK
         text question_text
-        string topic &quot;nullable, eje del diagnóstico por tema&quot;
-        string indicator &quot;nullable, indicador curricular&quot;
-        string difficulty &quot;basic intermediate advanced, nullable&quot;
         enum question_type &quot;multiple_choice true_false short_answer essay&quot;
         int points
         text correct_answer_text &quot;oculto al estudiante&quot;
-        int order_index
+        string topic &quot;eje del diagnóstico por tema&quot;
+        string indicator &quot;indicador curricular&quot;
+        string difficulty &quot;basic intermediate advanced&quot;
+        string key_check_hash &quot;huella de lo verificado&quot;
+        string key_check_result &quot;veredicto de la clave&quot;
     }
     question_options {
         uuid id PK
@@ -486,11 +480,13 @@ autor tenga asignación <strong>en la materia del examen</strong>.</p>
         timestamp started_at
         timestamp submitted_at
         timestamp paused_at
-        int total_paused_seconds &quot;descontado del deadline&quot;
+        int total_paused_seconds &quot;descontado del plazo&quot;
         numeric score
         numeric max_score
         enum grade_status &quot;pending graded completed&quot;
-        enum ai_recommendations_status &quot;preparing ready failed, cola&quot;
+        enum ai_recommendations_status &quot;preparing ready failed&quot;
+        jsonb draft_answers &quot;autoguardado, se borra al entregar&quot;
+        timestamp draft_saved_at
     }
     student_answers {
         uuid id PK
@@ -505,18 +501,24 @@ autor tenga asignación <strong>en la materia del examen</strong>.</p>
     student_answer_options {
         uuid id PK
         uuid student_answer_id FK
-        uuid option_id FK
+        bigint option_id FK
+    }
+    exam_analysis_narratives {
+        uuid id PK
+        uuid exam_id FK
+        string fingerprint &quot;huella de los datos analizados&quot;
+        jsonb narrative &quot;lectura de IA del grupo&quot;
+        smallint ai_generations &quot;tope de redacciones&quot;
     }</pre>
   </div>
 </figure>
-<h3>1.4 Seguimiento, tutor IA y apoyo</h3>
-<p>Lo que se deriva de la evaluación —el dominio por materia y las recomendaciones— más el
-registro de incidencias del tutor, el material de estudio y el calendario.</p>
+<h3>1.4 Seguimiento, IA y apoyo</h3>
+<p>Lo que se deriva de la evaluación —dominio por materia y recomendaciones—, el registro de
+incidencias del tutor, el material de estudio y el calendario.</p>
 <blockquote>
-<p><strong><code>ai_tutor_incidents</code> apunta a <code>users</code>, no a <code>students</code>, y con <code>SET NULL</code>.</strong> Es una
-métrica de calidad del tutor (criterio del 75 % de mensajes válidos): tiene que sobrevivir
-a que se borre el estudiante o la sesión, así que solo <code>institution_id</code> cascadea. No guarda
-el texto del mensaje, solo el tipo y la etapa.</p>
+<p><strong><code>ai_tutor_incidents</code> apunta a <code>users</code>, no a <code>students</code>, y con <code>SET NULL</code>.</strong> Es una métrica
+de calidad del tutor: tiene que sobrevivir a que se borre el estudiante o la sesión, así
+que solo <code>institution_id</code> cascadea. No guarda el texto del mensaje, solo tipo y etapa.</p>
 </blockquote>
 <figure class="figura" id="figura-4">
   <div class="figura__barra">
@@ -534,7 +536,7 @@ el texto del mensaje, solo el tipo y la etapa.</p>
     students ||--o{ student_progress : &quot;domina&quot;
     subjects ||--o{ student_progress : &quot;medido en&quot;
     students ||--o{ ai_recommendations : &quot;recibe&quot;
-    subjects ||--o{ ai_recommendations : &quot;sobre&quot;
+    subjects ||--o{ ai_recommendations : &quot;CASCADE&quot;
     exams ||--o{ ai_recommendations : &quot;SET NULL&quot;
     exam_attempts ||--o{ ai_recommendations : &quot;origina, CASCADE&quot;
     students ||--o{ ai_chat_sessions : &quot;conversa&quot;
@@ -544,24 +546,29 @@ el texto del mensaje, solo el tipo y la etapa.</p>
     users ||--o{ ai_tutor_incidents : &quot;SET NULL&quot;
     users ||--o{ study_resources : &quot;publica, SET NULL&quot;
     subjects ||--o{ study_resources : &quot;SET NULL&quot;
+    study_resources ||--o{ study_resource_groups : &quot;CASCADE&quot;
+    groups ||--o{ study_resource_groups : &quot;CASCADE&quot;
+    users ||--o{ calendar_events : &quot;crea, SET NULL&quot;
     exams ||--o{ calendar_events : &quot;SET NULL&quot;
     groups ||--o{ calendar_events : &quot;SET NULL&quot;
+    users ||--o{ notifications : &quot;campana, CASCADE&quot;
 
     student_progress {
         uuid id PK
         uuid student_user_id FK
         uuid subject_id FK
-        numeric mastery_percentage &quot;AVG en SQL, no en PHP&quot;
+        numeric mastery_percentage &quot;AVG en SQL&quot;
         timestamp reset_at &quot;corte para repitentes&quot;
     }
     ai_recommendations {
         uuid id PK
         uuid student_user_id FK
         uuid subject_id FK
-        uuid exam_id FK &quot;nullable, SET NULL&quot;
-        uuid attempt_id FK &quot;nullable, CASCADE&quot;
-        enum generated_by &quot;heuristic ai&quot;
+        uuid exam_id FK &quot;nullable&quot;
+        uuid attempt_id FK &quot;nullable&quot;
         enum recommendation_type &quot;strength weakness resource action&quot;
+        enum generated_by &quot;heuristic ai&quot;
+        string audience &quot;estudiante o docente&quot;
         text recommendation_text
         json resource &quot;URL de la lista blanca&quot;
         timestamp generated_at &quot;agrupa cada generación&quot;
@@ -571,39 +578,53 @@ el texto del mensaje, solo el tipo y la etapa.</p>
         uuid student_user_id FK
         uuid subject_id FK &quot;nullable&quot;
         uuid exam_id FK &quot;nullable&quot;
-        jsonb messages &quot;recortado a los últimos 60&quot;
+        jsonb messages &quot;recortado a un tope&quot;
+        timestamp awaiting_reply_since &quot;turno asíncrono en curso&quot;
         timestamp ended_at
     }
     ai_tutor_incidents {
         uuid id PK
-        uuid student_user_id FK &quot;users, nullable, SET NULL&quot;
-        uuid session_id FK &quot;nullable, SET NULL&quot;
-        timestamp occurred_at
+        uuid student_user_id FK &quot;users, nullable&quot;
+        uuid session_id FK &quot;nullable&quot;
         enum type &quot;pii too_short too_long blocked_url model_error prompt_injection&quot;
         enum stage &quot;chat diagnosis&quot;
+        timestamp occurred_at
     }
     study_resources {
         uuid id PK
-        uuid subject_id FK &quot;nullable, SET NULL&quot;
+        uuid subject_id FK &quot;nullable&quot;
         string title
         enum resource_type &quot;video article exercise book pdf link other&quot;
         string url &quot;validado contra lista blanca&quot;
         string difficulty &quot;basic intermediate advanced&quot;
         int grade_min
         int grade_max
-        int estimated_duration
-        string language
+    }
+    study_resource_groups {
+        uuid id PK
+        uuid study_resource_id FK
+        uuid group_id FK &quot;recurso visible solo a esas aulas&quot;
     }
     calendar_events {
         uuid id PK
+        uuid exam_id FK &quot;nullable&quot;
+        uuid group_id FK &quot;nullable, aviso de aula&quot;
+        uuid created_by FK &quot;nullable&quot;
         string title
         enum event_type &quot;exam activity reminder meeting&quot;
+        string audience &quot;a quién va el aviso&quot;
         timestamp start_at
         timestamp end_at
+    }
+    notifications {
+        uuid id PK
+        uuid notifiable_id FK &quot;users&quot;
+        jsonb data
+        timestamp read_at
     }</pre>
   </div>
 </figure>
-<h3>Seis decisiones del modelo que conviene saber leer</h3>
+<h3>Siete decisiones del modelo que conviene saber leer</h3>
 <table>
 <thead>
 <tr>
@@ -616,39 +637,44 @@ el texto del mensaje, solo el tipo y la etapa.</p>
 <tr>
 <td><strong><code>students.user_id</code> es PK y FK a la vez</strong></td>
 <td><code>students</code></td>
-<td>Un estudiante <em>es</em> un usuario con perfil académico, no una entidad paralela. Las 6 relaciones del dominio estudiante apuntan a <code>students(user_id)</code>, no a <code>users(id)</code>: así la base rechaza un intento de examen a nombre de un docente</td>
+<td>Un estudiante <em>es</em> un usuario con perfil académico, no una entidad paralela. Las relaciones del dominio estudiante apuntan a <code>students(user_id)</code>, no a <code>users(id)</code>: así la base rechaza un intento de examen a nombre de un docente</td>
 </tr>
 <tr>
 <td><strong><code>exams.created_by_teacher_id</code> es <em>nullable</em> con <code>SET NULL</code></strong></td>
 <td><code>users → exams</code></td>
-<td>Permite dar de baja a un docente sin perder los exámenes que dejó al centro. Con <code>NOT NULL</code> habría sido imposible borrarlo</td>
+<td>Permite dar de baja a un docente sin perder los exámenes que dejó al centro</td>
 </tr>
 <tr>
 <td><strong><code>exams.subject_id</code> es <code>CASCADE</code></strong></td>
 <td><code>subjects → exams</code></td>
-<td>Eliminar una materia elimina su contenido académico. Es destructivo a propósito y en cadena: materia → exámenes → preguntas → intentos → respuestas</td>
+<td>Eliminar una materia elimina su contenido académico, en cadena: materia → exámenes → preguntas → intentos → respuestas. Destructivo a propósito</td>
 </tr>
 <tr>
 <td><strong><code>group_students.left_at</code></strong></td>
 <td><code>group_students</code></td>
-<td>La baja de un grupo es <strong>lógica</strong>: la fila se conserva como historial académico. Es el patrón que conviene extender a materias y grupos</td>
+<td>La baja de un aula es <strong>lógica</strong>: la fila se conserva como historial académico</td>
 </tr>
 <tr>
-<td><strong><code>teacher_assignments</code> existe como tabla, y no como inferencia</strong></td>
+<td><strong><code>teacher_assignments</code> es una tabla, no una inferencia</strong></td>
 <td><code>users → teacher_assignments → groups</code></td>
-<td>El permiso del docente es un <strong>dato que crea el administrador</strong>, no algo que se deduzca de lo que el docente hizo. Mientras se derivaba de la autoría del examen, el propio docente podía ampliarlo. La tabla nació vacía a propósito: al desplegar, nadie ve a nadie hasta que el admin asigne</td>
+<td>El permiso del docente es un <strong>dato que crea el administrador</strong>, no algo que se deduzca de lo que el docente hizo. Nace vacía: nadie ve a nadie hasta que el admin asigna</td>
 </tr>
 <tr>
-<td><strong><code>students.student_code</code> es único <em>por institución</em></strong></td>
+<td><strong><code>student_code</code> es único <em>por institución</em></strong></td>
 <td><code>students</code></td>
-<td>Es un identificador <strong>interno de cada centro</strong>, no de la plataforma: dos colegios pueden numerar «EST-0001» cada uno. La constraint era global hasta el 08/08/2026 y lo impedía</td>
+<td>Es un identificador interno de cada centro: dos colegios pueden numerar «EST-0001» cada uno</td>
+</tr>
+<tr>
+<td><strong><code>institution_id</code> de <code>users</code> es <code>SET NULL</code>; el de las demás es <code>CASCADE</code></strong></td>
+<td><code>institutions → users</code></td>
+<td>Dar de baja un centro no borra a las personas, y el <code>NULL</code> es justo la forma del superadmin (§2)</td>
 </tr>
 </tbody>
 </table>
 <hr />
 <h2>2. Aislamiento multi-tenant</h2>
-<p>Cada fila del dominio lleva <code>institution_id</code>. <strong>Las 20 columnas tienen clave foránea</strong>, y
-todas cascadean menos una.</p>
+<p>Cada tabla de dominio lleva <code>institution_id</code> con clave foránea: <strong>22 columnas, 21 cascadean y
+una —<code>users</code>— hace <code>SET NULL</code>.</strong></p>
 <figure class="figura" id="figura-5">
   <div class="figura__barra">
     <span class="figura__n">Diagrama 5</span>
@@ -664,12 +690,12 @@ todas cascadean menos una.</p>
     <pre class="mermaid">flowchart TB
     INST[&quot;institutions&lt;br/&gt;&lt;i&gt;raíz del tenant&lt;/i&gt;&quot;]
 
-    subgraph CASCADE[&quot;19 tablas · ON DELETE CASCADE&quot;]
+    subgraph CASCADE[&quot;21 tablas · ON DELETE CASCADE&quot;]
         direction LR
         A[&quot;students · groups · subjects&lt;br/&gt;exams · questions · question_options&quot;]
         B[&quot;exam_attempts · student_answers&lt;br/&gt;student_answer_options · student_progress&quot;]
-        C[&quot;ai_recommendations · ai_chat_sessions&lt;br/&gt;student_subjects · group_students · exam_targets&quot;]
-        D[&quot;study_resources · calendar_events · teacher_assignments · ai_tutor_incidents&quot;]
+        C[&quot;ai_recommendations · ai_chat_sessions · ai_tutor_incidents&lt;br/&gt;student_subjects · group_students · exam_targets&quot;]
+        D[&quot;study_resources · study_resource_groups · calendar_events&lt;br/&gt;teacher_assignments · exam_analysis_narratives&quot;]
     end
 
     SETNULL[&quot;users&lt;br/&gt;&lt;b&gt;ON DELETE SET NULL&lt;/b&gt;&quot;]
@@ -679,8 +705,10 @@ todas cascadean menos una.</p>
 
     SCOPE[&quot;TenantScoped&lt;br/&gt;&lt;i&gt;global scope de Eloquent&lt;/i&gt;&quot;]
     MW[&quot;SetTenantFromAuth&lt;br/&gt;&lt;i&gt;middleware&lt;/i&gt;&quot;]
+    JOB[&quot;Jobs en la cola&lt;br/&gt;&lt;i&gt;rebindan el tenant a mano&lt;/i&gt;&quot;]
 
     MW --&gt;|&quot;inyecta institution_id&lt;br/&gt;del usuario autenticado&quot;| SCOPE
+    JOB --&gt;|&quot;no hay petición: se fija&lt;br/&gt;el tenant del job&quot;| SCOPE
     SCOPE --&gt;|&quot;filtra toda consulta&lt;br/&gt;y rellena la columna al crear&quot;| CASCADE
 
     SUPER[&quot;superadmin&lt;br/&gt;&lt;i&gt;institution_id = NULL&lt;/i&gt;&quot;]
@@ -692,28 +720,32 @@ todas cascadean menos una.</p>
   </div>
 </figure>
 <p><strong>El aislamiento vive en dos capas, y esa redundancia es deliberada.</strong> <code>TenantScoped</code> filtra
-en la aplicación — si detecta contexto HTTP sin <code>institution_id</code>, lanza <code>RuntimeException</code> en
-vez de devolver datos de más. Las claves foráneas lo respaldan en la base: sin ellas era
-posible escribir un <code>institution_id</code> de una institución inexistente y romper el aislamiento
-por debajo del ORM.</p>
-<p>Una excepción en la capa de aplicación: <strong><code>ai_tutor_incidents</code> cascadea como las demás, pero
-su modelo no lleva <code>TenantScoped</code></strong> porque solo la consulta el superadmin, y en agregado. Ver
-la §3.3.</p>
-<p><strong>El superadmin es la excepción, y por omisión en vez de por permiso.</strong> Es el operador de la
-plataforma —da de alta centros y a sus administradores— y no pertenece a ninguna institución:
-su <code>institution_id</code> es <code>NULL</code>. Eso significa que <code>SetTenantFromAuth</code> nunca llega a vincular un
-<code>tenant_id</code>, así que <strong>toda</strong> consulta a un modelo con <code>TenantScoped</code> falla para él. No es una
-regla de autorización que un controlador nuevo pueda olvidarse de aplicar: aunque una ruta
-académica se abriera a su rol por descuido, la consulta no devolvería datos igualmente.</p>
-<p>Ese rol nació el 08/08/2026 para cerrar un fallo concreto: <code>GET /api/institutions</code> estaba
-abierto a cualquier <code>admin</code> y <strong>no filtraba por institución</strong>, de modo que el administrador de
-un centro listaba todos los centros del SaaS. Hoy el admin de institución no tiene ninguna
-ruta hacia <code>/api/institutions</code>; gestiona lo suyo por <code>/api/system/config</code>.</p>
+en la aplicación —si detecta contexto HTTP sin <code>institution_id</code>, lanza <code>RuntimeException</code> en
+vez de devolver datos de más—. Las claves foráneas lo respaldan en la base: sin ellas era
+posible escribir un <code>institution_id</code> inexistente y romper el aislamiento por debajo del ORM.</p>
+<blockquote>
+<p><strong>La seguridad a nivel de fila de PostgreSQL (RLS) no aísla instituciones.</strong> La conexión
+usa un rol con <em>bypass</em> y no hay políticas: quien aísla es <code>TenantScoped</code>.</p>
+</blockquote>
+<p><strong>Fuera de una petición no hay <code>SetTenantFromAuth</code>.</strong> Los jobs de la cola (análisis de IA, tutor
+asíncrono, avisos) fijan el tenant a mano; si no, <code>TenantScoped</code> ni filtraría ni rellenaría
+<code>institution_id</code> al crear.</p>
+<p><strong>Cuatro modelos no usan <code>TenantScoped</code></strong>: <code>Institution</code>, <code>User</code>, <code>AccessToken</code> y
+<code>AiTutorIncident</code>. Los tres primeros porque son la raíz del tenant o el soporte de la
+autenticación; el cuarto porque solo lo lee el superadmin, que no tiene tenant, y el único
+endpoint que lo expone (<code>GET /api/platform/ai-tutor-metrics</code>) devuelve solo agregados. En los
+cuatro <code>institution_id</code> se escribe siempre explícito.</p>
+<p><strong>El superadmin es la excepción por omisión, no por permiso.</strong> Es el operador de la plataforma
+—da de alta centros y a sus administradores— y no pertenece a ninguna institución. Como
+<code>SetTenantFromAuth</code> nunca vincula un <code>tenant_id</code> para él, <strong>toda</strong> consulta a un modelo con
+<code>TenantScoped</code> falla: aunque una ruta académica se abriera a su rol por descuido, no
+devolvería datos. El admin de un centro, por su parte, no tiene ninguna ruta hacia
+<code>/api/institutions</code>; gestiona lo suyo por <code>/api/system/config</code>.</p>
 <hr />
 <h2>3. Diagrama de clases</h2>
-<p>18 modelos Eloquent: las 17 entidades más <code>StudentSubject</code>. Los 3 pivotes restantes
-(<code>group_students</code>, <code>exam_targets</code>, <code>student_answer_options</code>) se manipulan por <em>query builder</em>
-y no tienen modelo.</p>
+<p>20 clases Eloquent: las 17 entidades, <code>StudentSubject</code>, <code>TeacherAssignment</code> y <code>AccessToken</code>.
+Los 4 pivotes restantes (<code>group_students</code>, <code>exam_targets</code>, <code>student_answer_options</code>,
+<code>study_resource_groups</code>) se manipulan por <em>query builder</em> y no tienen modelo.</p>
 <p>Va en tres vistas por la misma razón que el ERD. La §3.1 incluye los <em>traits</em>, que son lo que
 no se ve en el esquema y sostiene la seguridad por rol.</p>
 <h3>3.1 Personas, estructura y los traits de seguridad</h3>
@@ -738,14 +770,6 @@ no se ve en el esquema y sostiene la seguridad por rol.</p>
         +filtra toda consulta por institution_id
         +rellena la columna al crear
     }
-    class RevelaRespuestas {
-        &lt;&lt;trait&gt;&gt;
-        +expone is_correct a admin y docente
-    }
-    class AcotaExamenAlEstudiante {
-        &lt;&lt;trait&gt;&gt;
-        +recorta la configuracion del examen al alumno
-    }
     class AcotaAlDocente {
         &lt;&lt;trait&gt;&gt;
         +gruposDelDocente()
@@ -754,22 +778,34 @@ no se ve en el esquema y sostiene la seguridad por rol.</p>
         +docenteAlcanzaEstudiante()
         +docenteAlcanzaGrupoEnMateria()
     }
+    class ResuelveAulasDestino {
+        &lt;&lt;trait&gt;&gt;
+        +resuelve las aulas destino de un recurso o evento
+    }
+    class ExigeAutoria {
+        &lt;&lt;trait&gt;&gt;
+        +solo el autor edita o borra lo suyo
+    }
+    class LimitaIaDelPersonal {
+        &lt;&lt;trait&gt;&gt;
+        +cuota diaria de IA de docentes y admins
+    }
 
     class Institution {
         +uuid id
         +jsonb settings
+        +bool is_active
         +users()
         +subjects()
         +groups()
-        +studyResources()
     }
     class User {
         +uuid id
         +UserType user_type
         +UserStatus status
+        +bool must_change_password
         +institution()
         +student()
-        +studyResources()
     }
     class Student {
         +uuid user_id
@@ -784,7 +820,7 @@ no se ve en el esquema y sostiene la seguridad por rol.</p>
     }
     class Group {
         +uuid id
-        +int year
+        +string year
         +int student_count
         +students()
         +exams()
@@ -792,7 +828,6 @@ no se ve en el esquema y sostiene la seguridad por rol.</p>
     class Subject {
         +uuid id
         +string name
-        +institution()
         +exams()
     }
     class StudentSubject {
@@ -810,6 +845,7 @@ no se ve en el esquema y sostiene la seguridad por rol.</p>
     TenantScoped &lt;|.. Student
     TenantScoped &lt;|.. Subject
     TenantScoped &lt;|.. Group
+    TenantScoped &lt;|.. StudentSubject
     TenantScoped &lt;|.. TeacherAssignment
 
     Institution &quot;1&quot; --&gt; &quot;0..*&quot; User
@@ -822,16 +858,14 @@ no se ve en el esquema y sostiene la seguridad por rol.</p>
     User &quot;1&quot; --&gt; &quot;0..*&quot; TeacherAssignment : docente
     TeacherAssignment ..&gt; Group
     TeacherAssignment ..&gt; Subject
-    AcotaAlDocente ..&gt; TeacherAssignment : unica fuente del alcance</pre>
+    AcotaAlDocente ..&gt; TeacherAssignment : única fuente del alcance</pre>
   </div>
 </figure>
 <p><strong><code>AcotaAlDocente</code> es el trait que hay que mirar si se añade un endpoint.</strong> Resuelve «mis
-estudiantes» en un solo sitio, y existe precisamente porque la versión anterior de esa regla
-estaba copiada a mano en seis controladores —y <strong>faltaba en otros cuatro</strong>, que por eso
-servían el historial completo de cualquier alumno a cualquier docente—. Lo consumen
-<code>StudentController</code>, <code>StudentProgressController</code>, <code>ReportController</code>, <code>AnalyticsController</code>,
-<code>GroupController</code>, <code>StudentSubjectController</code>, <code>AiRecommendationController</code>, <code>ExamController</code>
-y <code>ReportStrategyService</code>.</p>
+estudiantes» en un solo sitio; antes esa regla estaba copiada a mano en varios controladores y
+faltaba en otros, que por eso servían el historial completo de cualquier alumno a cualquier
+docente. Cualquier endpoint nuevo que toque alumnado, resultados o recomendaciones debe pasar
+por él.</p>
 <h3>3.2 Evaluación</h3>
 <figure class="figura" id="figura-7">
   <div class="figura__barra">
@@ -853,6 +887,9 @@ y <code>ReportStrategyService</code>.</p>
         +int max_attempts
         +bool allow_review_after_submission
         +scopeVisibleTo(user)
+        +scopeAsignadoAlAulaDe(user)
+        +destinatarios()
+        +publicarEnCalendario()
         +syncGroups()
         +subject()
         +teacher()
@@ -877,6 +914,7 @@ y <code>ReportStrategyService</code>.</p>
     class ExamAttempt {
         +int attempt_number
         +GradeStatus grade_status
+        +AiRecommendationsStatus ai_recommendations_status
         +int total_paused_seconds
         +percentage()
         +display_score()
@@ -892,23 +930,33 @@ y <code>ReportStrategyService</code>.</p>
         +question()
         +selectedOptions()
     }
+    class ExamNarrative {
+        +string fingerprint
+        +jsonb narrative
+        +int ai_generations
+        +exam()
+    }
     class TenantScoped {
         &lt;&lt;trait&gt;&gt;
     }
     class RevelaRespuestas {
         &lt;&lt;trait&gt;&gt;
+        +expone is_correct a admin y docente
     }
     class AcotaExamenAlEstudiante {
         &lt;&lt;trait&gt;&gt;
+        +recorta la configuración del examen al alumno
     }
 
     TenantScoped &lt;|.. Exam
+    TenantScoped &lt;|.. ExamNarrative
     RevelaRespuestas &lt;|.. Question
     AcotaExamenAlEstudiante &lt;|.. Exam
 
     Exam &quot;1&quot; --&gt; &quot;0..*&quot; Question
     Question &quot;1&quot; --&gt; &quot;0..*&quot; QuestionOption
     Exam &quot;1&quot; --&gt; &quot;0..*&quot; ExamAttempt
+    Exam &quot;1&quot; --&gt; &quot;0..*&quot; ExamNarrative
     ExamAttempt &quot;1&quot; --&gt; &quot;0..*&quot; StudentAnswer
     StudentAnswer &quot;0..*&quot; --&gt; &quot;0..*&quot; QuestionOption : seleccionadas</pre>
   </div>
@@ -940,13 +988,13 @@ y <code>ReportStrategyService</code>.</p>
         +AiGenerationSource generated_by
         +text recommendation_text
         +json resource
-        +timestamp generated_at
         +student()
         +subject()
         +exam()
     }
     class AiChatSession {
         +jsonb messages
+        +timestamp awaiting_reply_since
         +timestamp ended_at
         +student()
         +subject()
@@ -956,7 +1004,6 @@ y <code>ReportStrategyService</code>.</p>
         +AiIncidentType type
         +AiIncidentStage stage
         +timestamp occurred_at
-        +institution()
     }
     class StudyResource {
         +ResourceType resource_type
@@ -964,12 +1011,12 @@ y <code>ReportStrategyService</code>.</p>
         +string difficulty
         +int grade_min
         +int grade_max
-        +institution()
         +subject()
         +creator()
     }
     class CalendarEvent {
         +CalendarEventType event_type
+        +string audience
         +timestamp start_at
         +exam()
         +group()
@@ -985,19 +1032,19 @@ y <code>ReportStrategyService</code>.</p>
     TenantScoped &lt;|.. CalendarEvent</pre>
   </div>
 </figure>
-<p><strong><code>AiTutorIncident</code> no usa <code>TenantScoped</code>, igual que <code>User</code> e <code>Institution</code>, y es
-deliberado.</strong> Lo lee el superadmin, que no tiene <code>tenant_id</code>: con el <em>global scope</em> puesto, toda consulta suya
-fallaría. El aislamiento se sostiene porque <code>institution_id</code> se escribe siempre explícito,
-desde el alumno que originó la incidencia, y el único endpoint que la expone
-(<code>GET /api/platform/ai-tutor-metrics</code>) devuelve solo agregados.</p>
-<p>Los tres <em>traits</em> son lo que no se ve en el esquema y sostiene la seguridad por rol:
-<code>RevelaRespuestas</code> y <code>AcotaExamenAlEstudiante</code> deciden <strong>qué campos ve cada rol</strong> sobre las
-mismas filas, y <code>Exam::scopeVisibleTo()</code> centraliza qué exámenes puede ver un alumno —
-activo, dentro de ventana y asignado a sus grupos.</p>
+<p><strong><code>AiTutorIncident</code> no usa <code>TenantScoped</code>, y es deliberado</strong> (ver §2): lo lee el superadmin,
+que no tiene tenant, y solo en agregado.</p>
+<p>Los <em>traits</em> <code>RevelaRespuestas</code> y <code>AcotaExamenAlEstudiante</code> deciden <strong>qué campos ve cada rol</strong>
+sobre las mismas filas, y <code>Exam::scopeVisibleTo()</code> centraliza qué exámenes ve un alumno:
+activo, dentro de ventana y asignado a sus aulas.</p>
 <hr />
-<h2>4. Arquitectura del backend</h2>
-<p>API REST pura: <strong>el backend no sirve HTML en ninguna ruta de la API</strong>. La única capa de
-presentación son las vistas Blade del correo y del formulario de contraseña.</p>
+<h2>4. Arquitectura</h2>
+<p>API REST pura: <strong>el backend no sirve HTML en ninguna ruta de la API.</strong> La única capa de
+presentación son las vistas Blade del correo.</p>
+<h3>4.1 Despliegue: tres instancias</h3>
+<p>La <strong>misma imagen Docker</strong> se despliega tres veces; lo único que cambia es el comando
+(<code>docker/entrypoint.sh</code>, o la variable <code>CONTAINER_ROLE</code>). Si el WebSocket cae no se lleva la
+API, y cada pieza se reinicia o escala por separado.</p>
 <figure class="figura" id="figura-9">
   <div class="figura__barra">
     <span class="figura__n">Diagrama 9</span>
@@ -1011,67 +1058,59 @@ presentación son las vistas Blade del correo y del formulario de contraseña.</
   </div>
   <div class="figura__lienzo">
     <pre class="mermaid">flowchart TB
-    CLIENT[&quot;SPA · React 19 + Vite + TypeScript&quot;]
+    CLIENT[&quot;SPA · React + Vite + TypeScript&quot;]
 
-    subgraph EDGE[&quot;Borde&quot;]
+    subgraph EDGE[&quot;Borde · DigitalOcean + Coolify&quot;]
         TRAEFIK[&quot;Traefik&lt;br/&gt;&lt;i&gt;TLS, proxy inverso&lt;/i&gt;&quot;]
     end
 
-    subgraph APP[&quot;Contenedor Docker · DigitalOcean + Coolify&quot;]
-        OCTANE[&quot;FrankenPHP + Laravel Octane&lt;br/&gt;&lt;i&gt;app en memoria, --max-requests=500&lt;/i&gt;&quot;]
-
-        subgraph PIPE[&quot;Cadena de middleware, en orden&quot;]
-            direction TB
-            M1[&quot;throttle:api&lt;br/&gt;&lt;i&gt;120/min · rechaza antes de gastar&lt;/i&gt;&quot;]
-            M2[&quot;SetTenantFromAuth&lt;br/&gt;&lt;i&gt;fija institution_id&lt;/i&gt;&quot;]
-            M3[&quot;SubstituteBindings&lt;br/&gt;&lt;i&gt;route model binding ya con scope&lt;/i&gt;&quot;]
-            M4[&quot;auth:sanctum&lt;br/&gt;&lt;i&gt;token opaco, expira&lt;/i&gt;&quot;]
-            M5[&quot;RequireRole&lt;br/&gt;&lt;i&gt;admin · teacher · student&lt;/i&gt;&quot;]
-            M1 --&gt; M2 --&gt; M3 --&gt; M4 --&gt; M5
-        end
-
-        CTRL[&quot;Controladores&lt;br/&gt;&lt;i&gt;validan y traducen a HTTP&lt;/i&gt;&quot;]
-        SVC[&quot;Servicios de dominio&lt;br/&gt;&lt;i&gt;Grading · Progress · Reports · AI · BulkReassignment&lt;/i&gt;&quot;]
-        ELO[&quot;Eloquent + TenantScoped&quot;]
-        SEC[&quot;SecurityHeaders&lt;br/&gt;&lt;i&gt;en la respuesta&lt;/i&gt;&quot;]
+    subgraph APP[&quot;Instancia App&quot;]
+        OCTANE[&quot;FrankenPHP + Laravel Octane&lt;br/&gt;&lt;i&gt;API HTTP, app en memoria&lt;/i&gt;&quot;]
+    end
+    subgraph WS[&quot;Instancia WebSocket&quot;]
+        REVERB[&quot;Laravel Reverb&lt;br/&gt;&lt;i&gt;reverb:start&lt;/i&gt;&quot;]
+    end
+    subgraph WK[&quot;Instancia Worker&quot;]
+        WORKER[&quot;queue:work&lt;br/&gt;&lt;i&gt;colas default y correos&lt;/i&gt;&quot;]
     end
 
-    WORKER[&quot;Worker de cola&lt;br/&gt;&lt;i&gt;queue:work&lt;/i&gt;&quot;]
-    SCHED[&quot;Scheduler&lt;br/&gt;&lt;i&gt;schedule:run cada minuto&lt;/i&gt;&quot;]
+    PG[(&quot;PostgreSQL gestionado&lt;br/&gt;&lt;i&gt;DigitalOcean · cola, datos y tokens&lt;/i&gt;&quot;)]
+    REDIS[(&quot;Redis&lt;br/&gt;&lt;i&gt;caché y contadores de límites&lt;/i&gt;&quot;)]
+    OPENAI[&quot;OpenAI&quot;]
+    RESEND[&quot;Resend&lt;br/&gt;&lt;i&gt;API HTTPS · único canal de correo&lt;/i&gt;&quot;]
 
-    PG[(&quot;Supabase · PostgreSQL 17.6&lt;br/&gt;&lt;i&gt;pooler en modo session, 5432&lt;/i&gt;&quot;)]
-    OPENAI[&quot;OpenAI · gpt-4o-mini&quot;]
-    SMTP[&quot;SMTP&quot;]
-
-    CLIENT --&gt;|&quot;JSON + Bearer token&quot;| TRAEFIK
+    CLIENT --&gt;|&quot;HTTPS · JSON + Bearer&quot;| TRAEFIK
     TRAEFIK --&gt; OCTANE
-    OCTANE --&gt; PIPE
-    M5 --&gt; CTRL --&gt; SVC --&gt; ELO --&gt; PG
-    CTRL --&gt; SEC --&gt; CLIENT
+    CLIENT &lt;--&gt;|&quot;WSS · canal privado alumno.id&quot;| REVERB
 
-    SVC --&gt;|&quot;tutor y regeneración&lt;br/&gt;timeout 15 s&quot;| OPENAI
-    SVC --&gt;|&quot;encola correos&quot;| PG
+    OCTANE --&gt; PG
+    OCTANE --&gt; REDIS
+    OCTANE --&gt;|&quot;encola jobs&lt;br/&gt;tabla jobs&quot;| PG
+    OCTANE --&gt;|&quot;event ExamenActivado&quot;| REVERB
+    OCTANE --&gt;|&quot;regenerar recomendaciones&lt;br/&gt;y generar con IA&quot;| OPENAI
+
     WORKER --&gt;|&quot;lee jobs&quot;| PG
-    WORKER --&gt; SMTP
-    SCHED --&gt;|&quot;drena cola · purga tokens&quot;| WORKER
+    WORKER --&gt; REDIS
+    WORKER --&gt;|&quot;tutor, análisis y verificación de clave&quot;| OPENAI
+    WORKER --&gt;|&quot;correo&quot;| RESEND
+    WORKER --&gt;|&quot;avisos a la campana&quot;| PG
 
-    style M1 stroke-width:3px
-    style PG stroke-width:3px</pre>
+    style PG stroke-width:3px
+    style OCTANE stroke-width:3px</pre>
   </div>
 </figure>
-<p><strong>Por qué el orden del middleware importa.</strong> <code>throttle:api</code> va el primero a propósito: rechaza
-el exceso <em>antes</em> de resolver tenant, autenticación o modelos, que es donde está el coste. Y
-<code>SetTenantFromAuth</code> va antes de <code>SubstituteBindings</code> para que el <em>route model binding</em> ya
-resuelva con el scope de institución activo — si no, un <code>{exam}</code> de otro centro se resolvería
-y solo fallaría después.</p>
-<p><strong>El cuello de botella real es el worker bloqueado.</strong> Cada llamada a OpenAI retiene un worker
-de Octane mientras dura, por eso el timeout está acotado a 15 s y hay un limitador global por
-institución (<code>ai-global</code>, 120/min) además del límite por usuario. Análisis completo en
-<a href="ANALISIS_CONCURRENCIA.md"><code>ANALISIS_CONCURRENCIA.md</code></a>.</p>
-<hr />
-<h2>5. Flujo de autenticación</h2>
-<p>Hay <strong>dos vías de alta</strong>, y la diferencia no es cosmética: quién define la contraseña decide
-si la cuenta nace utilizable.</p>
+<p><strong>El límite real es el presupuesto de conexiones a la base, no la RAM ni la CPU.</strong> Cada worker
+de Octane retiene una conexión, y la base gestionada admite pocas (25 en la de pruebas), de
+ahí la variable <code>OCTANE_WORKERS</code>. Con esta base (misma región) el requisito de 200 alumnos
+simultáneos se cumplió; con la remota anterior colapsaba hacia los 25 por la latencia de cada
+consulta. Informe en <a href="INFORME_PRUEBAS_CARGA_OCT_2026.md"><code>INFORME_PRUEBAS_CARGA_OCT_2026.md</code></a>.</p>
+<p><strong><code>CACHE_STORE=redis</code> es imprescindible en producción</strong>: los contadores de los límites de
+peticiones viven en la caché, y con <code>array</code> cada worker de Octane llevaría el suyo.</p>
+<p><strong><code>queue:work</code> también lo es.</strong> Sin él no salen los correos, ni la carga masiva, ni el tutor
+asíncrono, ni el análisis de IA. Como red de seguridad, el <em>scheduler</em> también drena la cola
+cada minuto (§8).</p>
+<h3>4.2 Cadena de middleware</h3>
+<p>El orden importa: lo barato y lo que rechaza va primero.</p>
 <figure class="figura" id="figura-10">
   <div class="figura__barra">
     <span class="figura__n">Diagrama 10</span>
@@ -1084,62 +1123,53 @@ si la cuenta nace utilizable.</p>
     </div>
   </div>
   <div class="figura__lienzo">
-    <pre class="mermaid">sequenceDiagram
-    autonumber
-    actor Admin
-    actor Alumno
-    participant API as API
-    participant Cola as Cola + worker
-    participant DB as PostgreSQL
+    <pre class="mermaid">flowchart LR
+    REQ([&quot;Petición&quot;])
 
-    rect rgb(240, 240, 240)
-    note over Admin,DB: Alta masiva · la cuenta nace inactiva
-    Admin-&gt;&gt;API: POST /students/bulk-upload (CSV/XLSX)
-    API-&gt;&gt;DB: User(status=inactive, contraseña aleatoria) + Student
-    API-&gt;&gt;DB: token hasheado en password_reset_tokens
-    API-&gt;&gt;Cola: PasswordSetupMail (fuera de la transacción)
-    Cola--&gt;&gt;Alumno: correo &quot;activá tu cuenta&quot;
+    subgraph GLOBAL[&quot;Global y grupo api&quot;]
+        direction TB
+        G1[&quot;MarcaContextoHttp&lt;br/&gt;&lt;i&gt;esto es HTTP, para TenantScoped&lt;/i&gt;&quot;]
+        G2[&quot;RegistraPeticionesLentas&quot;]
+        G3[&quot;throttle:api&lt;br/&gt;&lt;i&gt;120/min · rechaza antes de gastar&lt;/i&gt;&quot;]
+        G4[&quot;SetTenantFromAuth&lt;br/&gt;&lt;i&gt;fija institution_id&lt;/i&gt;&quot;]
+        G5[&quot;SubstituteBindings&lt;br/&gt;&lt;i&gt;binding ya con scope de tenant&lt;/i&gt;&quot;]
+        G1 --&gt; G2 --&gt; G3 --&gt; G4 --&gt; G5
     end
 
-    Alumno-&gt;&gt;API: GET /password/reset/{token} (formulario Blade)
-    Alumno-&gt;&gt;API: POST /api/password/reset
-    API-&gt;&gt;DB: guarda hash · status = active · consume token · revoca sesiones
-
-    rect rgb(240, 240, 240)
-    note over Admin,DB: Alta individual · el admin entrega la contraseña en mano
-    Admin-&gt;&gt;API: POST /register (solo admin)
-    API-&gt;&gt;DB: User(status=active) — no se envía correo
+    subgraph RUTA[&quot;Por ruta&quot;]
+        direction TB
+        R1[&quot;auth:sanctum&lt;br/&gt;&lt;i&gt;token opaco, expira&lt;/i&gt;&quot;]
+        R2[&quot;activa&lt;br/&gt;&lt;i&gt;cuenta y centro activos&lt;/i&gt;&quot;]
+        R3[&quot;clave.temporal&lt;br/&gt;&lt;i&gt;403 si debe cambiar la clave&lt;/i&gt;&quot;]
+        R4[&quot;role&lt;br/&gt;&lt;i&gt;superadmin · admin · teacher · student&lt;/i&gt;&quot;]
+        R5[&quot;throttle específico&lt;br/&gt;&lt;i&gt;login · ia · carga masiva…&lt;/i&gt;&quot;]
+        R1 --&gt; R2 --&gt; R3 --&gt; R4 --&gt; R5
     end
 
-    Alumno-&gt;&gt;API: POST /auth/login
-    API-&gt;&gt;DB: Hash::check contra password_hash
-    alt credenciales inválidas
-        API--&gt;&gt;Alumno: 401
-    else status != active
-        API--&gt;&gt;Alumno: 403 &quot;Usuario inactivo o suspendido&quot;
-    else
-        API-&gt;&gt;DB: crea token en personal_access_tokens
-        API--&gt;&gt;Alumno: 200 + token opaco (Sanctum, expira)
-    end</pre>
+    CTRL[&quot;Controlador → Servicio → Eloquent&quot;]
+
+    subgraph SALIDA[&quot;Respuesta&quot;]
+        direction TB
+        S1[&quot;RemoveNullBytes&lt;br/&gt;&lt;i&gt;entrada sin NUL&lt;/i&gt;&quot;]
+        S2[&quot;SecurityHeaders&quot;]
+    end
+
+    REQ --&gt; GLOBAL --&gt; RUTA --&gt; CTRL --&gt; SALIDA
+
+    style G3 stroke-width:3px
+    style R3 stroke-width:3px</pre>
   </div>
 </figure>
-<p><strong>Tres reglas que sostienen el flujo:</strong></p>
-<ul>
-<li><code>/password/forgot</code> responde a cuentas <code>active</code> <strong>e</strong> <code>inactive</code>, nunca a <code>suspended</code>. Sin
-eso, quien perdiera el correo de alta quedaba bloqueado para siempre; y una cuenta suspendida
-la bloqueó un administrador a propósito.</li>
-<li>El correo se elige según el estado: a quien nunca tuvo contraseña no se le habla de
-<em>recuperarla</em>.</li>
-<li><strong>Solo se activa desde <code>inactive</code>.</strong> Un reset sobre una cuenta <code>suspended</code> cambia la
-contraseña pero no la reactiva.</li>
-</ul>
-<blockquote>
-<p>⚠️ Los tokens son <strong>opacos</strong> contra <code>personal_access_tokens</code>, no JWT. El informe dice JWT en
-dos sitios; es una de las correcciones de <code>ANALISIS_MODELO_DATOS_TFG.md</code> §9.1.</p>
-</blockquote>
+<p><strong>Por qué <code>throttle:api</code> va primero:</strong> rechaza el exceso <em>antes</em> de resolver tenant,
+autenticación o modelos, que es donde está el coste. <strong>Por qué <code>SetTenantFromAuth</code> va antes de
+<code>SubstituteBindings</code>:</strong> para que el <em>route model binding</em> ya resuelva con el scope de
+institución activo; si no, un <code>{exam}</code> de otro centro se resolvería y solo fallaría después.</p>
+<p><strong><code>clave.temporal</code> decide por nombre de ruta</strong>, no por URL: una cuenta con contraseña
+temporal solo puede ver su sesión, cerrarla y cambiar la contraseña; todo lo demás es 403.</p>
 <hr />
-<h2>6. Flujo de examen</h2>
-<h3>6.1 Estados del examen</h3>
+<h2>5. Flujo de autenticación</h2>
+<p>Una cuenta nueva <strong>nace activa</strong>, con una <strong>contraseña temporal aleatoria</strong> que llega por
+correo y que debe cambiarse en el primer acceso. Hay tres puertas de alta y todas acaban igual.</p>
 <figure class="figura" id="figura-11">
   <div class="figura__barra">
     <span class="figura__n">Diagrama 11</span>
@@ -1152,24 +1182,73 @@ dos sitios; es una de las correcciones de <code>ANALISIS_MODELO_DATOS_TFG.md</co
     </div>
   </div>
   <div class="figura__lienzo">
-    <pre class="mermaid">stateDiagram-v2
-    [*] --&gt; draft : POST /exams
-    draft --&gt; published : PATCH status
-    published --&gt; active : PATCH status, rechaza si available_until ya pasó
-    active --&gt; completed : PATCH status
-    draft --&gt; [*] : DELETE, solo permitido en draft
+    <pre class="mermaid">sequenceDiagram
+    autonumber
+    actor Admin
+    actor Usuario
+    participant API as API
+    participant Cola as Cola + worker
+    participant DB as PostgreSQL
 
-    note right of draft
-        Editable en draft y published.
-        En active o completed devuelve 409.
-    end note
-    note right of active
-        Único estado en el que el alumno
-        lo ve y puede presentarlo.
-    end note</pre>
+    rect rgb(240, 240, 240)
+    note over Admin,DB: Alta · individual, carga masiva o administrador de centro
+    Admin-&gt;&gt;API: POST /register · /students/bulk-upload · /institutions/{id}/admins
+    API-&gt;&gt;DB: User (status=active, must_change_password=true)
+    API-&gt;&gt;Cola: EnviarEnlaceDeAlta (fuera de la petición)
+    Cola-&gt;&gt;DB: genera la clave temporal, guarda su hash
+    Cola--&gt;&gt;Usuario: correo con la contraseña temporal
+    end
+
+    Usuario-&gt;&gt;API: POST /auth/login (throttle:login)
+    API-&gt;&gt;DB: Hash::check contra password_hash
+    alt credenciales inválidas
+        API--&gt;&gt;Usuario: 401
+    else cuenta no activa o centro dado de baja
+        API--&gt;&gt;Usuario: 403
+    else
+        API-&gt;&gt;DB: crea token en personal_access_tokens
+        API--&gt;&gt;Usuario: 200 + token opaco + must_change_password
+    end
+
+    rect rgb(240, 240, 240)
+    note over Usuario,DB: Primer acceso · mientras no cambie la clave, todo da 403
+    Usuario-&gt;&gt;API: cualquier ruta
+    API--&gt;&gt;Usuario: 403 password_change_required
+    Usuario-&gt;&gt;API: POST /password/change
+    API-&gt;&gt;DB: guarda hash nuevo · must_change_password = false
+    end
+
+    rect rgb(240, 240, 240)
+    note over Usuario,DB: Recuperación · la respuesta no delata si el correo existe
+    Usuario-&gt;&gt;API: POST /password/forgot
+    API-&gt;&gt;Cola: EnviarEnlaceRecuperacion (exista o no la cuenta)
+    API--&gt;&gt;Usuario: 200 genérico, mismo trabajo en ambos casos
+    Cola--&gt;&gt;Usuario: correo con enlace, solo si la cuenta existe
+    Usuario-&gt;&gt;API: POST /password/verify, luego /password/reset
+    API-&gt;&gt;DB: guarda hash · consume el token · revoca sesiones
+    end</pre>
   </div>
 </figure>
-<h3>6.2 Ciclo de vida del intento</h3>
+<p><strong>Reglas que sostienen el flujo:</strong></p>
+<ul>
+<li><strong>El tiempo de <code>/password/forgot</code> no puede delatar qué correos están dados de alta.</strong> Por eso
+la petición solo valida y encola <code>EnviarEnlaceRecuperacion</code>, exista la cuenta o no: el
+trabajo que depende de la cuenta ocurre en el worker, donde nadie lo cronometra.</li>
+<li><strong>El hash bcrypt y el envío por Resend van a la cola.</strong> Generar la clave cuesta ~180 ms; una carga de
+300 cuentas tardaba casi un minuto solo en eso.</li>
+<li><strong>El administrador no ve ni elige la clave temporal.</strong> La recibe solo el titular de la cuenta.</li>
+<li>Una cuenta <code>suspended</code> no entra ni recupera la contraseña: la bloqueó un administrador a
+propósito.</li>
+</ul>
+<blockquote>
+<p>⚠️ Los tokens son <strong>opacos</strong> contra <code>personal_access_tokens</code> (Sanctum), no JWT. El informe
+dice JWT en dos sitios; es una de las correcciones de <code>ANALISIS_MODELO_DATOS_TFG.md</code> §9.1.</p>
+</blockquote>
+<hr />
+<h2>6. Flujo de examen</h2>
+<h3>6.1 Estados del examen</h3>
+<p>El docente cambia el estado a mano, y además un <em>scheduler</em> lo hace solo cada minuto cuando
+llegan las fechas.</p>
 <figure class="figura" id="figura-12">
   <div class="figura__barra">
     <span class="figura__n">Diagrama 12</span>
@@ -1177,6 +1256,47 @@ dos sitios; es una de las correcciones de <code>ANALISIS_MODELO_DATOS_TFG.md</co
       <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 12">−</button>
       <output class="btn btn--valor" data-zoom-valor>100%</output>
       <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 12">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">stateDiagram-v2
+    [*] --&gt; draft : POST /exams
+    draft --&gt; published : PATCH status, exige preguntas y fechas válidas
+    published --&gt; draft : PATCH status
+    published --&gt; active : manual &quot;abrir ahora&quot; o automático en available_from
+    active --&gt; completed : manual o automático en available_until
+    completed --&gt; [*]
+    draft --&gt; [*] : DELETE, solo permitido en draft
+
+    note right of draft
+        Editable en draft y published.
+        En active o completed devuelve 409.
+    end note
+    note right of published
+        &quot;Listo&quot;: programado.
+        Se abre y cierra solo con sus fechas.
+    end note
+    note right of active
+        Único estado en el que el alumno
+        lo ve y puede presentarlo.
+        Al entrar: aviso, calendario y WebSocket.
+    end note</pre>
+  </div>
+</figure>
+<p><strong>Al pasar a <code>active</code></strong> —a mano o por el scheduler— ocurren tres cosas: <code>NotificarExamenDisponible</code>
+(una notificación por alumno de las aulas destino, en la cola), <code>publicarEnCalendario()</code> (un
+evento en el calendario de cada aula) y el evento <code>ExamenActivado</code> por WebSocket, para quien
+tiene la página abierta. <code>active</code> solo se alcanza una vez, así que el aviso no se duplica.</p>
+<h3>6.2 Ciclo de vida del intento</h3>
+<figure class="figura" id="figura-13">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 13</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 13">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 13">+</button>
       <button type="button" class="btn" data-zoom="0">Ajustar</button>
       <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
     </div>
@@ -1193,105 +1313,64 @@ dos sitios; es una de las correcciones de <code>ANALISIS_MODELO_DATOS_TFG.md</co
     participant DB as PostgreSQL
 
     Alumno-&gt;&gt;API: POST /exams/{exam}/attempts/start
-    API-&gt;&gt;Reglas: assertExamIsStartable — activo y en ventana
-    API-&gt;&gt;DB: BEGIN · SELECT students FOR UPDATE
+    API-&gt;&gt;Reglas: assertExamIsStartable · activo y en ventana
+    API-&gt;&gt;DB: BEGIN · bloquea la fila del alumno FOR UPDATE
     note right of DB: el lock serializa dobles clics&lt;br/&gt;del mismo alumno
-    API-&gt;&gt;Reglas: assertAttemptsAvailable — max_attempts
-    API-&gt;&gt;DB: INSERT exam_attempt (attempt_number, max_score) · COMMIT
-    API--&gt;&gt;Alumno: 201
+    alt ya hay un intento abierto y dentro de plazo
+        API--&gt;&gt;Alumno: 409 con el intento para retomarlo
+    else
+        API-&gt;&gt;Reglas: assertAttemptsAvailable · abandonados también gastan turno
+        API-&gt;&gt;DB: INSERT exam_attempt (attempt_number, max_score) · COMMIT
+        API--&gt;&gt;Alumno: 201
+    end
 
     opt Pausa
         Alumno-&gt;&gt;API: PATCH .../pause
-        API-&gt;&gt;DB: paused_at = now — bloquea el submit
+        API-&gt;&gt;DB: paused_at = now · bloquea el submit
         Alumno-&gt;&gt;API: PATCH .../resume
         API-&gt;&gt;DB: total_paused_seconds += pausa
     end
 
-    Alumno-&gt;&gt;API: POST .../submit (answers[])
+    loop Autoguardado cada pocos segundos
+        Alumno-&gt;&gt;API: PUT .../draft (answers)
+        API-&gt;&gt;DB: draft_answers = lo marcado hasta ahora
+    end
+
+    Alumno-&gt;&gt;API: POST .../submit (answers)
     API-&gt;&gt;Reglas: assertAttemptIsSubmittable
-    note right of Reglas: deadline = duration_minutes&lt;br/&gt;− tiempo pausado + 30 s de gracia&lt;br/&gt;× adecuación: acceso 1,25 · evaluación 1,50
-    API-&gt;&gt;API: valida forma por tipo de pregunta
+    note right of Reglas: plazo = duración − tiempo pausado + gracia&lt;br/&gt;× adecuación: acceso 1,25 · evaluación 1,50
+    API-&gt;&gt;API: valida la forma de cada respuesta por tipo de pregunta
 
     rect rgb(240, 240, 240)
     note over API,DB: Todo dentro de una transacción
-    API-&gt;&gt;Cal: gradeAttempt
-    Cal-&gt;&gt;DB: 2 INSERT por lotes — coste plano, 22 queries
+    API-&gt;&gt;Reglas: assertAttemptsAvailable, última puerta
+    API-&gt;&gt;Cal: calificar
+    Cal-&gt;&gt;DB: INSERT por lotes de respuestas y opciones
     note right of Cal: MC y TF se autocalifican&lt;br/&gt;SA y Essay quedan needs_review
-    API-&gt;&gt;Prog: recalcFromAttempts — AVG en SQL, respeta reset_at
+    API-&gt;&gt;Prog: recalcFromAttempts · AVG en SQL, respeta reset_at
     API-&gt;&gt;IA: generateFromAttempt
     note right of IA: plantillas por porcentaje,&lt;br/&gt;SIN llamada a OpenAI
     end
 
-    API--&gt;&gt;Alumno: score, percentage, progreso y recomendaciones
-
-    opt El alumno quiere análisis con IA
-        Alumno-&gt;&gt;API: POST /exam-attempts/{id}/recommendations/regenerate
-        API-&gt;&gt;IA: regenerateForAttempt — aquí sí llama a OpenAI
-        note right of IA: cupo: la del submit + 3,&lt;br/&gt;por intento
-    end</pre>
+    API--&gt;&gt;Alumno: puntaje, porcentaje, progreso y recomendaciones de plantilla</pre>
   </div>
 </figure>
+<p><strong>Si el tiempo se agota y el alumno no envía</strong> (pestaña cerrada, conexión perdida), no se pierde
+nada: el scheduler (<code>exams:cerrar-intentos-vencidos</code>, cada minuto) entrega por él el último
+borrador autoguardado, <strong>pasado el plazo más <code>EXAM_AUTO_SUBMIT_DELAY_SECONDS</code> (120 s)</strong>. Esa
+espera da margen a que el frontend envíe por sí mismo al llegar el cronómetro a 0. La entrega
+automática usa el mismo camino que la manual (calificación, progreso y recomendaciones), así que
+la nota queda igual que si la hubiera enviado él; lo que no llegó a guardarse cuenta como en
+blanco y las respuestas inválidas del borrador se descartan.</p>
 <blockquote>
 <p>⚠️ <strong>La recomendación del submit no la escribe la IA.</strong> <code>generateFromAttempt</code> es un
-<code>if/elseif/else</code> sobre el porcentaje con textos fijos; OpenAI solo interviene si el alumno
-pide regenerar. Es deliberado —una llamada de segundos dentro de la transacción ataría un
-worker justo en el pico de concurrencia, cuando todos entregan a la vez—, pero <strong>el informe
-lo describe al revés</strong>: ver <code>ESTADO_Y_PENDIENTES.md</code> §3.6 nº 1.</p>
+<code>if/elseif/else</code> sobre el porcentaje con textos fijos. Es deliberado: una llamada de segundos
+dentro de la transacción ataría un worker justo en el pico de concurrencia, cuando todos
+entregan a la vez. El análisis con IA llega después, por la cola (§6.3). <strong>El informe lo
+describe al revés</strong>: ver <code>ESTADO_Y_PENDIENTES.md</code> §3.6 nº 1.</p>
 </blockquote>
-<hr />
-<h2>7. Flujo del tutor IA</h2>
-<figure class="figura" id="figura-13">
-  <div class="figura__barra">
-    <span class="figura__n">Diagrama 13</span>
-    <div class="figura__acciones">
-      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 13">−</button>
-      <output class="btn btn--valor" data-zoom-valor>100%</output>
-      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 13">+</button>
-      <button type="button" class="btn" data-zoom="0">Ajustar</button>
-      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
-    </div>
-  </div>
-  <div class="figura__lienzo">
-    <pre class="mermaid">sequenceDiagram
-    autonumber
-    actor Alumno
-    participant Ctrl as AiTutorController
-    participant Svc as AiTutorService
-    participant Cache as Caché · TTL 5 min
-    participant OA as OpenAI · gpt-4o-mini
-    participant Val as AiOutputValidator
-    participant DB as PostgreSQL
-
-    Alumno-&gt;&gt;Ctrl: POST /ai/tutor/chat&lt;br/&gt;{message, session_id?, subject_id?, exam_id?, mode}
-    Ctrl-&gt;&gt;Ctrl: role:student + perfil Student existe
-    Ctrl-&gt;&gt;DB: valida subject_id y exam_id dentro de su tenant
-    note right of Ctrl: el examen vale si lo rindió&lt;br/&gt;o si hoy lo tiene disponible
-
-    Ctrl-&gt;&gt;Svc: chat(...)
-    Svc-&gt;&gt;Cache: system prompt del estudiante
-    alt caché fría
-        Svc-&gt;&gt;DB: perfil + progreso por materia
-        Svc-&gt;&gt;Cache: guarda 5 min
-    end
-    note right of Svc: viajan grado, estilo de aprendizaje&lt;br/&gt;y % de dominio.&lt;br/&gt;&lt;b&gt;NUNCA el nombre&lt;/b&gt;
-
-    Svc-&gt;&gt;DB: resuelve o crea ai_chat_session
-    Svc-&gt;&gt;Svc: últimos 20 mensajes + prefijo de modo
-    Svc-&gt;&gt;OA: chat completion (600 tokens, timeout 15 s)
-
-    OA--&gt;&gt;Svc: respuesta
-    Svc-&gt;&gt;Val: validate + sanitize
-    alt PII detectada o longitud fuera de rango
-        Val--&gt;&gt;Svc: bloqueado → mensaje de reserva
-    else enlace fuera de la lista blanca
-        Val--&gt;&gt;Svc: el enlace se sustituye por un aviso
-    end
-
-    Svc-&gt;&gt;DB: append incremental al JSONB&lt;br/&gt;&lt;i&gt;solo el delta, recorta a 60&lt;/i&gt;
-    Svc--&gt;&gt;Alumno: {session_id, reply, message_count}</pre>
-  </div>
-</figure>
-<h3>La frontera de privacidad, que es lo que más se pregunta</h3>
+<h3>6.3 Después de entregar: el análisis de IA</h3>
+<p>La primera vez que el alumno abre sus resultados se encola el análisis; el front lo sondea.</p>
 <figure class="figura" id="figura-14">
   <div class="figura__barra">
     <span class="figura__n">Diagrama 14</span>
@@ -1304,36 +1383,46 @@ lo describe al revés</strong>: ver <code>ESTADO_Y_PENDIENTES.md</code> §3.6 n�
     </div>
   </div>
   <div class="figura__lienzo">
-    <pre class="mermaid">flowchart LR
-    CHAT[&quot;ai_chat_sessions&lt;br/&gt;&lt;i&gt;la conversación&lt;/i&gt;&quot;]
-    RECS[&quot;ai_recommendations&lt;br/&gt;&lt;i&gt;recomendaciones estructuradas&lt;/i&gt;&quot;]
-    METRICS[&quot;Métricas de uso&lt;br/&gt;&lt;i&gt;agregadas&lt;/i&gt;&quot;]
-    RANK[&quot;Ranking nominal&lt;br/&gt;&lt;i&gt;quién usa más el tutor&lt;/i&gt;&quot;]
+    <pre class="mermaid">sequenceDiagram
+    autonumber
+    actor Alumno
+    participant API as ExamAttemptController
+    participant DB as PostgreSQL
+    participant Cola as Cola + worker
+    participant OA as OpenAI
 
-    ALUMNO([&quot;Estudiante&quot;])
-    DOCENTE([&quot;Docente&quot;])
-    ADMIN([&quot;Admin&quot;])
+    Alumno-&gt;&gt;API: GET /exam-attempts/{id}/recommendations
+    API-&gt;&gt;DB: UPDATE status = preparing WHERE status IS NULL
+    note right of DB: solo la primera llamada se lleva la fila&lt;br/&gt;y solo esa encola: recargar no gasta IA
+    alt la fila se actualizó
+        API-&gt;&gt;Cola: GenerateAiRecommendations
+    end
+    API--&gt;&gt;Alumno: status preparing + plantillas + vídeo de apoyo por estilo
 
-    CHAT --&gt; ALUMNO
-    CHAT -.-&gt;|&quot;NUNCA, en ningún reporte&quot;| DOCENTE
-    RECS --&gt; ALUMNO
-    RECS --&gt;|&quot;solo las de exámenes que él creó&quot;| DOCENTE
-    RECS --&gt;|&quot;toda su institución&quot;| ADMIN
-    METRICS --&gt; DOCENTE
-    RANK -.-&gt;|&quot;no: identifica menores por su uso&quot;| DOCENTE
-    RANK --&gt; ADMIN
+    Cola-&gt;&gt;DB: fija el tenant, lee las respuestas falladas
+    Cola-&gt;&gt;OA: redacta recomendaciones sobre lo fallado
+    alt responde
+        Cola-&gt;&gt;DB: SUSTITUYE las de plantilla (mismo attempt_id) · status ready
+    else falla tras los reintentos
+        Cola-&gt;&gt;DB: status failed · se conservan las plantillas
+    end
 
-    style CHAT stroke-width:3px</pre>
+    Alumno-&gt;&gt;API: GET .../recommendations (sondeo)
+    API--&gt;&gt;Alumno: status ready + recomendaciones de la IA
+
+    opt El alumno pide otra lectura
+        Alumno-&gt;&gt;API: POST .../recommendations/regenerate
+        API-&gt;&gt;OA: regenera (cupo: la automática + 3 por intento)
+    end</pre>
   </div>
 </figure>
-<p><strong>La frontera no es alumno/docente, sino conversación/recomendación.</strong> El informe se
-contradice en este punto —promete que el docente no verá mensajes individuales y a la vez le
-pide seguimiento pedagógico—, y esta lectura resuelve las dos cosas: el docente nunca ve un
-mensaje del chat, y el seguimiento se apoya en las recomendaciones, que es el artefacto que
-el propio informe llama <em>pedagógico</em>. Fijado como prueba en
-<code>TutorStrategiesTest::test_chat_history_never_appears_in_the_strategies_report</code>.</p>
+<p><strong>Sustituir, no acumular.</strong> Si se guardaran los dos lotes el alumno vería ocho tarjetas, la
+mitad genéricas, sin saber cuáles son las buenas. <code>attempt_id</code> permite reemplazar sin adivinar
+por fechas, y también contar el cupo de regeneraciones.</p>
 <hr />
-<h2>8. Diagrama de casos de uso</h2>
+<h2>7. Flujo del tutor IA</h2>
+<p>El chat tiene <strong>dos modos</strong>: síncrono, que ocupa un worker HTTP mientras OpenAI contesta, y
+asíncrono (<code>async: true</code>), que encola el turno y deja el worker HTTP libre.</p>
 <figure class="figura" id="figura-15">
   <div class="figura__barra">
     <span class="figura__n">Diagrama 15</span>
@@ -1346,83 +1435,51 @@ el propio informe llama <em>pedagógico</em>. Fijado como prueba en
     </div>
   </div>
   <div class="figura__lienzo">
-    <pre class="mermaid">flowchart LR
-    SUPER([&quot;Superadmin&lt;br/&gt;&lt;i&gt;externo a los centros&lt;/i&gt;&quot;])
-    ADMIN([&quot;Admin de institución&quot;])
-    DOCENTE([&quot;Docente&quot;])
-    ALUMNO([&quot;Estudiante&quot;])
+    <pre class="mermaid">sequenceDiagram
+    autonumber
+    actor Alumno
+    participant Ctrl as AiTutorController
+    participant Svc as AiTutorService
+    participant Cola as ResponderTutor · worker
+    participant OA as OpenAI
+    participant DB as PostgreSQL
 
-    subgraph PLATAFORMA[&quot;Plataforma · solo superadmin&quot;]
-        S1[&quot;Alta y baja de instituciones&quot;]
-        S2[&quot;Gestionar administradores&lt;br/&gt;de cada institución&quot;]
-    end
+    Alumno-&gt;&gt;Ctrl: POST /ai/tutor/chat&lt;br/&gt;{message, session_id?, subject_id?, exam_id?, mode, async?}
+    Ctrl-&gt;&gt;Ctrl: role:student + perfil Student + throttle ai-chat y ai-global
+    Ctrl-&gt;&gt;DB: valida subject_id y exam_id dentro de su tenant
+    Ctrl-&gt;&gt;Ctrl: CuotaDelTutor.reservar · 429 si agotó las del día
 
-    subgraph GESTION[&quot;Gestión institucional · solo admin&quot;]
-        U1[&quot;Configurar su institución&lt;br/&gt;&lt;i&gt;/system/config&lt;/i&gt;&quot;]
-        U2[&quot;Dar de alta usuarios&lt;br/&gt;individual y masiva&quot;]
-        U3[&quot;Administrar catálogo de materias&quot;]
-        U4[&quot;Crear grupos y matricular&lt;br/&gt;&lt;i&gt;membresía admin-only&lt;/i&gt;&quot;]
-        U5[&quot;Promoción de fin de año&lt;br/&gt;&lt;i&gt;reasignación masiva&lt;/i&gt;&quot;]
-        U21[&quot;Asignar docentes a&lt;br/&gt;grupo y materia&quot;]
-    end
-
-    subgraph DOCENCIA[&quot;Docencia · admin y docente&quot;]
-        U6[&quot;Crear y publicar exámenes&quot;]
-        U7[&quot;Gestionar preguntas&quot;]
-        U8[&quot;Asignar exámenes a sus grupos&quot;]
-        U10[&quot;Calificar preguntas abiertas&quot;]
-        U11[&quot;Ver analíticas y reportes&quot;]
-        U12[&quot;Descargar estrategias del tutor&quot;]
-        U13[&quot;Publicar recursos de estudio&quot;]
-    end
-
-    subgraph ESTUDIO[&quot;Estudio · solo estudiante&quot;]
-        U14[&quot;Ver exámenes disponibles&quot;]
-        U15[&quot;Presentar examen&quot;]
-        U16[&quot;Consultar sus resultados&quot;]
-        U17[&quot;Conversar con el tutor IA&quot;]
-        U18[&quot;Ver su diagnóstico&quot;]
-        U19[&quot;Ver sus recomendaciones&quot;]
-        U20[&quot;Consultar su progreso&quot;]
-    end
-
-    COMUN[&quot;Iniciar sesión · recuperar contraseña · ver calendario&quot;]
-
-    SUPER --&gt; PLATAFORMA
-    ADMIN --&gt; GESTION
-    ADMIN --&gt; DOCENCIA
-    DOCENTE --&gt; DOCENCIA
-    ALUMNO --&gt; ESTUDIO
-    SUPER --&gt; COMUN
-    ADMIN --&gt; COMUN
-    DOCENTE --&gt; COMUN
-    ALUMNO --&gt; COMUN
-
-    U11 -.-&gt;|&quot;acotado a sus grupos asignados&quot;| DOCENTE
-    U12 -.-&gt;|&quot;sin el historial de chat&quot;| DOCENTE
-    U8 -.-&gt;|&quot;403 fuera de su asignación&quot;| DOCENTE
-    U21 -.-&gt;|&quot;habilita todo lo del docente&quot;| DOCENTE
-
-    style SUPER stroke-width:3px</pre>
+    Ctrl-&gt;&gt;Svc: chat o chatAsincrono
+    Svc-&gt;&gt;DB: resuelve o crea ai_chat_session
+    alt el mensaje parece inyección de prompt
+        Svc-&gt;&gt;DB: incidencia prompt_injection
+        Svc--&gt;&gt;Alumno: respuesta fija · la cuota se devuelve
+    else modo asíncrono
+        Svc-&gt;&gt;DB: awaiting_reply_since = now
+        Svc-&gt;&gt;Cola: ResponderTutor
+        Svc--&gt;&gt;Alumno: status pending
+        Cola-&gt;&gt;OA: turno completo
+        Cola-&gt;&gt;DB: anexa el turno a la sesión
+        Alumno-&gt;&gt;Ctrl: GET /ai/tutor/sessions/{id} (sondeo)
+        Ctrl--&gt;&gt;Alumno: la respuesta cuando ya está
+    else modo síncrono
+        Svc-&gt;&gt;OA: turno completo
+        Svc-&gt;&gt;DB: anexa el turno a la sesión
+        Svc--&gt;&gt;Alumno: {session_id, reply}
+    end</pre>
   </div>
 </figure>
-<p><strong>Tres precisiones que el informe no recoge:</strong></p>
-<ul>
-<li>El enum <code>UserType</code> tiene <strong>cuatro</strong> roles, no tres, y el cuarto es <strong><code>superadmin</code></strong>, no el
-<code>parent</code> que figuraba antes: ese se retiró el 08/08/2026 tras comprobar que no tenía rutas
-ni una sola fila real. El superadmin es <strong>externo a las instituciones</strong> y su alcance se
-agota en dos CRUD: instituciones y sus administradores.</li>
-<li>El docente no es un admin recortado, <strong>y su alcance no se lo da él</strong>. Lo fija el
-administrador en <code>teacher_assignments</code>; fuera de sus grupos asignados no ve nada — ni
-estudiantes, ni resultados, ni recomendaciones, ni estrategias— y ni siquiera puede dirigir
-un examen a un grupo ajeno. La membresía de los grupos también es admin-only, para que no
-pueda ampliarse el alcance metiendo alumnos en un grupo suyo.</li>
-<li>El administrador de institución <strong>no ve el catálogo de instituciones</strong>. Su propio centro lo
-configura por <code>/api/system/config</code>.</li>
-</ul>
-<hr />
-<h2>9. Diagrama de proceso: el ciclo académico</h2>
-<p>El proceso completo de un curso, desde la matrícula hasta la promoción del año siguiente.</p>
+<p><strong>Qué arma el «turno completo»:</strong> el <em>system prompt</em> del alumno (grado, estilo y % de dominio
+por materia, <strong>nunca el nombre</strong>; en caché), el detalle del examen o de la materia si la
+conversación es sobre uno —incluidas las preguntas falladas—, la directiva del modo como turno
+<strong>de sistema</strong> (nunca pegada al texto del alumno, para que no pueda fabricarla) y el historial
+acotado. La respuesta pasa por <code>AiOutputValidator</code> y por <code>sinFugas</code>, que cortan PII, enlaces
+fuera de la lista blanca y fugas del propio prompt, y devuelven un mensaje de reserva si algo
+falla.</p>
+<p><strong>Un solo intento en el worker.</strong> <code>callOpenAi</code> ya convierte cualquier fallo del modelo en el
+mensaje de reserva; reintentar por otra causa podría anexar el turno dos veces. Si el job
+falla, <code>failed()</code> anexa el mensaje de reserva y libera la sesión.</p>
+<h3>La frontera de privacidad</h3>
 <figure class="figura" id="figura-16">
   <div class="figura__barra">
     <span class="figura__n">Diagrama 16</span>
@@ -1435,32 +1492,246 @@ configura por <code>/api/system/config</code>.</li>
     </div>
   </div>
   <div class="figura__lienzo">
+    <pre class="mermaid">flowchart LR
+    CHAT[&quot;ai_chat_sessions&lt;br/&gt;&lt;i&gt;la conversación&lt;/i&gt;&quot;]
+    RECS[&quot;ai_recommendations&lt;br/&gt;&lt;i&gt;recomendaciones estructuradas&lt;/i&gt;&quot;]
+    METRICS[&quot;Métricas de uso&lt;br/&gt;&lt;i&gt;agregadas&lt;/i&gt;&quot;]
+    RANK[&quot;Ranking nominal&lt;br/&gt;&lt;i&gt;quién usa más el tutor&lt;/i&gt;&quot;]
+    CLASE[&quot;Contexto de clase para la IA del docente&lt;br/&gt;&lt;i&gt;agregado, sin nombres&lt;/i&gt;&quot;]
+
+    ALUMNO([&quot;Estudiante&quot;])
+    DOCENTE([&quot;Docente&quot;])
+    ADMIN([&quot;Admin&quot;])
+
+    CHAT --&gt; ALUMNO
+    CHAT -.-&gt;|&quot;NUNCA, en ningún reporte&quot;| DOCENTE
+    RECS --&gt; ALUMNO
+    RECS --&gt;|&quot;las de su alcance asignado&quot;| DOCENTE
+    RECS --&gt;|&quot;toda su institución&quot;| ADMIN
+    METRICS --&gt; DOCENTE
+    RANK -.-&gt;|&quot;no: identifica menores por su uso&quot;| DOCENTE
+    RANK --&gt; ADMIN
+    CLASE --&gt; DOCENTE
+
+    style CHAT stroke-width:3px</pre>
+  </div>
+</figure>
+<p><strong>La frontera no es alumno/docente, sino conversación/recomendación.</strong> El docente nunca ve un
+mensaje del chat; su seguimiento se apoya en las recomendaciones, que son el artefacto
+pedagógico, y en el análisis agregado del grupo. Fijado como prueba en
+<code>TutorStrategiesTest::test_chat_history_never_appears_in_the_strategies_report</code>.</p>
+<hr />
+<h2>8. Trabajo en segundo plano</h2>
+<p>Todo lo lento o que no debe retener la petición sale por la cola (<code>jobs</code>, en PostgreSQL), y el
+<em>scheduler</em> hace de red de seguridad.</p>
+<figure class="figura" id="figura-17">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 17</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 17">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 17">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">flowchart LR
+    subgraph ORIGEN[&quot;Quién lo dispara&quot;]
+        direction TB
+        O1[&quot;Alta de cuenta&lt;br/&gt;&lt;i&gt;individual, masiva, admin de centro&lt;/i&gt;&quot;]
+        O2[&quot;POST /password/forgot&quot;]
+        O3[&quot;POST /students/bulk-upload&quot;]
+        O4[&quot;Examen pasa a active&lt;br/&gt;&lt;i&gt;manual o scheduler&lt;/i&gt;&quot;]
+        O5[&quot;Aviso en el calendario&quot;]
+        O6[&quot;Primera apertura de resultados&quot;]
+        O7[&quot;Chat del tutor con async&quot;]
+    end
+
+    subgraph JOBS[&quot;Jobs&quot;]
+        direction TB
+        J1[&quot;EnviarEnlaceDeAlta&quot;]
+        J2[&quot;EnviarEnlaceRecuperacion&quot;]
+        J3[&quot;ProcesarCargaMasivaEstudiantes&quot;]
+        J4[&quot;NotificarExamenDisponible&quot;]
+        J5[&quot;NotificarAviso&quot;]
+        J6[&quot;GenerateAiRecommendations&quot;]
+        J7[&quot;ResponderTutor&quot;]
+    end
+
+    subgraph EFECTO[&quot;Efecto&quot;]
+        direction TB
+        E1[&quot;Correo con la clave temporal&quot;]
+        E2[&quot;Correo con enlace, si la cuenta existe&quot;]
+        E3[&quot;Alta por lotes · resultado en la campana&quot;]
+        E4[&quot;Notificación por alumno de las aulas destino&quot;]
+        E5[&quot;Notificaciones a estudiantes o docentes&quot;]
+        E6[&quot;Recomendaciones de IA sustituyen las de plantilla&quot;]
+        E7[&quot;Respuesta anexada a la sesión&quot;]
+    end
+
+    O1 --&gt; J1 --&gt; E1
+    O2 --&gt; J2 --&gt; E2
+    O3 --&gt; J3 --&gt; E3
+    O4 --&gt; J4 --&gt; E4
+    O5 --&gt; J5 --&gt; E5
+    O6 --&gt; J6 --&gt; E6
+    O7 --&gt; J7 --&gt; E7
+
+    SCHED[&quot;Scheduler · cada minuto&lt;br/&gt;&lt;i&gt;exams:sincronizar-estados&lt;br/&gt;exams:cerrar-intentos-vencidos&lt;br/&gt;queue:work --stop-when-empty&lt;br/&gt;sanctum:prune-expired a diario&lt;/i&gt;&quot;]
+    SCHED --&gt;|&quot;abre y cierra exámenes&quot;| O4
+    SCHED --&gt;|&quot;entrega los intentos vencidos&lt;br/&gt;con su último borrador&quot;| ENTREGA[&quot;Entrega automática&lt;br/&gt;&lt;i&gt;califica, progreso, recomendaciones&lt;/i&gt;&quot;]
+
+    O4 -.-&gt;|&quot;event ExamenActivado&quot;| WS[&quot;WebSocket&lt;br/&gt;&lt;i&gt;canal privado alumno.id&lt;/i&gt;&quot;]
+
+    style SCHED stroke-width:3px</pre>
+  </div>
+</figure>
+<p><strong>Una sola regla común: el tenant se fija a mano dentro del job</strong>, porque fuera de una petición
+no hay <code>SetTenantFromAuth</code> (§2). Y otra de diseño: los avisos se insertan <strong>en una consulta por
+lote</strong>, no una por destinatario, para que el coste no crezca con el tamaño del aula.</p>
+<p><strong>Dos colas.</strong> El worker procesa <code>default</code> y <code>correos</code>, y producción debe hacerlo igual
+(<code>--queue=default,correos</code>); si solo escucha <code>default</code>, los correos no salen.</p>
+<p><strong>El scheduler corre dentro del Worker</strong> (<code>schedule:work</code>, lanzado por el entrypoint con
+<code>CONTAINER_ROLE=worker</code>); no hace falta una tarea programada aparte en Coolify.</p>
+<p>El <em>scheduler</em> corre <code>exams:sincronizar-estados</code> y <code>exams:cerrar-intentos-vencidos</code> <strong>antes</strong> del drenado de la cola: las tareas
+se ejecutan en orden y <code>queue:work</code> puede tardar hasta 55 s.</p>
+<hr />
+<h2>9. Diagrama de casos de uso</h2>
+<figure class="figura" id="figura-18">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 18</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 18">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 18">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
+    <pre class="mermaid">flowchart LR
+    SUPER([&quot;Superadmin&lt;br/&gt;&lt;i&gt;externo a los centros&lt;/i&gt;&quot;])
+    ADMIN([&quot;Admin de institución&quot;])
+    DOCENTE([&quot;Docente&quot;])
+    ALUMNO([&quot;Estudiante&quot;])
+
+    subgraph PLATAFORMA[&quot;Plataforma · solo superadmin&quot;]
+        S1[&quot;Alta, baja y activación de instituciones&quot;]
+        S2[&quot;Gestionar administradores de cada institución&quot;]
+        S3[&quot;Ver métricas agregadas del tutor&quot;]
+    end
+
+    subgraph GESTION[&quot;Gestión institucional · solo admin&quot;]
+        U1[&quot;Configurar su institución&quot;]
+        U2[&quot;Dar de alta usuarios&lt;br/&gt;individual y carga masiva&quot;]
+        U3[&quot;Administrar el catálogo de materias&quot;]
+        U4[&quot;Crear aulas y matricular&quot;]
+        U5[&quot;Promoción de fin de año&lt;br/&gt;reasignación masiva&quot;]
+        U6[&quot;Asignar docentes a aula y materia&quot;]
+        U7[&quot;Cambiar estado y reiniciar claves&quot;]
+    end
+
+    subgraph DOCENCIA[&quot;Docencia · admin y docente&quot;]
+        D1[&quot;Crear y publicar exámenes&quot;]
+        D2[&quot;Gestionar preguntas&lt;br/&gt;con verificación de la clave&quot;]
+        D3[&quot;Dirigir exámenes a sus aulas&quot;]
+        D4[&quot;Monitorizar un examen en curso&quot;]
+        D5[&quot;Calificar preguntas abiertas&quot;]
+        D6[&quot;Analíticas, reportes y exportación&quot;]
+        D7[&quot;Análisis del grupo por examen&quot;]
+        D8[&quot;Estrategias del tutor&quot;]
+        D9[&quot;Asistente de IA del docente&quot;]
+        D10[&quot;Publicar recursos y avisos por aula&quot;]
+    end
+
+    subgraph ESTUDIO[&quot;Estudio · solo estudiante&quot;]
+        E1[&quot;Ver exámenes disponibles&quot;]
+        E2[&quot;Presentar examen con pausa&quot;]
+        E3[&quot;Consultar resultados y recomendaciones&quot;]
+        E4[&quot;Conversar con el tutor IA&quot;]
+        E5[&quot;Ver su diagnóstico y su progreso&quot;]
+    end
+
+    COMUN[&quot;Iniciar sesión · cambiar y recuperar contraseña&lt;br/&gt;campana de notificaciones · calendario · recursos&quot;]
+
+    SUPER --&gt; PLATAFORMA
+    ADMIN --&gt; GESTION
+    ADMIN --&gt; DOCENCIA
+    DOCENTE --&gt; DOCENCIA
+    ALUMNO --&gt; ESTUDIO
+    SUPER --&gt; COMUN
+    ADMIN --&gt; COMUN
+    DOCENTE --&gt; COMUN
+    ALUMNO --&gt; COMUN
+
+    D3 -.-&gt;|&quot;403 fuera de su asignación&quot;| DOCENTE
+    D6 -.-&gt;|&quot;acotado a sus aulas asignadas&quot;| DOCENTE
+    D8 -.-&gt;|&quot;sin el historial de chat&quot;| DOCENTE
+    D10 -.-&gt;|&quot;publicar recursos: solo el docente&quot;| DOCENTE
+    U6 -.-&gt;|&quot;habilita todo lo del docente&quot;| DOCENTE
+
+    style SUPER stroke-width:3px</pre>
+  </div>
+</figure>
+<p><strong>Precisiones que el informe no recoge:</strong></p>
+<ul>
+<li><code>UserType</code> tiene <strong>cuatro</strong> roles: <code>superadmin</code>, <code>admin</code>, <code>teacher</code> y <code>student</code>. El rol
+<code>parent</code> se retiró el 08/08/2026 por no tener rutas ni una sola fila real. El superadmin es
+<strong>externo</strong> a las instituciones y su alcance se agota en dos CRUD: instituciones y sus
+administradores.</li>
+<li><strong>El docente no es un admin recortado, y su alcance no se lo da él.</strong> Lo fija el
+administrador en <code>teacher_assignments</code>; fuera de sus aulas asignadas no ve estudiantes,
+resultados, recomendaciones ni estrategias, y ni siquiera puede dirigir un examen a un aula
+ajena. La membresía de las aulas también es admin-only, para que no pueda ampliarse el
+alcance metiendo alumnos en un aula suya.</li>
+<li><strong>Los recursos de estudio los publica solo el docente</strong>, por aula (<code>study_resource_groups</code>);
+el administrador los ve pero no los crea.</li>
+<li>El administrador de institución <strong>no ve el catálogo de instituciones</strong>: su centro lo
+configura por <code>/api/system/config</code>.</li>
+<li>Las cuentas con <strong>clave temporal</strong> solo pueden cambiarla (§4.2), sea cual sea su rol.</li>
+</ul>
+<hr />
+<h2>10. Diagrama de proceso: el ciclo académico</h2>
+<p>El proceso completo de un curso, desde la matrícula hasta la promoción del año siguiente.</p>
+<figure class="figura" id="figura-19">
+  <div class="figura__barra">
+    <span class="figura__n">Diagrama 19</span>
+    <div class="figura__acciones">
+      <button type="button" class="btn" data-zoom="-1" aria-label="Reducir el diagrama 19">−</button>
+      <output class="btn btn--valor" data-zoom-valor>100%</output>
+      <button type="button" class="btn" data-zoom="1" aria-label="Ampliar el diagrama 19">+</button>
+      <button type="button" class="btn" data-zoom="0">Ajustar</button>
+      <button type="button" class="btn" data-ampliar aria-pressed="false">Pantalla completa</button>
+    </div>
+  </div>
+  <div class="figura__lienzo">
     <pre class="mermaid">flowchart TB
     START([&quot;Inicio de curso&quot;])
 
     A[&quot;Admin crea las aulas del año&lt;br/&gt;&lt;i&gt;llevan year: 7A-2026 ≠ 7A-2027&lt;/i&gt;&quot;]
-    A2[&quot;Admin asigna docentes&lt;br/&gt;&lt;i&gt;teacher_assignments: grupo + materia&lt;/i&gt;&quot;]
-    B[&quot;Alta de estudiantes&lt;br/&gt;&lt;i&gt;la carga masiva exige columna «aula»&lt;br/&gt;y matricula en group_students&lt;/i&gt;&quot;]
-    C[&quot;Alumno activa su cuenta&lt;br/&gt;&lt;i&gt;define contraseña&lt;/i&gt;&quot;]
+    A2[&quot;Admin asigna docentes&lt;br/&gt;&lt;i&gt;teacher_assignments: aula + materia&lt;/i&gt;&quot;]
+    B[&quot;Alta de estudiantes&lt;br/&gt;&lt;i&gt;la carga masiva exige la columna aula&lt;br/&gt;y matricula en group_students&lt;/i&gt;&quot;]
+    C[&quot;Alumno recibe su clave temporal&lt;br/&gt;&lt;i&gt;la cambia en el primer acceso&lt;/i&gt;&quot;]
     D[&quot;Matrícula en materias&lt;br/&gt;&lt;i&gt;student_subjects&lt;/i&gt;&quot;]
 
-    E[&quot;Docente crea examen diagnóstico&lt;br/&gt;&lt;i&gt;draft&lt;/i&gt;&quot;]
-    F[&quot;Añade preguntas y opciones&quot;]
-    G[&quot;Asigna a sus grupos&lt;br/&gt;&lt;i&gt;exam_targets · 403 si no los tiene&lt;/i&gt;&quot;]
-    H[&quot;Publica y activa&quot;]
+    E[&quot;Docente crea el examen&lt;br/&gt;&lt;i&gt;draft&lt;/i&gt;&quot;]
+    F[&quot;Añade preguntas y opciones&lt;br/&gt;&lt;i&gt;la IA verifica la clave&lt;/i&gt;&quot;]
+    G[&quot;Dirige a sus aulas y fija fechas&lt;br/&gt;&lt;i&gt;exam_targets · 403 si no las tiene&lt;/i&gt;&quot;]
+    H[&quot;Publica: queda Listo&lt;br/&gt;&lt;i&gt;el scheduler lo abre y lo cierra&lt;/i&gt;&quot;]
 
     I[&quot;Alumno presenta el examen&quot;]
     J[&quot;Corrección automática&lt;br/&gt;&lt;i&gt;MC y TF&lt;/i&gt;&quot;]
     K{&quot;¿Hay preguntas&lt;br/&gt;abiertas?&quot;}
     L[&quot;Docente califica a mano&lt;br/&gt;&lt;i&gt;needs_review → reviewed&lt;/i&gt;&quot;]
     M[&quot;Recalcular dominio por materia&lt;br/&gt;&lt;i&gt;student_progress&lt;/i&gt;&quot;]
-    N[&quot;Recomendaciones del tutor&quot;]
+    N[&quot;Recomendaciones&lt;br/&gt;&lt;i&gt;plantilla al entregar, IA después&lt;/i&gt;&quot;]
 
-    O[&quot;Reportes y analíticas&lt;br/&gt;&lt;i&gt;agregados en un solo SELECT&lt;/i&gt;&quot;]
+    O[&quot;Reportes, analíticas y análisis del grupo&quot;]
     P[&quot;Alumno consulta al tutor IA&quot;]
 
     Q{&quot;Fin de curso:&lt;br/&gt;¿promovido?&quot;}
-    R[&quot;Reasignar al grupo&lt;br/&gt;del grado siguiente&quot;]
+    R[&quot;Reasignar al aula&lt;br/&gt;del grado siguiente&quot;]
     S[&quot;Reasignar al mismo grado&lt;br/&gt;del año nuevo&quot;]
     T[&quot;Resetear progreso&lt;br/&gt;&lt;i&gt;marca reset_at&lt;/i&gt;&quot;]
     END([&quot;Curso siguiente&quot;])
@@ -1482,22 +1753,21 @@ configura por <code>/api/system/config</code>.</li>
     style A2 stroke-width:3px</pre>
   </div>
 </figure>
-<p><strong>Los dos primeros pasos son nuevos y bloquean todo lo demás.</strong> Sin <code>teacher_assignments</code> el
-docente no ve a ningún estudiante —la tabla nace vacía a propósito—, y sin la columna <code>aula</code>
-en la carga masiva el alumno queda con etiqueta de sección pero sin matrícula, que en la
-práctica lo hace invisible: no lo ve ningún docente, no recibe exámenes y no sale en informes.
-El aula tiene que existir antes: el archivo <strong>no crea grupos</strong>, para que un typo en el código
-no genere un aula fantasma con un alumno dentro.</p>
-<p>Un matiz del traslado: volver a subir la fila de un estudiante con otra aula lo <strong>mueve</strong>,
-cerrando la matrícula anterior con <code>left_at</code> en vez de borrarla. Es la única vía por la que un
-alumno cambia de aula, y cambia también qué docente pasa a ver su expediente — por eso la
-respuesta del bulk informa de <code>reasignados</code> aparte de <code>matriculados</code>.</p>
+<p><strong>Los dos primeros pasos bloquean todo lo demás.</strong> Sin <code>teacher_assignments</code> el docente no ve
+a ningún estudiante —la tabla nace vacía a propósito—, y sin la columna <code>aula</code> en la carga
+masiva el alumno queda sin matrícula, que en la práctica lo hace invisible: no lo ve ningún
+docente, no recibe exámenes y no sale en informes. El aula tiene que existir antes: el archivo
+<strong>no crea aulas</strong>, para que un typo no genere un aula fantasma con un alumno dentro.</p>
+<p>Volver a subir la fila de un estudiante con otra aula lo <strong>mueve</strong>, cerrando la matrícula
+anterior con <code>left_at</code> en vez de borrarla. Es la única vía por la que un alumno cambia de
+aula, y cambia también qué docente ve su expediente; por eso la respuesta distingue
+<code>reasignados</code> de <code>matriculados</code>. La carga se procesa <strong>en segundo plano</strong> (§8) y su resultado
+llega a la campana de quien subió el archivo.</p>
 <p><strong>El paso que menos se ve y más importa es el reseteo.</strong> <code>recalcFromAttempts</code> promedia <em>todos</em>
 los intentos enviados y se dispara en cada entrega y en cada revisión de respuesta, así que
 poner el progreso a cero sin más se desharía solo en el siguiente examen. Por eso
 <code>student_progress.reset_at</code> marca un <strong>corte temporal</strong> que el recálculo respeta: los intentos
-anteriores dejan de contar para el dominio actual, pero <strong>no se borran</strong> — el historial
-académico queda íntegro.</p>
+anteriores dejan de contar para el dominio actual, pero <strong>no se borran</strong>.</p>
 <p>El orden de la promoción también importa: primero se mueve a los repitentes por lista
 explícita, y después al resto con <code>from_group_id</code>, que a esas alturas ya solo devuelve a los
 promovidos. Así no hace falta ningún parámetro de exclusión.</p>
@@ -1515,47 +1785,52 @@ promovidos. Así no hace falta ningún parámetro de exclusión.</p>
 <tr>
 <td>— <em>(no existe)</em></td>
 <td>§1 Modelo entidad-relación</td>
-<td><strong>Nueva.</strong> El informe no tiene ERD pese a tener 21 tablas y 56 FK</td>
+<td><strong>Nueva.</strong> El informe no tiene ERD pese a tener 23 tablas de dominio y 61 FK</td>
 </tr>
 <tr>
 <td>— <em>(no existe)</em></td>
 <td>§2 Aislamiento multi-tenant</td>
-<td><strong>Nueva.</strong> Es la decisión de arquitectura más transversal del sistema, y ahora incluye la frontera superadmin/institución</td>
+<td><strong>Nueva.</strong> Es la decisión de arquitectura más transversal del sistema</td>
+</tr>
+<tr>
+<td>— <em>(no existe)</em></td>
+<td>§8 Trabajo en segundo plano</td>
+<td><strong>Nueva.</strong> Cola, scheduler y WebSocket no están en el informe</td>
 </tr>
 <tr>
 <td>Figura 2 · Diagrama de clases</td>
 <td>§3</td>
-<td>Rehacer: faltan <code>AiChatSession</code>, <code>StudentSubject</code>, <code>TeacherAssignment</code> y <code>AiTutorIncident</code></td>
+<td>Rehacer: faltan <code>AiChatSession</code>, <code>StudentSubject</code>, <code>TeacherAssignment</code>, <code>AiTutorIncident</code> y <code>ExamNarrative</code></td>
 </tr>
 <tr>
-<td>Figura 7 y 8 · Arquitectura</td>
+<td>Figuras 7 y 8 · Arquitectura</td>
 <td>§4</td>
-<td>Rehacer: el informe describe Node.js y Next.js, que no existen</td>
+<td>Rehacer: el informe describe Node.js y Next.js, que no existen; son tres instancias de una imagen Laravel</td>
 </tr>
 <tr>
 <td>Figura 6 · Flujo de autenticación</td>
 <td>§5</td>
-<td>Rehacer: es Sanctum con tokens opacos, no JWT</td>
+<td>Rehacer: Sanctum con tokens opacos, no JWT, y clave temporal en el alta</td>
 </tr>
 <tr>
 <td>Figura 4 · Flujo de examen</td>
 <td>§6</td>
-<td>Rehacer: añadir pausa/reanudación y adecuación curricular</td>
+<td>Rehacer: pausa, adecuación curricular, apertura automática y análisis de IA por cola</td>
 </tr>
 <tr>
-<td>Figura 10 · Flujo de ChatBot</td>
+<td>Flujo del tutor</td>
 <td>§7</td>
-<td>Rehacer: añadir modos, validación de salida y frontera de privacidad</td>
+<td>Rehacer: modo asíncrono, cuota diaria y frontera de privacidad</td>
 </tr>
 <tr>
-<td>Figura 9 · Casos de uso</td>
-<td>§8</td>
-<td>Rehacer: son cuatro roles, no tres, y el cuarto es <code>superadmin</code> — externo a los centros — no el <code>parent</code> retirado</td>
-</tr>
-<tr>
-<td>Figura 3 · Diagrama de proceso</td>
+<td>Casos de uso</td>
 <td>§9</td>
-<td>Rehacer: añadir el ciclo completo con repitentes, la asignación de docentes y el aula obligatoria en la carga masiva</td>
+<td>Rehacer: cuatro roles, con superadmin externo y alcance del docente por asignación</td>
+</tr>
+<tr>
+<td>Proceso académico</td>
+<td>§10</td>
+<td>Rehacer: asignación docente, claves temporales y carga masiva en segundo plano</td>
 </tr>
 </tbody>
 </table>

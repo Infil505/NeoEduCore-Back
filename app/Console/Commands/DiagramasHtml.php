@@ -42,7 +42,8 @@ class DiagramasHtml extends Command
             return self::FAILURE;
         }
 
-        $markdown = file_get_contents($origen);
+        // CRLF → LF: con saltos de Windows `$` no casa antes del `\r` y no se encontraba ningún diagrama.
+        $markdown = str_replace("\r\n", "\n", file_get_contents($origen));
 
         // Los bloques ```mermaid se apartan ANTES de convertir: CommonMark los
         // dejaría como <pre><code class="language-mermaid">, y el renderizador

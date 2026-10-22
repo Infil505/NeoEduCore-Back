@@ -183,7 +183,7 @@ class ExamGradingService
                 DB::table('student_answer_options')->insert($lote);
             }
 
-            $attempt->update($valores);
+            $attempt->update($valores + ['draft_answers' => null, 'draft_saved_at' => null]);
         }
 
         return [
@@ -232,7 +232,7 @@ class ExamGradingService
         }
 
         $sql = ($sql === '' ? '' : $sql . ' ')
-            . 'UPDATE exam_attempts SET score = ?, max_score = ?, submitted_at = ?, grade_status = ?, updated_at = ? WHERE id = ? AND institution_id = ?';
+            . 'UPDATE exam_attempts SET score = ?, max_score = ?, submitted_at = ?, grade_status = ?, draft_answers = NULL, draft_saved_at = NULL, updated_at = ? WHERE id = ? AND institution_id = ?';
         array_push(
             $bindings, $valores['score'], $valores['max_score'], $valores['submitted_at'], $valores['grade_status'], $ahora,
             $attempt->id, $attempt->institution_id
@@ -240,7 +240,7 @@ class ExamGradingService
 
         DB::affectingStatement($sql, $bindings);
 
-        $attempt->forceFill($valores + ['updated_at' => $ahora])->syncOriginal();
+        $attempt->forceFill($valores + ['draft_answers' => null, 'draft_saved_at' => null, 'updated_at' => $ahora])->syncOriginal();
         TenantCache::invalidar($attempt->institution_id, TenantCache::REPORTES);
     }
 

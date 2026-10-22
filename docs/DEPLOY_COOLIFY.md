@@ -92,12 +92,38 @@ Worker publica por `REVERB_HOST` (el dominio público): funciona igual, con un s
   de todos modos ya se usa para `CACHE_STORE`).
 - La App sí puede tener varias réplicas: no abre ningún WebSocket.
 
-## 4. Scheduled task (scheduler de Laravel)
-- En Coolify → Scheduled Tasks, cada minuto:
-  ```
-  php artisan schedule:run
-  ```
-- Si NO querés el worker dedicado del paso 3, el scheduler ya drena la cola cada minuto (definido en `routes/console.php`). Con worker dedicado, este task queda para futuras tareas programadas.
+## 4. Scheduler de Laravel
+**Es imprescindible**: es lo que abre y cierra los exámenes por fecha (`exams:sincronizar-estados`,
+cada minuto) y limpia los tokens caducados. Sin él, el docente tiene que abrir cada examen a mano.
+
+- **Ya corre solo dentro del Worker** (`CONTAINER_ROLE=worker`): el entrypoint lanza
+  `php artisan schedule:work` en segundo plano y lo relanza si cae. No hace falta crear nada en
+  Coolify. Se desactiva con `RUN_SCHEDULER=false` si se prefiere ejecutarlo en otro sitio.
+- ⚠️ Si el Worker se configuró con un **comando personalizado** en vez de `CONTAINER_ROLE=worker`,
+  el entrypoint no se entera y el scheduler NO arranca: usar `CONTAINER_ROLE=worker`, o crear en
+  Coolify → Scheduled Tasks (cada minuto) `php artisan schedule:run`.
+- Con un solo Worker no hay solapes. Con varios, dejar `RUN_SCHEDULER=true` solo en uno (el
+  comando es idempotente, pero el aviso a los alumnos no debe duplicarse).
+- Comprobar que corre: `php artisan schedule:list` y, tras la hora de apertura de un examen de
+  prueba, que pasa a `active` en un minuto.
+
+### Healthcheck de Coolify (si falla, el despliegue se REVIERTE sin avisar del motivo)
+Coolify arranca el contenedor nuevo, le pasa un healthcheck y, si no responde, **vuelve al contenedor
+anterior**: el código nuevo no llega a producción aunque el build termine bien. Síntoma en el log:
+`Healthcheck logs: wget: not found` · `New container is unhealthy, rolling back`.
+
+| Recurso | Healthcheck | Configuración |
+|---|---|---|
+| **App** | Sí | Método GET · Puerto **8100** · Ruta **`/api/ping`** · la imagen trae `curl` y `wget` |
+| **WebSocket** | Opcional | Si se activa: Puerto **8180**, ruta `/`. Si da problemas, desactivarlo |
+| **Worker** | Da igual | `queue:work` y el scheduler no son HTTP, pero el entrypoint levanta un mini servidor que responde `200 OK` en el puerto **3000** (`docker/health.php`, `HEALTH_PORT`), así que pasa tanto con el healthcheck activado como desactivado |
+
+Coolify propone por defecto `http://localhost:3000/` en un recurso sin *Ports Exposes*. Para el Worker
+lo ideal es desactivar el healthcheck (pestaña **Healthcheck → Disable**, guardar y comprobar que el
+panel «Configuration changes» ya no lista `Health check enabled`), pero la casilla no siempre queda
+aplicada: tres despliegues se revirtieron el 14/10/2026 con el healthcheck «desactivado» en la
+interfaz. Por eso el Worker responde solo en el 3000 y el despliegue no depende de esa casilla.
+`HEALTH_PORT=0` apaga ese servidor.
 
 ## 5. Paso de despliegue: migraciones
 - En Coolify, comando **post-deploy** (o "pre-start"):
@@ -144,14 +170,13 @@ QUEUE_CONNECTION=database
 CACHE_STORE=redis
 SESSION_DRIVER=database
 
-# Correo (Gmail u otro SMTP)
-MAIL_MAILER=smtp
-MAIL_HOST=smtp.gmail.com
-MAIL_PORT=587
-MAIL_USERNAME=...
-MAIL_PASSWORD=...
-MAIL_ENCRYPTION=tls
-MAIL_FROM_ADDRESS=...
+# Correo: SOLO Resend (API HTTPS). No hay SMTP ni se puede activar: `MAIL_MAILER=smtp` da
+# «Mailer [smtp] is not defined». DigitalOcean bloquea los puertos 25/465/587 (comprobado:
+# `fsockopen smtp.gmail.com:587` → timed out) y un SMTP bloqueado cuelga al worker.
+MAIL_MAILER=resend
+RESEND_KEY=...
+MAIL_FROM_ADDRESS=no-reply@neoeducore.eduregistro.com   # dominio verificado en Resend
+# Si falta RESEND_KEY o el mailer no es resend, al arrancar se escribe un `critical` en el log.
 
 OPENAI_API_KEY=...
 OPENAI_REQUEST_TIMEOUT=15     # sin esto rige el default de 30 s y un worker
@@ -160,6 +185,21 @@ OPENAI_REQUEST_TIMEOUT=15     # sin esto rige el default de 30 s y un worker
 # Para el pico de logins simultáneos: bcrypt más barato (sigue seguro)
 BCRYPT_ROUNDS=10
 ```
+
+### Variables que deben ser IGUALES en varias instancias
+Las plantillas por instancia están en `deploy/coolify/*.env.example` (los `.env` reales de esa
+carpeta están en `.gitignore`). Lo que se repite, y por qué:
+
+| Variables | App | Worker | WebSocket | Por qué |
+|---|:-:|:-:|:-:|---|
+| `APP_KEY`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_HOST/PORT/SCHEME`, `FRONTEND_URL` | ✔ | ✔ | ✔ | Firman y publican los mismos eventos; si difieren, el WebSocket rechaza o no entrega |
+| `DB_*`, `REDIS_*`, `CACHE_STORE=redis` | ✔ | ✔ | — | Misma base y misma caché compartida |
+| `MAIL_MAILER=resend`, `RESEND_KEY`, `MAIL_FROM_ADDRESS` | ✔ | ✔ | — | El Worker envía; la App también puede enviar |
+| `EXAM_GRACE_SECONDS`, `EXAM_MAX_PAUSE_SECONDS`, `EXAM_ADECUACION_*`, `EXAM_AUTO_SUBMIT_DELAY_SECONDS` | ✔ | ✔ | — | La App calcula el plazo al enviar; el Worker (scheduler) entrega solo los intentos vencidos con **el mismo cálculo**. Si difieren, el servidor entregaría antes o después de lo que ve el alumno |
+| `OPENAI_*` (modelo, topes, límites diarios), `AI_LINK_CHECK` | ✔ | ✔ | — | El tutor asíncrono y el análisis de IA corren en el Worker |
+| `RUN_SCHEDULER=true` | — | ✔ (uno solo) | — | Abre/cierra exámenes y entrega intentos vencidos |
+
+Solo en la App: `OCTANE_*`, `RATE_LIMIT_*`, `SANCTUM_*`, `SESSION_LIFETIME`, `TRUSTED_PROXIES`, `PAGINATION_*`.
 
 ### Opcionales — todas tienen un valor por defecto sensato
 

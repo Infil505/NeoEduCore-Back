@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Enums\ExamStatus;
+use App\Events\ExamenActivado;
 use App\Jobs\NotificarExamenDisponible;
 use App\Models\Exams\Exam;
 use Illuminate\Console\Command;
@@ -42,7 +43,16 @@ class SincronizarEstadoExamenes extends Command
                 ->update(['status' => ExamStatus::Active->value, 'updated_at' => $ahora]);
 
             if ($cambiado) {
+                // Lo mismo que al abrirlo a mano (`ExamController::setStatus`): aviso, calendario del aula y
+                // WebSocket. Sin esto un examen abierto por fecha no aparecía en el calendario ni en vivo.
                 NotificarExamenDisponible::dispatch($id);
+
+                $examen = Exam::withoutGlobalScope('tenant')->find($id);
+                if ($examen) {
+                    $examen->publicarEnCalendario();
+                    event(ExamenActivado::de($examen));
+                }
+
                 $abiertos++;
             }
         }

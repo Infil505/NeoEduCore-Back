@@ -456,6 +456,56 @@ class TeacherAssignmentsTest extends TestCase
         $this->assertSame(0, DB::table('teacher_assignments')->where('id', $id)->count());
     }
 
+    /** Un docente con examen de esa materia en ese grupo no pierde la asignación (individual y en lote). */
+    public function test_assignment_with_exams_cannot_be_removed(): void
+    {
+        $docente = $this->signInTeacher(['institution_id' => $this->institution->id]);
+        $grupo   = $this->grupo();
+        $materia = $this->materia();
+        $this->asignarDocente($docente, $grupo->id, $materia->id);
+
+        $this->postJson('/api/exams', $this->cuerpoExamen($materia->id, [$grupo->id]))->assertCreated();
+        $id = DB::table('teacher_assignments')->where('teacher_user_id', $docente->id)->value('id');
+
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
+
+        $this->deleteJson("/api/teacher-assignments/{$id}")
+            ->assertStatus(409)
+            ->assertJsonPath('data.retenidas.0.assignment_id', $id)
+            ->assertJsonPath('data.retenidas.0.exams', 1);
+
+        $this->deleteJson('/api/teacher-assignments/bulk', ['teacher_user_id' => $docente->id])->assertStatus(409);
+        $this->deleteJson('/api/teacher-assignments/bulk', [
+            'teacher_user_id' => $docente->id,
+            'group_id'        => $grupo->id,
+        ])->assertStatus(409);
+
+        $this->assertSame(1, DB::table('teacher_assignments')->where('id', $id)->count());
+    }
+
+    /** La retención es por grupo Y materia: las asignaciones sin examen se pueden retirar, pero el lote es todo o nada. */
+    public function test_only_assignments_without_exams_are_removable(): void
+    {
+        $docente = $this->signInTeacher(['institution_id' => $this->institution->id]);
+        $grupo   = $this->grupo();
+        $otroGrupo = $this->grupo();
+        $materia = $this->materia();
+        $this->asignarDocente($docente, $grupo->id, $materia->id);
+        $this->asignarDocente($docente, $otroGrupo->id, $materia->id);
+
+        $this->postJson('/api/exams', $this->cuerpoExamen($materia->id, [$grupo->id]))->assertCreated();
+        $libre = DB::table('teacher_assignments')->where('group_id', $otroGrupo->id)->value('id');
+
+        $this->signInAdmin(['institution_id' => $this->institution->id]);
+
+        // Sin examen en ese grupo: se puede.
+        $this->deleteJson("/api/teacher-assignments/{$libre}")->assertOk();
+
+        // El lote del docente incluye la retenida: no se retira nada.
+        $this->deleteJson('/api/teacher-assignments/bulk', ['teacher_user_id' => $docente->id])->assertStatus(409);
+        $this->assertSame(1, DB::table('teacher_assignments')->where('teacher_user_id', $docente->id)->count());
+    }
+
     public function test_admin_cannot_remove_an_assignment_of_another_institution(): void
     {
         $this->signInAdmin(['institution_id' => $this->institution->id]);

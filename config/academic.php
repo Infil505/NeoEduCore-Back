@@ -71,6 +71,14 @@ return [
         'grace_seconds' => (int) env('EXAM_GRACE_SECONDS', 30),
 
         /*
+         | Espera, en segundos, DESPUÉS del plazo del intento antes de que el servidor lo entregue solo con el
+         | último borrador guardado (`exams:cerrar-intentos-vencidos`). Da margen a que el frontend envíe él mismo
+         | al llegar el cronómetro a 0; solo se entrega por el servidor lo que el alumno no llegó a enviar
+         | (pestaña cerrada, conexión perdida).
+         */
+        'auto_submit_delay_seconds' => (int) env('EXAM_AUTO_SUBMIT_DELAY_SECONDS', 120),
+
+        /*
          | Tope de pausa ACUMULADA por intento, en segundos (15 min por defecto).
          |
          | La pausa existe para una desconexión o una urgencia, no para ganar

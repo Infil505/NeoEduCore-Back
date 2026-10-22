@@ -173,17 +173,26 @@ class StudentAnswerController extends Controller
 
         $data = $request->validate([
             'is_correct'     => ['required', 'boolean'],
-            'points_awarded' => ['required', 'numeric', 'min:0'],
+            'points_awarded' => ['nullable', 'numeric', 'min:0'],
             'explanation'    => ['nullable', 'string', 'max:2000'],
         ]);
 
+        // Una respuesta corta se califica completa o en cero: correcta = todos los puntos de la
+        // pregunta, incorrecta = 0. Los puntos los decide el servidor; si el cliente los manda
+        // tienen que coincidir, para que nadie guarde una nota a medias o contradictoria
+        // («correcta» con 0 puntos, «incorrecta» con puntos).
         $maxPoints = (float) ($studentAnswer->question?->points ?? 0);
+        $puntos    = $data['is_correct'] ? $maxPoints : 0.0;
 
-        if ((float) $data['points_awarded'] > $maxPoints) {
+        if (isset($data['points_awarded']) && abs((float) $data['points_awarded'] - $puntos) > 0.001) {
             return response()->json([
-                'message' => 'Los puntos asignados exceden el valor de la pregunta',
+                'message' => $data['is_correct']
+                    ? "Una respuesta correcta vale los puntos completos de la pregunta ({$maxPoints})."
+                    : 'Una respuesta incorrecta vale 0 puntos.',
             ], 422);
         }
+
+        $data['points_awarded'] = $puntos;
 
         $result = DB::transaction(function () use (
             $studentAnswer,
