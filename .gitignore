@@ -33,3 +33,4 @@ CTFG-DOC-18_Guia_para_Informe_Final_TFG 2025.docx
 
 # Variables reales de cada instancia en Coolify (con secretos): nunca al repositorio
 /deploy/coolify/*.env
+.docs\CTFG-DOC-18_Informe_Final_TFG_2026_ajustado.docx

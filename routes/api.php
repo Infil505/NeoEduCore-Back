@@ -285,6 +285,8 @@ Route::middleware(['auth:sanctum', 'activa', 'clave.temporal'])->group(function 
         Route::post('/reports/exams/{exam}/analysis/ai', [ReportController::class, 'examAnalysisAi'])
             ->middleware(['throttle:ai-generate', 'throttle:ai-global']);
         Route::get('/reports/students/{student_user_id}/summary', [ReportController::class, 'studentSummary']);
+        // Preguntas y temas que más falló el estudiante (reporte individual).
+        Route::get('/reports/students/{student_user_id}/failed-questions', [ReportController::class, 'studentFailedQuestions']);
 
         // Temas a reforzar, agregados y sin nombres (D2). El docente los ve de
         // sus grupos asignados; el admin, de toda la institución.

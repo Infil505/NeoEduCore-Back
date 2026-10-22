@@ -6,6 +6,7 @@ use App\Models\Admin\Institution;
 use App\Support\CatalogoMaterias;
 use App\Support\RelacionesEnLinea;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use App\Support\TenantCache;
 use App\Models\Exams\Exam;
 use App\Models\Exams\ExamAttempt;
@@ -122,6 +123,89 @@ class ReportMetricsService
             ],
             'score_trend'     => $this->scoreTrend($recientes),
             'subject_mastery' => $this->subjectMastery($student),
+        ];
+    }
+
+    /** Preguntas que devuelve «lo que más falló» si no se pide otro tope. */
+    public const DEFAULT_FAILED_QUESTIONS = 10;
+
+    /** Tope duro: es una lista para un reporte, no el cuestionario entero. */
+    public const MAX_FAILED_QUESTIONS = 30;
+
+    /**
+     * Lo que más falló un estudiante, para el reporte individual: las preguntas en que más puntos perdió y los
+     * temas donde más se equivoca.
+     *
+     * Solo cuenta lo ya calificado (`auto_graded`): una respuesta abierta a la espera de revisión no es un fallo
+     * todavía. Si el alumno repitió un examen, vale su intento más reciente; si no, la misma pregunta saldría
+     * una vez por intento. `DB::table()` no pasa por `TenantScoped`: el centro se filtra a mano.
+     *
+     * @param  mixed  $materias  Subconsulta o lista de `subject_id` a las que se acota (el docente: las que imparte). `null` = todas.
+     * @return array<string,mixed>
+     */
+    public function studentFailedQuestions(Student $student, int $limit = self::DEFAULT_FAILED_QUESTIONS, mixed $materias = null): array
+    {
+        $limit = max(1, min($limit, self::MAX_FAILED_QUESTIONS));
+
+        $base = fn () => DB::table('student_answers as sa')
+            ->join('exam_attempts as ea', 'ea.id', '=', 'sa.attempt_id')
+            ->join('questions as q', 'q.id', '=', 'sa.question_id')
+            ->join('exams as e', 'e.id', '=', 'ea.exam_id')
+            ->where('sa.institution_id', $student->institution_id)
+            ->where('ea.institution_id', $student->institution_id)
+            ->where('ea.student_user_id', $student->user_id)
+            ->whereNotNull('ea.submitted_at')
+            ->where('sa.review_status', 'auto_graded')
+            ->whereNotExists(fn ($newer) => $newer->from('exam_attempts as nx')
+                ->whereColumn('nx.exam_id', 'ea.exam_id')
+                ->whereColumn('nx.student_user_id', 'ea.student_user_id')
+                ->whereNotNull('nx.submitted_at')
+                ->whereColumn('nx.submitted_at', '>', 'ea.submitted_at'))
+            ->when($materias !== null, fn ($query) => $query->whereIn('e.subject_id', $materias));
+
+        $preguntas = $base()
+            ->where('sa.is_correct', false)
+            ->selectRaw('q.id AS question_id, q.question_text, q.topic, q.points, sa.points_awarded, sa.answer_text,
+                         e.id AS exam_id, e.title AS exam_title, e.subject_id, ea.submitted_at,
+                         (q.points - sa.points_awarded) AS points_lost')
+            ->orderByRaw('(q.points - sa.points_awarded) DESC')
+            ->orderByDesc('ea.submitted_at')
+            ->limit($limit)
+            ->get();
+
+        $temas = $base()
+            ->whereNotNull('q.topic_normalized')
+            ->selectRaw('MIN(q.topic) AS topic, COUNT(*) AS answered, COUNT(*) FILTER (WHERE NOT sa.is_correct) AS wrong')
+            ->groupBy('q.topic_normalized')
+            ->havingRaw('COUNT(*) FILTER (WHERE NOT sa.is_correct) > 0')
+            ->orderByRaw('COUNT(*) FILTER (WHERE NOT sa.is_correct) DESC')
+            ->orderByRaw('MIN(q.topic)')
+            ->limit($limit)
+            ->get();
+
+        $nombres = CatalogoMaterias::delCentro($student->institution_id);
+
+        return [
+            'student'   => ['user_id' => $student->user_id, 'full_name' => $student->user?->full_name],
+            'questions' => $preguntas->map(fn ($r) => [
+                'question_id'    => $r->question_id,
+                'text'           => $r->question_text,
+                'topic'          => $r->topic,
+                'points'         => (float) $r->points,
+                'points_awarded' => (float) $r->points_awarded,
+                'points_lost'    => (float) $r->points_lost,
+                'answer'         => $r->answer_text,
+                'exam_id'        => $r->exam_id,
+                'exam_title'     => $r->exam_title,
+                'subject'        => $nombres->get($r->subject_id)?->name,
+                'submitted_at'   => $r->submitted_at,
+            ])->all(),
+            'topics'    => $temas->map(fn ($r) => [
+                'topic'      => $r->topic,
+                'answered'   => (int) $r->answered,
+                'wrong'      => (int) $r->wrong,
+                'error_rate' => $this->share((int) $r->wrong, (int) $r->answered),
+            ])->all(),
         ];
     }
 

@@ -273,6 +273,32 @@ class ReportController extends Controller
     }
 
     /**
+     * GET /api/reports/students/{id}/failed-questions
+     *
+     * Lo que más falló el estudiante, para el reporte individual (preguntas y temas). Va aparte del resumen: quien
+     * solo quiere las notas no paga esta consulta. Mismo doble filtro que las estrategias: `findStudent()` decide si
+     * el docente alcanza al alumno, y aquí se estrecha por las materias que imparte.
+     */
+    public function studentFailedQuestions(string $student_user_id, Request $request)
+    {
+        $validated = $request->validate([
+            'limit' => ['sometimes', 'integer', 'between:1,' . ReportMetricsService::MAX_FAILED_QUESTIONS],
+        ]);
+
+        $user    = $request->user();
+        $student = $this->findStudent($student_user_id, $user);
+        $student->loadMissing('user:id,full_name');
+
+        return response()->json([
+            'data' => $this->metrics->studentFailedQuestions(
+                $student,
+                (int) ($validated['limit'] ?? ReportMetricsService::DEFAULT_FAILED_QUESTIONS),
+                $this->esDocente($user) ? $this->materiasDelDocente($user->id) : null,
+            ),
+        ]);
+    }
+
+    /**
      * Reporte: historial completo de un estudiante (JSON)
      */
     public function studentHistory(string $student_user_id, Request $request)
