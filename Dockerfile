@@ -49,6 +49,10 @@ RUN mkdir -p bootstrap/cache storage/logs storage/framework/cache/data storage/f
 RUN composer dump-autoload --optimize --no-dev --no-interaction \
     && cp -n .env.example .env || true
 
+# Octane copia este script a public/ al arrancar si falta. Como `public/` es de root (solo lectura
+# para la app: ahí no debe poder dejar un web shell quien consiga ejecutar código), se copia ya aquí.
+RUN cp vendor/laravel/octane/src/Commands/stubs/frankenphp-worker.php public/frankenphp-worker.php
+
 # Opcache afinado para Octane (app en memoria)
 RUN { \
     echo "opcache.enable=1"; \
