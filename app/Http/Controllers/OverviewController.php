@@ -78,8 +78,10 @@ class OverviewController extends Controller
         $subjects = collect();
         if ($quiere('subjects') || $quiere('analytics')) {
             $subjects = collect($catalogo('subjects', fn () => Subject::query()
-                ->when($esDocente, fn ($query) => $query->whereIn('id', $this->materiasDelDocente($user->id)))
-                ->orderBy('name')
+                ->select('subjects.*')
+                ->conExamenes($esDocente ? $user->id : null)
+                ->when($esDocente, fn ($query) => $query->whereIn('subjects.id', $this->materiasDelDocente($user->id)))
+                ->orderBy('subjects.name')
                 ->get()
                 ->toArray()));
         }

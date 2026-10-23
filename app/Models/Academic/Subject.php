@@ -42,6 +42,21 @@ class Subject extends Model
                           WHERE sp.subject_id = subjects.id AND sp.institution_id = subjects.institution_id) AS avg_mastery');
     }
 
+    /**
+     * Solo `exams_count`, para listar las materias de una pantalla. Con `$docenteId` cuenta
+     * únicamente los exámenes que creó ese docente: es lo único que él ve, y contar los del
+     * centro entero le mostraría la actividad de otros. Requiere pedir antes las columnas de la materia.
+     */
+    public function scopeConExamenes($query, ?string $docenteId = null)
+    {
+        return $query->selectRaw(
+            'COALESCE((SELECT COUNT(*) FROM exams e
+                       WHERE e.subject_id = subjects.id AND e.institution_id = subjects.institution_id'
+            . ($docenteId !== null ? ' AND e.created_by_teacher_id = ?' : '') . '), 0) AS exams_count',
+            $docenteId !== null ? [$docenteId] : []
+        );
+    }
+
     protected $fillable = [
         'institution_id',
         'name',

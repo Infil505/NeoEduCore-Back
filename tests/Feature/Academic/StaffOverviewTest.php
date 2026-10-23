@@ -59,6 +59,55 @@ class StaffOverviewTest extends TestCase
         $this->assertSame([$examA->id], collect($res->json('data.exams'))->pluck('id')->all());
     }
 
+    /** La pantalla «Materias asignadas» del docente mostraba 0 porque `exams_count` no llegaba. */
+    public function test_cada_materia_lleva_su_cantidad_de_examenes_y_el_docente_cuenta_solo_los_suyos(): void
+    {
+        $institution = Institution::factory()->create();
+        $teacherA = $this->signInTeacher(['institution_id' => $institution->id]);
+        $teacherB = User::factory()->teacher()->create(['institution_id' => $institution->id]);
+
+        $studentA = User::factory()->student()->create(['institution_id' => $institution->id]);
+        Student::factory()->create(['user_id' => $studentA->id, 'institution_id' => $institution->id]);
+        ['subject' => $subjectA] = $this->darAccesoDocenteA($teacherA, $studentA->id, $institution->id);
+
+        // Tres exámenes de la materia: dos del docente A y uno del B (que A no ve).
+        foreach ([$teacherA, $teacherA, $teacherB] as $autor) {
+            Exam::factory()->create([
+                'institution_id' => $institution->id,
+                'created_by_teacher_id' => $autor->id,
+                'subject_id' => $subjectA->id,
+            ]);
+        }
+
+        $materia = collect($this->getJson('/api/dashboard/staff-overview?include=subjects')->assertOk()->json('data.subjects'))
+            ->firstWhere('id', $subjectA->id);
+
+        $this->assertSame(2, (int) $materia['exams_count']);
+    }
+
+    public function test_el_admin_ve_el_total_de_examenes_por_materia(): void
+    {
+        $institution = Institution::factory()->create();
+        $this->signInAdmin(['institution_id' => $institution->id]);
+        $teacherA = User::factory()->teacher()->create(['institution_id' => $institution->id]);
+        $teacherB = User::factory()->teacher()->create(['institution_id' => $institution->id]);
+        $subject = \App\Models\Academic\Subject::factory()->create(['institution_id' => $institution->id]);
+        $sinExamenes = \App\Models\Academic\Subject::factory()->create(['institution_id' => $institution->id]);
+
+        foreach ([$teacherA, $teacherB, $teacherB] as $autor) {
+            Exam::factory()->create([
+                'institution_id' => $institution->id,
+                'created_by_teacher_id' => $autor->id,
+                'subject_id' => $subject->id,
+            ]);
+        }
+
+        $materias = collect($this->getJson('/api/dashboard/staff-overview?include=subjects')->assertOk()->json('data.subjects'));
+
+        $this->assertSame(3, (int) $materias->firstWhere('id', $subject->id)['exams_count']);
+        $this->assertSame(0, (int) $materias->firstWhere('id', $sinExamenes->id)['exams_count']);
+    }
+
     public function test_admin_sigue_viendo_todo_sin_filtrar(): void
     {
         $institution = Institution::factory()->create();
