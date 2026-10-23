@@ -54,6 +54,25 @@ class StudyResourcesTest extends TestCase
         ]);
     }
 
+    /** El docente enlaza lo que quiera (no solo dominios educativos), pero siempre http(s). */
+    public function test_docente_puede_enlazar_cualquier_dominio_pero_solo_http(): void
+    {
+        $institution = Institution::factory()->create();
+        $teacher = $this->signInTeacher(['institution_id' => $institution->id]);
+        $group = \App\Models\Academic\Group::factory()->create(['institution_id' => $institution->id]);
+        $this->asignarDocente($teacher, $group->id, \App\Models\Academic\Subject::factory()->create(['institution_id' => $institution->id])->id);
+
+        $recurso = fn (string $url) => $this->postJson('/api/study-resources', [
+            'title' => 'Recurso libre', 'resource_type' => 'link', 'url' => $url,
+        ]);
+
+        $recurso('https://mi-sitio-cualquiera.example.org/clase')->assertCreated();
+
+        foreach (['javascript:alert(1)', 'data:text/html;base64,PGgxPg==', 'ftp://example.org/a'] as $peligrosa) {
+            $recurso($peligrosa)->assertStatus(422)->assertJsonValidationErrors('url');
+        }
+    }
+
     public function test_show_study_resource(): void
     {
         $institution = Institution::factory()->create();

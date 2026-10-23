@@ -71,8 +71,19 @@ class TallerAulaSeeder extends Seeder
 
     public function run(): void
     {
-        $this->command?->warn('Vaciando la base (se conserva la cuenta de superadmin)...');
-        $this->vaciar();
+        // TALLER_CONSERVAR=1: añade la escuela como una institución más, sin borrar nada.
+        if (filter_var(env('TALLER_CONSERVAR', false), FILTER_VALIDATE_BOOLEAN)) {
+            if (DB::table('institutions')->where('code', 'ENE-001')->exists()) {
+                $this->command?->error('La Escuela Nueva Esperanza (ENE-001) ya existe: no se siembra otra vez.');
+
+                return;
+            }
+
+            $this->command?->info('Modo conservar: no se borra nada.');
+        } else {
+            $this->command?->warn('Vaciando la base (se conserva la cuenta de superadmin)...');
+            $this->vaciar();
+        }
 
         $institutionId = $this->institucion();
 

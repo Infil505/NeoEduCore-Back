@@ -118,11 +118,9 @@ class StudyResourceController extends Controller
                 ResourceType::cases()
             ))],
 
-            'url' => ['bail', 'required', 'string', 'url', 'max:500', function ($attr, $value, $fail) {
-                if (!(new AiOutputValidator())->isUrlAllowed($value)) {
-                    $fail('La URL debe provenir de un dominio educativo permitido.');
-                }
-            }],
+            // El docente puede enlazar cualquier sitio; la lista de dominios (`AiOutputValidator`) es solo para lo que genera la IA.
+            // Se exige http(s) para no aceptar `javascript:` ni `data:`.
+            'url' => ['bail', 'required', 'string', 'url:http,https', 'max:500'],
 
             // Materia del recurso (D2). Acotada a la institución del usuario: con
             // un `exists` a secas se podría referenciar la materia de otro centro,
@@ -260,11 +258,9 @@ class StudyResourceController extends Controller
                 ResourceType::cases()
             ))],
 
-            'url' => ['bail', 'sometimes', 'string', 'url', 'max:500', function ($attr, $value, $fail) {
-                if (!(new AiOutputValidator())->isUrlAllowed($value)) {
-                    $fail('La URL debe provenir de un dominio educativo permitido.');
-                }
-            }],
+            // El docente puede enlazar cualquier sitio; la lista de dominios (`AiOutputValidator`) es solo para lo que genera la IA.
+            // Se exige http(s) para no aceptar `javascript:` ni `data:`.
+            'url' => ['bail', 'sometimes', 'string', 'url:http,https', 'max:500'],
 
             // Materia del recurso (D2). Acotada a la institución del usuario: con
             // un `exists` a secas se podría referenciar la materia de otro centro,
